@@ -594,6 +594,36 @@ body { display:flex; flex-direction:column; min-height:100vh; }
   font-size:9px; font-weight:700; color:var(--text-muted);
   text-transform:uppercase; letter-spacing:.12em; margin-bottom:6px;
 }
+/* Seções recolhíveis (accordion) */
+.sb-group {
+  padding:6px 12px;
+  border-bottom:1px solid var(--border);
+}
+.sb-group-toggle {
+  display:flex; align-items:center; gap:8px;
+  width:100%; padding:9px 10px; border-radius:7px;
+  border:none; background:none; cursor:pointer;
+  color:var(--text); font-family:'JetBrains Mono',monospace;
+  font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.10em;
+  transition:background .15s;
+  text-align:left;
+}
+.sb-group-toggle:hover { background:var(--surface-2); }
+.sb-group-toggle .sb-chev {
+  margin-left:auto;
+  transition:transform .18s ease;
+  opacity:.65;
+  flex-shrink:0;
+  display:grid; place-items:center;
+}
+.sb-group.is-open .sb-group-toggle .sb-chev { transform:rotate(90deg); opacity:1; }
+.sb-group.is-open .sb-group-toggle { color:var(--accent-text); }
+.sb-group-content {
+  display:none;
+  padding-top:4px;
+  padding-left:6px;
+}
+.sb-group.is-open .sb-group-content { display:block; }
 .sb-link {
   display:flex; align-items:center; gap:8px;
   padding:8px 10px; border-radius:7px;
@@ -1350,10 +1380,15 @@ textarea.proc-inp{resize:vertical;min-height:44px}
       </button>
     </div>
     <button class="sb-link active" data-p="home"><span class="sbi"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg></span>Home</button>
-  </div>
-  <div class="sb-sec">
-    <div class="sb-sec-label">Compras</div>
     <button class="sb-link" data-p="executivo"><span class="sbi"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg></span>Visão executiva</button>
+  </div>
+  <div class="sb-group" data-group="compras">
+    <button class="sb-group-toggle" type="button" onclick="_toggleSbGroup('compras')">
+      <span class="sbi"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3h2l3 12h12l2-8H7"/><circle cx="9" cy="20" r="1.5"/><circle cx="18" cy="20" r="1.5"/></svg></span>
+      <span>Compras</span>
+      <span class="sb-chev"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M9 18l6-6-6-6"/></svg></span>
+    </button>
+    <div class="sb-group-content">
     <button class="sb-link" data-p="cv"><span class="sbi"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><path d="M7 14l4-4 4 4 5-6"/></svg></span>Compras × Vendas</button>
     <button class="sb-link" data-p="deptos"><span class="sbi"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/></svg></span>Departamentos</button>
     <button class="sb-link" data-p="estoque"><span class="sbi"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg></span>Estoque</button>
@@ -1369,9 +1404,15 @@ textarea.proc-inp{resize:vertical;min-height:44px}
     <button class="sb-link" data-p="alertas"><span class="sbi"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg></span>Alertas <span class="sb-cnt">9</span></button>
     <button class="sb-link" data-p="diagnostico"><span class="sbi"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg></span>Diag. Produto</button>
     <button class="sb-link" data-p="diag-forn"><span class="sbi"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg></span>Diag. Fornecedor</button>
+    </div>
   </div>
-  <div class="sb-sec">
-    <div class="sb-sec-label">Vendas</div>
+  <div class="sb-group" data-group="vendas">
+    <button class="sb-group-toggle" type="button" onclick="_toggleSbGroup('vendas')">
+      <span class="sbi"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><path d="M7 14l4-4 4 4 5-6"/></svg></span>
+      <span>Vendas</span>
+      <span class="sb-chev"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M9 18l6-6-6-6"/></svg></span>
+    </button>
+    <div class="sb-group-content">
     <button class="sb-link" data-p="v-visao-grupo"><span class="sbi"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg></span>Visão Consolidada</button>
     <button class="sb-link" data-p="v-evolucao"><span class="sbi"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 17 9 11 13 15 21 7"/><polyline points="14 7 21 7 21 14"/></svg></span>Evolução Mensal</button>
     <button class="sb-link" data-p="v-atp-varejo"><span class="sbi"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/></svg></span>ATP — Varejo</button>
@@ -1386,13 +1427,11 @@ textarea.proc-inp{resize:vertical;min-height:44px}
     <button class="sb-link" data-p="v-benchmarking"><span class="sbi"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="11" width="5" height="10" rx="1"/><rect x="9" y="7" width="5" height="14" rx="1"/><rect x="16" y="3" width="5" height="18" rx="1"/></svg></span>Benchmarking</button>
     <button class="sb-link" data-p="v-ano2026"><span class="sbi"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 3"/></svg></span>Análise 2026</button>
     <button class="sb-link" data-p="v-alertas"><span class="sbi"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg></span>Alertas Vendas</button>
+    </div>
   </div>
   <div class="sb-sec">
-    <div class="sb-sec-label">Processamento</div>
-    <button class="sb-link" data-p="proc"><span class="sbi"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg></span>Upload de relatórios</button>
-  </div>
-  <div class="sb-sec">
-    <div class="sb-sec-label">Configuração</div>
+    <div class="sb-sec-label">Sistema</div>
+    <button class="sb-link" data-p="proc"><span class="sbi"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg></span>Processamento</button>
     <button class="sb-link" data-p="historico"><span class="sbi"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></span>Histórico</button>
     <button class="sb-link" data-p="ajuda"><span class="sbi"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></span>Ajuda</button>
     <button class="sb-link" data-p="admin"><span class="sbi"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 01-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg></span>Administração</button>
@@ -3245,12 +3284,37 @@ function _aplicarPermissoesPaginas(){
       btn.style.display = '';
     }
   });
-  // Esconder labels de seções vazias
-  document.querySelectorAll('.sb-sec').forEach(function(sec){
+  // Esconder labels de seções vazias (incluindo grupos recolhíveis)
+  document.querySelectorAll('.sb-sec, .sb-group').forEach(function(sec){
     const visiveis = sec.querySelectorAll('.sb-link:not([style*="display: none"])').length;
     if(visiveis === 0) sec.style.display = 'none';
     else sec.style.display = '';
   });
+}
+
+// Sidebar accordion: abre o grupo clicado e fecha os outros (uma seção por vez)
+function _toggleSbGroup(nome){
+  const alvo = document.querySelector('.sb-group[data-group="'+nome+'"]');
+  if(!alvo) return;
+  const jaAberto = alvo.classList.contains('is-open');
+  document.querySelectorAll('.sb-group').forEach(function(g){ g.classList.remove('is-open'); });
+  if(!jaAberto){
+    alvo.classList.add('is-open');
+    try { localStorage.setItem('sb_aberta', nome); } catch(e){}
+  } else {
+    try { localStorage.removeItem('sb_aberta'); } catch(e){}
+  }
+}
+
+// Abre automaticamente o grupo que contém a página ativa
+function _expandirGrupoDaPaginaAtiva(){
+  const ativo = document.querySelector('.sb-link.active[data-p]');
+  if(!ativo) return;
+  const grupo = ativo.closest('.sb-group');
+  if(!grupo) return; // página ativa é link direto, não está em grupo
+  document.querySelectorAll('.sb-group').forEach(function(g){ g.classList.remove('is-open'); });
+  grupo.classList.add('is-open');
+  try { localStorage.setItem('sb_aberta', grupo.dataset.group); } catch(e){}
 }
 
 async function _initSistema(){
@@ -3272,6 +3336,24 @@ async function _initSistema(){
   _runApp();
   // Aplicar permissões depois do _runApp pois ele monta o sidebar
   setTimeout(_aplicarPermissoesPaginas, 50);
+  // Restaurar estado do accordion da sidebar
+  setTimeout(function(){
+    // Se a página ativa está dentro de um grupo, abre esse grupo
+    const ativo = document.querySelector('.sb-link.active[data-p]');
+    const grupoDoAtivo = ativo ? ativo.closest('.sb-group') : null;
+    if(grupoDoAtivo){
+      grupoDoAtivo.classList.add('is-open');
+      return;
+    }
+    // Senão, restaura o que estava aberto antes (se houver)
+    let salvo = null;
+    try { salvo = localStorage.getItem('sb_aberta'); } catch(e){}
+    if(salvo){
+      const g = document.querySelector('.sb-group[data-group="'+salvo+'"]');
+      if(g) g.classList.add('is-open');
+    }
+    // Default: ambas recolhidas (não faz nada)
+  }, 60);
 }
 
 function _runApp(){
@@ -5627,6 +5709,7 @@ document.querySelectorAll('.sb-link[data-p]').forEach(a=>{
     }
     document.querySelectorAll('.sb-link').forEach(x=>x.classList.remove('active'));
     a.classList.add('active');
+    if(typeof _expandirGrupoDaPaginaAtiva==='function') _expandirGrupoDaPaginaAtiva();
     navHistory = []; // reset ao usar o menu
     document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
     document.getElementById('page-'+pg).classList.add('active');
@@ -6901,6 +6984,7 @@ window._openProdNovo = function(cod){
   document.querySelectorAll('.sb-link').forEach(function(x){x.classList.remove('active');});
   const link = document.querySelector('.sb-link[data-p="diagnostico"]');
   if(link) link.classList.add('active');
+  if(typeof _expandirGrupoDaPaginaAtiva==='function') _expandirGrupoDaPaginaAtiva();
   document.querySelectorAll('.page').forEach(function(x){x.classList.remove('active');});
   document.getElementById('page-diagnostico').classList.add('active');
 
@@ -8016,6 +8100,7 @@ window._openFornNovo = function(cod){
   document.querySelectorAll('.sb-link').forEach(function(x){x.classList.remove('active');});
   const link = document.querySelector('.sb-link[data-p="diag-forn"]');
   if(link) link.classList.add('active');
+  if(typeof _expandirGrupoDaPaginaAtiva==='function') _expandirGrupoDaPaginaAtiva();
   document.querySelectorAll('.page').forEach(function(x){x.classList.remove('active');});
   document.getElementById('page-diag-forn').classList.add('active');
 
@@ -13881,6 +13966,7 @@ window.goBack = function(){
   document.querySelectorAll('.sb-link').forEach(x=>x.classList.remove('active'));
   const sbLink = document.querySelector('.sb-link[data-p="'+pg+'"]');
   if(sbLink) sbLink.classList.add('active');
+  if(typeof _expandirGrupoDaPaginaAtiva==='function') _expandirGrupoDaPaginaAtiva();
   if(!renderedPages.has(pg)){renderPage(pg);renderedPages.add(pg);}
   // Esconder o botão se histórico vazio
   updateBackBtn();
