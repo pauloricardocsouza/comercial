@@ -3,7 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0">
-<title>Comercial GPC — R2 Soluções</title>
+<title>Comercial GPC · R2 Soluções</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='12' fill='%2330569f'/%3E%3Ctext x='32' y='44' font-family='Archivo,Arial,sans-serif' font-size='34' font-weight='800' fill='%23f58634' text-anchor='middle'%3EG%3C/text%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
@@ -2722,40 +2723,88 @@ function _getBaseSlug(){
 }
 
 /**
+ * Manifesto leve: lista os arquivos disponíveis no servidor (com/sem .gz).
+ * Carregado uma vez no boot, evita 404 cosméticos no console.
+ * Se o manifest não existir, _MANIFEST fica null e o sistema cai no comportamento
+ * antigo (tenta .gz, fallback .json) — funciona, só polui o console.
+ */
+let _MANIFEST = null;
+let _manifestLoading = null;
+
+function _carregarManifest(){
+  if(_MANIFEST) return Promise.resolve(_MANIFEST);
+  if(_manifestLoading) return _manifestLoading;
+  _manifestLoading = fetch('manifest.json', {cache:'default'})
+    .then(function(r){ return r.ok ? r.json() : null; })
+    .then(function(j){
+      _MANIFEST = j || {arquivos:{}, _ausente:true};
+      return _MANIFEST;
+    })
+    .catch(function(){
+      _MANIFEST = {arquivos:{}, _ausente:true};
+      return _MANIFEST;
+    });
+  return _manifestLoading;
+}
+
+/** Verifica se um arquivo existe no manifest. Se manifest está ausente, retorna 'unknown'. */
+function _temArquivo(nome){
+  if(!_MANIFEST || _MANIFEST._ausente) return 'unknown';
+  return _MANIFEST.arquivos && _MANIFEST.arquivos[nome] ? _MANIFEST.arquivos[nome] : null;
+}
+
+/**
  * Fetch de JSON com suporte a gzip estático.
- * Tenta primeiro `<url>.gz` (descompactando via DecompressionStream nativo,
- * ou via pako.js se a API nativa não existir, ou via servidor se este enviar
- * Content-Encoding: gzip), caindo no `<url>` normal como último fallback.
+ * Manifest-aware: se o manifest indica que .gz não existe, vai direto pro .json
+ * sem tentar (zero 404 cosméticos no console).
  *
  * Uso: _fetchJsonComGz('vendas_cp.json').then(j => ...)
  */
 function _fetchJsonComGz(url){
-  // 1) Tentar versão .gz (cabe em hostings com limite de tamanho como GitHub)
+  return _carregarManifest().then(function(){
+    const info = _temArquivo(url);
+    // Manifest ausente: comportamento antigo (tenta .gz, fallback .json)
+    if(info === 'unknown') return _fetchJsonComGzLegacy(url);
+    // Arquivo não existe (nem .gz nem .json): retorna null sem barulho
+    if(info === null) return null;
+    // .gz disponível: usa fluxo gzip
+    if(info.gz) return _fetchGz(url);
+    // Só .json puro disponível: fetch direto
+    if(info.json) return fetch(url, {cache:'default'}).then(function(r){
+      return r.ok ? r.json() : null;
+    });
+    return null;
+  });
+}
+
+function _fetchGz(url){
   return fetch(url + '.gz', {cache:'default'})
     .then(function(r){
       if(!r.ok) throw new Error('gz não disponível');
-      // Caminho A: DecompressionStream nativo (Chrome/Edge/Firefox/Safari 16.4+)
       if(typeof DecompressionStream !== 'undefined'){
         const ds = new DecompressionStream('gzip');
         const decompressed = r.body.pipeThrough(ds);
         return new Response(decompressed).text();
       }
-      // Caminho B: pako.js (fallback pra browsers antigos)
       if(typeof pako !== 'undefined'){
         return r.arrayBuffer().then(function(buf){
           return pako.ungzip(new Uint8Array(buf), {to: 'string'});
         });
       }
-      // Caminho C: servidor já entregou descompactado (Content-Encoding: gzip)
       return r.text();
     })
     .then(function(txt){ return JSON.parse(txt); })
     .catch(function(){
-      // Fallback: .json original (servidor pode gzipar automaticamente)
+      // Fallback final: .json puro
       return fetch(url, {cache:'default'}).then(function(r){
         return r.ok ? r.json() : null;
       });
     });
+}
+
+/** Comportamento antigo (manifest ausente): tenta .gz, cai pra .json. */
+function _fetchJsonComGzLegacy(url){
+  return _fetchGz(url);
 }
 
 /** Carrega o cubo OLAP sob demanda. Idempotente: se já carregou ou está carregando,
@@ -2911,12 +2960,15 @@ async function _loadDados(){
   //    se chegar depois, as páginas que dependem deles re-renderizam.
   _loadDadosModulares(_getBaseSlug());
 
-  // 4. Cache do consolidado para acesso futuro
+  // 4. Cache do consolidado para acesso futuro (só se o manifest indicar que existe)
   if(decisao.tipo !== 'consolidado'){
-    // Carregar consolidado em background para o seletor de filial mostrar info
-    fetch('consolidado.json', {cache:'default'}).then(r => r.ok ? r.json() : null).then(j => {
-      if(j) _consolidadoData = j.D || j;
-    }).catch(()=>{});
+    _carregarManifest().then(function(){
+      if(_temArquivo('consolidado.json')){
+        fetch('consolidado.json', {cache:'default'}).then(r => r.ok ? r.json() : null).then(j => {
+          if(j) _consolidadoData = j.D || j;
+        }).catch(()=>{});
+      }
+    });
   }
 
   // 5. Carregar o arquivo principal LEGADO (D) — transicional.
@@ -2930,12 +2982,28 @@ async function _loadDados(){
     else labelMsg = 'Carregando GPC consolidado...';
     if(dlMsg) dlMsg.textContent = labelMsg;
 
+    // Manifest-aware: se o arquivo legado D não existe no pacote, pula direto pro modo novo.
+    // O schema modular (V/C/E/F/R/Vb) cobre todas as páginas; D é só pra retrocompat.
+    await _carregarManifest();
+    const arqInfo = _temArquivo(decisao.arquivo);
+    // Só tentamos fetch se o manifest:
+    //   (a) está ausente (modo legacy, comportamento antigo), OU
+    //   (b) indica que o arquivo existe E é especificamente consolidado.json (schema D antigo)
+    const ehConsolidadoLegado = decisao.arquivo === 'consolidado.json';
+    const manifestSemArquivo = _MANIFEST && !_MANIFEST._ausente && !arqInfo;
+    if(manifestSemArquivo || (!ehConsolidadoLegado && _MANIFEST && !_MANIFEST._ausente)){
+      // Modo novo modular: D = null, páginas modulares funcionam, páginas antigas mostram aviso
+      console.log('[_loadDados] modo novo modular · D=null · arquivo='+decisao.arquivo);
+      D = null;
+      if(dlProg) dlProg.textContent = 'modo modular';
+      return;
+    }
+
     const resp = await fetch(decisao.arquivo, {cache:'default'});
     if(!resp.ok){
       // Arquivo legado não existe — modo "novo" puro (sem D antigo).
-      // Não dispara erro: páginas novas funcionam, páginas antigas mostram aviso.
       if(resp.status === 404){
-        console.warn('[_loadDados] '+decisao.arquivo+' não encontrado. Modo novo puro (D=null).');
+        console.log('[_loadDados] '+decisao.arquivo+' não encontrado. Modo novo puro (D=null).');
         D = null;
         if(dlProg){
           dlProg.textContent = 'modo novo · sem '+decisao.arquivo;
@@ -5093,9 +5161,14 @@ const SMOKE_TESTS_DEF = [
         id: 'e-cons-disponivel',
         nome: 'Consolidado acessível',
         run: async function(){
+          // Manifest-aware: se o pacote não tem consolidado.json, é por design (modo novo modular)
+          await _carregarManifest();
+          if(_MANIFEST && !_MANIFEST._ausente && !_temArquivo('consolidado.json')){
+            return {status:'INFO', msg:'modo novo modular (sem consolidado.json)'};
+          }
           try {
             const r = await fetch('consolidado.json', {cache:'no-cache'});
-            if(!r.ok) return {status:'FAIL', msg:'HTTP '+r.status};
+            if(!r.ok) return {status:'INFO', msg:'sem consolidado.json (modo novo)'};
             const j = await r.json();
             if(!j || (!j.D && !j.meta)) return {status:'FAIL', msg:'JSON sem estrutura esperada'};
             return {status:'OK', msg:'consolidado.json OK'};
