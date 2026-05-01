@@ -1,0 +1,165 @@
+{
+  "gerado_em": "2026-05-01T14:25:11",
+  "arquivos": {
+    "compras_atp.json": {
+      "json": true
+    },
+    "compras_cp.json": {
+      "json": true
+    },
+    "compras_cp1.json": {
+      "json": true
+    },
+    "compras_cp3.json": {
+      "json": true
+    },
+    "compras_cp40.json": {
+      "json": true
+    },
+    "compras_cp5.json": {
+      "json": true
+    },
+    "compras_grupo.json": {
+      "json": true
+    },
+    "cubo_atp.json": {
+      "gz": true
+    },
+    "cubo_cp.json": {
+      "gz": true
+    },
+    "devolucoes_atp.json": {
+      "json": true
+    },
+    "devolucoes_cp.json": {
+      "json": true
+    },
+    "devolucoes_cp1.json": {
+      "json": true
+    },
+    "devolucoes_cp3.json": {
+      "json": true
+    },
+    "devolucoes_cp40.json": {
+      "json": true
+    },
+    "devolucoes_cp5.json": {
+      "json": true
+    },
+    "devolucoes_grupo.json": {
+      "json": true
+    },
+    "estoque_atp.json": {
+      "gz": true
+    },
+    "estoque_cp.json": {
+      "gz": true
+    },
+    "estoque_cp1.json": {
+      "gz": true
+    },
+    "estoque_cp3.json": {
+      "gz": true
+    },
+    "estoque_cp40.json": {
+      "gz": true
+    },
+    "estoque_cp5.json": {
+      "gz": true
+    },
+    "estoque_grupo.json": {
+      "gz": true
+    },
+    "filiais.json": {
+      "json": true
+    },
+    "financeiro_atp.json": {
+      "json": true
+    },
+    "financeiro_cp.json": {
+      "json": true
+    },
+    "financeiro_cp1.json": {
+      "json": true
+    },
+    "financeiro_cp3.json": {
+      "json": true
+    },
+    "financeiro_cp40.json": {
+      "json": true
+    },
+    "financeiro_cp5.json": {
+      "json": true
+    },
+    "financeiro_grupo.json": {
+      "gz": true
+    },
+    "metas.json": {
+      "json": true
+    },
+    "recebimentos_atp.json": {
+      "json": true
+    },
+    "recebimentos_cp.json": {
+      "json": true
+    },
+    "recebimentos_cp1.json": {
+      "json": true
+    },
+    "recebimentos_cp3.json": {
+      "json": true
+    },
+    "recebimentos_cp40.json": {
+      "json": true
+    },
+    "recebimentos_cp5.json": {
+      "json": true
+    },
+    "recebimentos_grupo.json": {
+      "json": true
+    },
+    "vendas_atp.json": {
+      "gz": true
+    },
+    "vendas_cp.json": {
+      "gz": true
+    },
+    "vendas_cp1.json": {
+      "gz": true
+    },
+    "vendas_cp3.json": {
+      "gz": true
+    },
+    "vendas_cp40.json": {
+      "gz": true
+    },
+    "vendas_cp5.json": {
+      "gz": true
+    },
+    "vendas_grupo.json": {
+      "gz": true
+    },
+    "verbas_atp.json": {
+      "json": true
+    },
+    "verbas_cp.json": {
+      "gz": true
+    },
+    "verbas_cp1.json": {
+      "json": true
+    },
+    "verbas_cp3.json": {
+      "json": true
+    },
+    "verbas_cp40.json": {
+      "json": true
+    },
+    "verbas_cp5.json": {
+      "json": true
+    },
+    "verbas_grupo.json": {
+      "gz": true
+    }
+  },
+  "tem_consolidado": false
+}

@@ -1,0 +1,83 @@
+{
+  "geradoEm": "2026-05-01",
+  "fonte": "Configuração GPC - ATP + Comercial Pinto",
+  "default_visao": "grupo",
+  "bases": [
+    {"sigla": "grupo", "nome": "GPC Consolidado", "tipo": "consolidado", "ativa": true},
+    {"sigla": "atp", "nome": "ATP - Atacado Pinto", "tipo": "base", "ativa": true},
+    {"sigla": "cp", "nome": "Comercial Pinto", "tipo": "consolidado", "ativa": true}
+  ],
+  "hierarquia": [
+    {
+      "sigla": "grupo",
+      "nome": "GPC Consolidado",
+      "tipo": "raiz",
+      "base_sigla": "grupo",
+      "arquivo": "vendas_grupo.json",
+      "filhos": ["atp", "cp"]
+    },
+    {
+      "sigla": "atp",
+      "nome": "ATP",
+      "tipo": "base",
+      "base_sigla": "atp",
+      "arquivo": "vendas_atp.json",
+      "parent": "grupo",
+      "filhos": []
+    },
+    {
+      "sigla": "cp",
+      "nome": "Comercial Pinto (consolidado)",
+      "tipo": "base",
+      "base_sigla": "cp",
+      "arquivo": "vendas_cp.json",
+      "parent": "grupo",
+      "filhos": ["cp1", "cp3", "cp5", "cp40"]
+    },
+    {
+      "sigla": "cp1",
+      "nome": "CP1 - Comercial Pinto",
+      "tipo": "filial",
+      "base_sigla": "cp1",
+      "arquivo": "vendas_cp1.json",
+      "parent": "cp",
+      "tipo_negocio": "atacado"
+    },
+    {
+      "sigla": "cp3",
+      "nome": "CP3 - Cestão Loja 1",
+      "tipo": "filial",
+      "base_sigla": "cp3",
+      "arquivo": "vendas_cp3.json",
+      "parent": "cp",
+      "tipo_negocio": "varejo"
+    },
+    {
+      "sigla": "cp5",
+      "nome": "CP5 - Cestão Inhambupe",
+      "tipo": "filial",
+      "base_sigla": "cp5",
+      "arquivo": "vendas_cp5.json",
+      "parent": "cp",
+      "tipo_negocio": "varejo"
+    },
+    {
+      "sigla": "cp40",
+      "nome": "CP40 - Barros 40",
+      "tipo": "filial",
+      "base_sigla": "cp40",
+      "arquivo": "vendas_cp40.json",
+      "parent": "cp",
+      "tipo_negocio": "atacado"
+    }
+  ],
+  "filiais": [
+    {"sigla":"grupo", "nome":"GPC Consolidado", "arquivo":"vendas_grupo.json", "ativa":true, "base_sigla":"grupo", "tipo":"raiz"},
+    {"sigla":"atp", "nome":"ATP", "arquivo":"vendas_atp.json", "ativa":true, "base_sigla":"atp", "tipo":"base", "parent":"grupo"},
+    {"sigla":"cp", "nome":"Comercial Pinto", "arquivo":"vendas_cp.json", "ativa":true, "base_sigla":"cp", "tipo":"base", "parent":"grupo"},
+    {"sigla":"cp1", "nome":"CP1 - Comercial Pinto", "arquivo":"vendas_cp1.json", "ativa":true, "base_sigla":"cp1", "tipo":"filial", "parent":"cp", "tipo_negocio":"atacado"},
+    {"sigla":"cp3", "nome":"CP3 - Cestão L1", "arquivo":"vendas_cp3.json", "ativa":true, "base_sigla":"cp3", "tipo":"filial", "parent":"cp", "tipo_negocio":"varejo"},
+    {"sigla":"cp5", "nome":"CP5 - Inhambupe", "arquivo":"vendas_cp5.json", "ativa":true, "base_sigla":"cp5", "tipo":"filial", "parent":"cp", "tipo_negocio":"varejo"},
+    {"sigla":"cp40", "nome":"CP40 - Barros 40", "arquivo":"vendas_cp40.json", "ativa":true, "base_sigla":"cp40", "tipo":"filial", "parent":"cp", "tipo_negocio":"atacado"}
+  ]
+}

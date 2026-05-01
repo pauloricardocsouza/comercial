@@ -1,0 +1,19 @@
+{
+  "geradoEm": "2026-05-01",
+  "fonte": "metas alimentadas pelo usuário no app",
+  "config": {
+    "supervisor_por_filial": {
+      "atp": [1, 4],
+      "cp1": null,
+      "cp3": [1],
+      "cp5": [17],
+      "cp40": [4]
+    },
+    "supervisor_nomes": {
+      "1": "VAREJO / CESTAO 01 - IRARA",
+      "4": "ATACADO BALCÃO / VENDA BALCAO",
+      "17": "CESTAO 04 - INHAMBUPE"
+    }
+  },
+  "metas": {}
+}
