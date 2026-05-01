@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>Firebase Seed · Setup Inicial GPC</title>
+<style>
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; max-width: 720px; margin: 40px auto; padding: 20px; color:#1a1a1a; }
+h1 { font-size: 22px; margin-bottom: 8px; }
+.sub { color:#666; font-size: 13px; margin-bottom: 24px; }
+.box { background: #f5f7fa; border: 1px solid #d0d4dc; border-radius: 8px; padding: 16px; margin-bottom: 16px; }
+.box h3 { margin: 0 0 8px; font-size: 14px; }
+input { display: block; width: 100%; padding: 8px 10px; margin: 4px 0 10px; border: 1px solid #ccc; border-radius: 5px; box-sizing: border-box; font-size: 14px; }
+button { background: #2E476F; color: white; border: 0; padding: 10px 16px; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: 600; }
+button:hover { background: #1e3050; }
+button:disabled { background: #aaa; cursor: not-allowed; }
+.log { background: #111; color: #0f0; padding: 12px; border-radius: 6px; font-family: 'JetBrains Mono', monospace; font-size: 12px; min-height: 80px; max-height: 300px; overflow-y: auto; white-space: pre-wrap; }
+.warn { background: #fee; color: #c33; padding: 12px; border-radius: 6px; font-size: 13px; margin-bottom: 16px; }
+</style>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
+</head>
+<body>
+
+<h1>Setup Inicial · Firebase Seed</h1>
+<div class="sub">Cria o primeiro usuário administrador e os perfis-template no Firestore. Use uma vez antes de publicar o sistema.</div>
+
+<div class="warn">
+⚠ Esta página deve ser usada APENAS no primeiro setup ou após reset do banco.<br>
+Após o admin existir, NÃO use mais este arquivo. <strong>Apague-o do servidor de produção.</strong>
+</div>
+
+<div class="box">
+<h3>1. Configuração Firebase</h3>
+<div class="sub">Já configurado pra projeto <strong>comercial-3029f</strong>.</div>
+</div>
+
+<div class="box">
+<h3>2. Criar usuário admin</h3>
+<input id="email" type="email" placeholder="email do admin (ex.: r2@solucoesr2.com.br)" value="r2@solucoesr2.com.br">
+<input id="senha" type="password" placeholder="senha (mínimo 6 caracteres)">
+<input id="nome" type="text" placeholder="nome do admin" value="Administrador R2">
+<button id="btnCriar">Criar admin + perfis</button>
+</div>
+
+<div class="box">
+<h3>3. Log</h3>
+<div id="log" class="log">Pronto pra criar.</div>
+</div>
+
+<script>
+const cfg = {
+  apiKey: "AIzaSyDXI3kYsVYuPWrtRcNS8nBrXxtRRnLF25Q",
+  authDomain: "comercial-3029f.firebaseapp.com",
+  projectId: "comercial-3029f",
+  storageBucket: "comercial-3029f.firebasestorage.app",
+  messagingSenderId: "958934648887",
+  appId: "1:958934648887:web:bc3ca3e9c0af986da897b2"
+};
+
+firebase.initializeApp(cfg);
+const auth = firebase.auth();
+const db = firebase.firestore();
+
+const logEl = document.getElementById('log');
+function log(msg, ok){
+  const ts = new Date().toLocaleTimeString();
+  logEl.textContent += '\n[' + ts + '] ' + (ok ? '✓ ' : '') + msg;
+  logEl.scrollTop = logEl.scrollHeight;
+}
+
+// Perfis template (idêntico ao mock do sistema)
+const perfis = {
+  admin: {
+    nome: 'Administrador',
+    descricao: 'Acesso total ao sistema',
+    pode_gerenciar_usuarios: true,
+    podeVerConsolidado: true,
+    paginasPermitidas: '__todas__',
+    filiaisPermitidas: ['__todas__']
+  },
+  diretor: {
+    nome: 'Diretor',
+    descricao: 'Acesso a todas as visões e dashboards, sem gestão de usuários',
+    pode_gerenciar_usuarios: false,
+    podeVerConsolidado: true,
+    paginasPermitidas: '__todas__',
+    filiaisPermitidas: ['__todas__']
+  },
+  gerente_filial: {
+    nome: 'Gerente de Filial',
+    descricao: 'Acesso a uma filial específica',
+    pode_gerenciar_usuarios: false,
+    podeVerConsolidado: false,
+    paginasPermitidas: '__todas__',
+    filiaisPermitidas: []
+  },
+  comprador: {
+    nome: 'Comprador',
+    descricao: 'Acesso a compras e estoque',
+    pode_gerenciar_usuarios: false,
+    podeVerConsolidado: true,
+    paginasPermitidas: ['home','executivo','estoque','cv','deptos','fornecedores','verbas'],
+    filiaisPermitidas: ['__todas__']
+  },
+  visualizador: {
+    nome: 'Visualizador',
+    descricao: 'Apenas leitura, sem dados financeiros',
+    pode_gerenciar_usuarios: false,
+    podeVerConsolidado: true,
+    paginasPermitidas: ['home','executivo','v-mensal','v-rca','v-skus'],
+    filiaisPermitidas: ['__todas__']
+  }
+};
+
+document.getElementById('btnCriar').addEventListener('click', async function(){
+  const btn = this;
+  btn.disabled = true;
+  logEl.textContent = '';
+
+  const email = document.getElementById('email').value.trim();
+  const senha = document.getElementById('senha').value;
+  const nome  = document.getElementById('nome').value.trim();
+
+  if(!email || senha.length < 6 || !nome){
+    log('ERRO: preencha email, senha (≥6 chars) e nome');
+    btn.disabled = false;
+    return;
+  }
+
+  try {
+    log('Criando usuário no Firebase Auth...');
+    let uid;
+    try {
+      const cred = await auth.createUserWithEmailAndPassword(email, senha);
+      uid = cred.user.uid;
+      log('Auth OK · uid=' + uid, true);
+    } catch(e){
+      if(e.code === 'auth/email-already-in-use'){
+        log('Email já existe no Auth. Tentando logar pra recuperar uid...');
+        const cred = await auth.signInWithEmailAndPassword(email, senha);
+        uid = cred.user.uid;
+        log('Login OK · uid=' + uid, true);
+      } else throw e;
+    }
+
+    log('Criando documento usuarios/' + uid + '...');
+    await db.collection('usuarios').doc(uid).set({
+      uid: uid,
+      email: email,
+      nome: nome,
+      perfil: 'admin',
+      ativo: true,
+      senha_temp: false,
+      criado_em: new Date().toISOString(),
+      filial_padrao: null
+    }, {merge: true});
+    log('usuarios/' + uid + ' criado/atualizado', true);
+
+    log('Criando perfis-template...');
+    for(const [key, perfil] of Object.entries(perfis)){
+      await db.collection('perfisTemplate').doc(key).set(perfil);
+      log('perfisTemplate/' + key + ' OK', true);
+    }
+
+    log('--------------------------------');
+    log('SETUP CONCLUÍDO!', true);
+    log('Você pode logar no sistema com:');
+    log('  Email: ' + email);
+    log('  Senha: (que você acabou de definir)');
+    log('--------------------------------');
+    log('IMPORTANTE: apague este arquivo do servidor após o setup.');
+  } catch(e){
+    log('ERRO: ' + e.message);
+    if(e.code) log('Code: ' + e.code);
+    console.error(e);
+  } finally {
+    btn.disabled = false;
+  }
+});
+</script>
+</body>
+</html>
