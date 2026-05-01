@@ -1,2 +1,0 @@
-# comercial
-Comercial GPC
