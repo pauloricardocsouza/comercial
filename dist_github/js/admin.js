@@ -126,11 +126,19 @@ const srchInp=document.getElementById('prod-srch');
 const srchDrp=document.getElementById('srch-drop');
 let srchTmr=null;
 
-srchInp.addEventListener('input',()=>{clearTimeout(srchTmr);srchTmr=setTimeout(()=>doSearch(srchInp.value),120);});
-srchInp.addEventListener('keydown',e=>{if(e.key==='Escape'){srchDrp.classList.remove('show');srchInp.blur();}});
-document.addEventListener('click',e=>{
-  if(!e.target.closest('#prod-srch')&&!e.target.closest('#srch-drop'))srchDrp.classList.remove('show');
-});
+// Defesa: se o elemento de busca não existir no DOM no momento do load
+// (ex: HTML modificado, diagnóstico desabilitado), pula os addEventListener
+// pra não abortar a execução de admin.js (o que travaria toda a Administração
+// por causa do TDZ no const GPC_DEFAULTS abaixo).
+if(srchInp){
+  srchInp.addEventListener('input',()=>{clearTimeout(srchTmr);srchTmr=setTimeout(()=>doSearch(srchInp.value),120);});
+  srchInp.addEventListener('keydown',e=>{if(e.key==='Escape'){if(srchDrp) srchDrp.classList.remove('show'); srchInp.blur();}});
+}
+if(srchDrp){
+  document.addEventListener('click',e=>{
+    if(!e.target.closest('#prod-srch')&&!e.target.closest('#srch-drop'))srchDrp.classList.remove('show');
+  });
+}
 
 // Item 3: busca por múltiplos tokens
 function doSearch(q){
