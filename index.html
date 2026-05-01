@@ -3373,6 +3373,7 @@ function _toggleSbGroup(nome){
     try { localStorage.removeItem('sb_aberta'); } catch(e){}
   }
 }
+window._toggleSbGroup = _toggleSbGroup;
 
 // Abre automaticamente o grupo que contém a página ativa
 function _expandirGrupoDaPaginaAtiva(){
@@ -3384,6 +3385,7 @@ function _expandirGrupoDaPaginaAtiva(){
   grupo.classList.add('is-open');
   try { localStorage.setItem('sb_aberta', grupo.dataset.group); } catch(e){}
 }
+window._expandirGrupoDaPaginaAtiva = _expandirGrupoDaPaginaAtiva;
 
 async function _initSistema(){
   console.log('[_initSistema] Iniciando. D =', typeof D, D ? 'OK' : 'UNDEFINED!');
@@ -3425,11 +3427,10 @@ async function _initSistema(){
 }
 
 function _runApp(){
-  // Se D não foi carregado, ainda assim o app sobe (parcialmente)
-  // O dispatcher renderPage detecta e mostra mensagem amigável nas páginas Compras
-  // Vendas, Home, Histórico, Admin, Ajuda funcionam independente
+  // Em modo modular, D fica null por design — as páginas consomem V/C/E/F/R/Vb/Dev
+  // diretamente. D só é usado por código legado que checa _placeholder.
   if(typeof D === 'undefined' || D === null){
-    console.warn('[_runApp] D indisponível — montando app sem dados de Compras');
+    console.log('[_runApp] modo modular · D=null por design');
     // Cria objeto mínimo para impedir erros em código que toca D antes do render
     D = {produtos:[], departamentos:[], fornecedores:[], meta:{}, _placeholder:true};
   }
@@ -13619,6 +13620,8 @@ function _vbPagProx(){
   const totalPag = Math.max(1, Math.ceil(f.length / _vbAplicState.tamPag));
   if(_vbAplicState.pagina < totalPag-1){ _vbAplicState.pagina++; _vbRenderAplicPagina(); }
 }
+window._vbPagAnt = _vbPagAnt;
+window._vbPagProx = _vbPagProx;
 
 // ────────────────────────────────────────────────────────────────────
 // ANÁLISE DINÂMICA · cubo OLAP (sub-etapa 4h · 30/abr/2026)
