@@ -106,7 +106,9 @@ window.renderJrFornTable = renderJrFornTable;
 // ================================================================
 // FORNECEDORES
 // ================================================================
-let allForn=D.fornecedores;
+// Em modo modular D é null no boot — `D && D.fornecedores` evita
+// abortar admin.js (que travaria a inicialização de GPC_DEFAULTS).
+let allForn = (typeof D !== 'undefined' && D && D.fornecedores) ? D.fornecedores : [];
 // [legado] renderFornecedores removido em v4.2 — substituído por renderFornecedoresNovo
 
 // [legado] renderFornTable removido em v4.2 — substituído por renderFornTableNovo

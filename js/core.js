@@ -216,7 +216,7 @@ const AUTH_MODE = 'firebase'; // 'mock' | 'firebase'
 // Convenção:
 //   X.x → alteração grande (quebra de compatibilidade, nova feature grande)
 //   x.X → alteração suave (fix, ajuste visual, pequeno refinamento)
-const APP_VERSION = '4.11-comercial';
+const APP_VERSION = '4.12-comercial';
 
 // ================================================================
 // HELPERS DE CHART.JS — compatíveis com Safari/iOS (sem spread ops)
@@ -2460,9 +2460,21 @@ async function renderHistorico(){
     document.getElementById('hist-loading').style.display = 'none';
     const inner = document.getElementById('hist-content');
     inner.style.display = 'block';
-    inner.innerHTML = '<div style="background:var(--danger-bg);border:1px solid var(--danger-text);border-radius:8px;padding:14px 16px;color:var(--danger-text);font-size:13px;">'
-      +'<strong>Erro ao carregar snapshots.json</strong><br>'+esc(err.message)+'<br><br>'
-      +'Verifique se o arquivo <code>snapshots.json</code> está presente no servidor.</div>';
+    // Se snapshots.json simplesmente não existe (404), mostra "em construção"
+    // em vez de tela de erro vermelha (a feature não está implementada ainda).
+    const eh404 = err && err.message && err.message.indexOf('404') >= 0;
+    if(eh404){
+      inner.innerHTML = '<div style="background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:30px 24px;text-align:center;color:var(--text-muted);">'
+        +'<svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="margin-bottom:12px;opacity:.5;"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>'
+        +'<div style="font-size:14px;font-weight:600;color:var(--text);margin-bottom:6px;">Histórico em construção</div>'
+        +'<div style="font-size:12px;line-height:1.5;max-width:480px;margin:0 auto;">A funcionalidade de snapshots de versão ainda não está disponível para esta base. '
+        +'Quando o ETL gerar fotografias periódicas dos dados, elas aparecerão aqui para você navegar entre versões.</div>'
+        +'</div>';
+    } else {
+      inner.innerHTML = '<div style="background:var(--danger-bg);border:1px solid var(--danger-text);border-radius:8px;padding:14px 16px;color:var(--danger-text);font-size:13px;">'
+        +'<strong>Erro ao carregar snapshots.json</strong><br>'+esc(err.message)+'<br><br>'
+        +'Verifique se o arquivo <code>snapshots.json</code> está presente no servidor.</div>';
+    }
   }
 }
 

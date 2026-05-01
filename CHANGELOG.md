@@ -4,6 +4,21 @@ Lista das melhorias do sistema de BI da R2 Soluções para o Grupo Pinto Cerquei
 
 ---
 
+## v4.12 · 01/mai/2026
+
+**Bug crítico · Administração (continuação)**
+
+- Corrigido outro ponto que abortava o script de Administração: `let allForn = D.fornecedores` no top-level falhava porque `D` é null em modo modular.
+- Mesmo padrão do bug da v4.11 (que corrigiu o `srchInp.addEventListener`), só que em outro ponto.
+- Agora protegido com `D && D.fornecedores`.
+
+**Histórico · tela em construção**
+
+- Antes: erro vermelho "HTTP 404 — verifique se snapshots.json está no servidor".
+- Agora: tela amigável "Histórico em construção", explicando que a funcionalidade depende do ETL gerar snapshots periódicos.
+
+---
+
 ## v4.11 · 01/mai/2026
 
 **Bug crítico · Administração não abria**
