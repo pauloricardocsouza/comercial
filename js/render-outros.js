@@ -621,7 +621,7 @@ function renderVerbas(){
     return '<tr>'
       + '<td class="L val-dim">'+(i+1)+'</td>'
       + '<td class="L val-dim">'+fI(p.cod||0)+'</td>'
-      + '<td class="L"><strong>'+esc(p.desc||'')+'</strong></td>'
+      + '<td class="L"><strong>'+esc(p.desc||'')+'</strong>'+(p.desc?'':'<span style="color:var(--text-muted);">cod '+fI(p.cod||0)+'</span>')+'</td>'
       + '<td class="L val-dim">'+esc((p.forn||'').substring(0,30))+'</td>'
       + '<td class="L val-dim">'+esc(p.dep||'')+'</td>'
       + '<td class="val-strong">'+fK(p.valor||0)+'</td>'
@@ -754,7 +754,7 @@ function _vbRenderAplicPagina(){
       + '<td class="L val-dim">'+esc((a.filial||'').substring(0,18))+'</td>'
       + '<td class="L val-dim">'+esc(a.num_verba||'')+'</td>'
       + '<td class="L val-dim">'+fI(a.cod_prod||0)+'</td>'
-      + '<td class="L"><strong>'+esc(a.prod||'')+'</strong>'+(a.embalagem?' <span style="color:var(--text-muted);font-size:10px;">'+esc(a.embalagem)+'</span>':'')+'</td>'
+      + '<td class="L"><strong>'+esc(a.prod||'')+'</strong>'+(a.prod?'':' <span style="color:var(--text-muted);">sem descrição</span>')+(a.embalagem?' <span style="color:var(--text-muted);font-size:10px;">'+esc(a.embalagem)+'</span>':'')+'</td>'
       + '<td class="L val-dim">'+esc((a.forn||'').substring(0,28))+'</td>'
       + '<td class="L val-dim">'+esc(a.dep||'')+'</td>'
       + '<td class="val-dim">'+(ca==null?'—':fB(ca,2))+'</td>'
@@ -1169,14 +1169,15 @@ function _agregarPivot(){
       colMap.set(ck, {fat_brt:0, fat_liq:0, devol:0, cmv:0, lucro:0, qt_v:0, nfs_v:0, cli:0});
     }
     const cell = colMap.get(ck);
-    cell.fat_brt += ln[c.v_brt];
-    cell.fat_liq += ln[c.v_liq];
-    cell.devol   += ln[c.v_dev];
-    cell.cmv     += ln[c.v_cmv];
-    cell.lucro   += ln[c.v_luc];
-    cell.qt_v    += ln[c.v_qt];
-    cell.nfs_v   += ln[c.v_nfs];
-    cell.cli     += ln[c.v_cli];
+    // `|| 0` protege contra cubos sem campos (cubo CP antigo não tem v_nfs/v_cli)
+    cell.fat_brt += ln[c.v_brt] || 0;
+    cell.fat_liq += ln[c.v_liq] || 0;
+    cell.devol   += ln[c.v_dev] || 0;
+    cell.cmv     += ln[c.v_cmv] || 0;
+    cell.lucro   += ln[c.v_luc] || 0;
+    cell.qt_v    += ln[c.v_qt]  || 0;
+    cell.nfs_v   += ln[c.v_nfs] || 0;
+    cell.cli     += ln[c.v_cli] || 0;
   }
   totalProc = linhasFato.length;
 

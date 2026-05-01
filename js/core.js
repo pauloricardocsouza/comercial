@@ -216,7 +216,7 @@ const AUTH_MODE = 'firebase'; // 'mock' | 'firebase'
 // Convenção:
 //   X.x → alteração grande (quebra de compatibilidade, nova feature grande)
 //   x.X → alteração suave (fix, ajuste visual, pequeno refinamento)
-const APP_VERSION = '4.9-comercial';
+const APP_VERSION = '4.11-comercial';
 
 // ================================================================
 // HELPERS DE CHART.JS — compatíveis com Safari/iOS (sem spread ops)
@@ -1223,7 +1223,30 @@ function _normalizarCubo(c){
 
   // Cubo CP: dim={dep,sec,cat,forn,sup,rca,sku} + fato_vendas={campos,linhas}
   if(c.dim && c.fato_vendas){
-    // Mapeamento de nomes de dimensões: CP usa abreviações
+    // Mapeamento COMPLETO: nomes do formato antigo (CP) → schema novo 2.0 (ATP)
+    // Usado tanto pra remapear chaves de dim/dimensoes quanto pra remapear
+    // os campos do array `fato_vendas.campos` (que viram colunas de cada linha).
+    const mapCampos = {
+      // Dimensões antigas → novas
+      'dep':    'dep',    // mantém ('dep' é o esperado em schema 2.0)
+      'sec':    'sec',    // schema 2.0 usa 'sec' (não tem em ATP, mas mantém)
+      'cat':    'cat',
+      'forn':   'forn',
+      'sup':    'sup',
+      'rca':    'vend',   // ⚠ schema 2.0 chama de 'vend'
+      'sku':    'sku',
+      'filial': 'lj',     // ⚠ schema 2.0 chama de 'lj'
+      'ym':     'ym',
+      // Métricas antigas → novas
+      'fat_brt':'v_brt',
+      'fat_liq':'v_liq',
+      'devol':  'v_dev',
+      'cmv':    'v_cmv',
+      'lucro':  'v_luc',
+      'qt':     'v_qt',
+      // Schema antigo não tem v_nfs, v_cli; deixa como undefined que vira 0 nas somas
+    };
+    // Mapeamento de nomes de chaves de dimensoes (formato exposto pra UI)
     const mapDim = {
       'dep':'depto', 'sec':'secao', 'cat':'categoria',
       'forn':'fornecedor', 'sup':'supervisor', 'rca':'vendedor', 'sku':'sku_vendas'
@@ -1258,11 +1281,25 @@ function _normalizarCubo(c){
           return { cod: f.slug || f.cod, nome: f.nome };
         })
       };
+    } else {
+      // Fallback: extrair valores únicos de 'filial' do fato
+      const idxFil = camposFv.indexOf('filial');
+      if(idxFil >= 0){
+        const set = new Set();
+        (fv.linhas || []).forEach(function(linha){
+          if(linha[idxFil]) set.add(linha[idxFil]);
+        });
+        dimensoes.loja = {
+          items: Array.from(set).sort().map(function(l){
+            return { cod: l, nome: l };
+          })
+        };
+      }
     }
 
-    // Reordena os campos do fato_vendas pro nome da dimensão atualizada
-    // (campos como 'dep' → 'depto'). UI usa esses como chave em options.
-    const camposNorm = camposFv.map(function(cmp){ return mapDim[cmp] || cmp; });
+    // Reordena os campos do fato_vendas para o schema novo (lj, v_brt, etc.)
+    // ATENÇÃO: este map afeta as chaves usadas pelo _agregarPivot
+    const camposNorm = camposFv.map(function(cmp){ return mapCampos[cmp] || cmp; });
 
     // Constrói o cubo normalizado
     return Object.assign({}, c, {
@@ -2241,6 +2278,39 @@ async function _initSistema(){
     }
     // Default: ambas recolhidas (não faz nada)
   }, 60);
+  // Restaurar página persistida (quando o user troca de visão de empresa, voltar pra mesma página)
+  setTimeout(_restaurarPaginaPersistida, 80);
+}
+
+/**
+ * Restaura a página onde o usuário estava antes da troca de filial/base.
+ * Lê _paginaAtual do localStorage e simula o click no menu correspondente.
+ * Tolera: página inexistente para a base atual, sem permissão, ou sem dados.
+ */
+function _restaurarPaginaPersistida(){
+  let pg = null;
+  try { pg = localStorage.getItem('_paginaAtual'); } catch(e){}
+  if(!pg || pg === 'home') return; // sem persistência ou já é home
+
+  // Página existe no DOM?
+  const pageEl = document.getElementById('page-'+pg);
+  if(!pageEl) return;
+  // Botão do menu existe e está visível?
+  const sbBtn = document.querySelector('.sb-link[data-p="'+pg+'"]');
+  if(!sbBtn) return;
+  // Foi escondido por permissões?
+  const ocultoPorPerm = sbBtn.style.display === 'none';
+  if(ocultoPorPerm) return;
+  // Permissão do perfil
+  try {
+    const perfil = _getPerfilUsuario();
+    if(perfil && perfil.paginasPermitidas && !perfil.paginasPermitidas.includes(pg)) return;
+  } catch(e){}
+
+  // Simula click no menu (já tem toda a lógica certa de troca de página)
+  try { sbBtn.click(); } catch(e){
+    console.warn('[_restaurarPaginaPersistida] Falha ao restaurar página:', e);
+  }
 }
 
 function _initRunApp(){
@@ -4482,6 +4552,8 @@ document.querySelectorAll('.sb-link[data-p]').forEach(a=>{
     document.getElementById('page-'+pg).classList.add('active');
     if(!renderedPages.has(pg)){renderPage(pg);renderedPages.add(pg);}
     document.getElementById('sidebar').classList.remove('open');
+    // Persistir pra restaurar após troca de filial
+    try { localStorage.setItem('_paginaAtual', pg); } catch(e){}
     _auditLog('page_view', {pagina: pg});
   });
 });

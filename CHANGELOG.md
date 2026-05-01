@@ -4,6 +4,37 @@ Lista das melhorias do sistema de BI da R2 Soluções para o Grupo Pinto Cerquei
 
 ---
 
+## v4.11 · 01/mai/2026
+
+**Bug crítico · Administração não abria**
+
+- Página de Administração lançava `Cannot access 'GPC_DEFAULTS' before initialization`.
+- Causa: o script da página tentava registrar listener no campo de busca de Diagnóstico sem checar se o elemento existia. Quando o elemento estava ausente, o script abortava antes de inicializar a constante de fornecedores GPC, e qualquer acesso posterior à página de Administração caía em erro.
+- Correção: guards (`if(elemento)`) antes dos `addEventListener`.
+
+**UX · Manter página ao trocar visão de empresa**
+
+- Antes: trocar de "ATP" para "Cestão Loja 1" jogava o usuário de volta para a Home.
+- Agora: ao recarregar com nova base, a página em que o usuário estava é restaurada (Estoque continua em Estoque, Vendas em Vendas, etc).
+- Se a página não estiver disponível para a nova base ou o perfil não tiver permissão, cai silenciosamente em Home.
+
+**Verbas · descrição do produto mais robusta**
+
+- Quando a descrição do produto vier vazia do CSV, agora mostra um placeholder com o código no lugar de uma célula em branco.
+
+---
+
+## v4.10 · 01/mai/2026
+
+**Bug crítico · Análise Dinâmica em GPC Consolidado**
+
+- A página "Análise Dinâmica" estava retornando R$ 0 em todas as células e labels "undefined" quando a base selecionada era GPC Consolidado.
+- Causa: o cubo OLAP de CP (usado como fallback do Consolidado) tem schema antigo com nomes de campos diferentes (`fat_liq`, `lucro`, `rca`, `filial`) do que o motor de pivot espera (`v_liq`, `v_luc`, `vend`, `lj`).
+- O normalizador `_normalizarCubo` mapeava só os nomes das dimensões, mas não os campos das métricas — resultado: o motor lia `undefined` em vez dos números.
+- Correção: mapeamento completo de todos os campos (dimensões + métricas + filial). Adicionado fallback `|| 0` nas somas pra tolerar campos ausentes (cubo CP não tem `v_nfs`/`v_cli`).
+
+---
+
 ## v4.9 · 01/mai/2026
 
 **Auditoria profunda · correção de referências órfãs**
