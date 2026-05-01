@@ -13081,58 +13081,79 @@ function renderVerbas(){
   if(!Vb){
     cont.innerHTML = '<div class="ph"><div class="pk">Compras · Análise</div><h2><em>Verbas</em> e descontos comerciais</h2></div>'
       + '<div class="ph-sep"></div><div class="page-body">'
-      + '<div class="cc" style="text-align:center;color:var(--text-muted);padding:30px;">Dados de verbas não carregados.</div></div>';
+      + '<div class="cc" style="text-align:center;color:var(--text-muted);padding:30px;">Dados de verbas não carregados pra esta base.</div></div>';
     return;
   }
 
   const meta = Vb.meta || {};
-  const resumo = (Vb.resumo && Vb.resumo.ATP) || {};
-  const totalGrupo = (Vb.resumo && Vb.resumo._total_grupo) || {};
+  const resumo = Vb.resumo || {};
   const mensal = Vb.mensal || [];
   const deptos = Vb.por_departamento || [];
   const secoes = Vb.por_secao || [];
-  const forn = Vb.por_fornecedor || [];
-  const produtos = Vb.por_produto_top || [];
-  const conc = Vb.concentracao || {};
+  const forns  = Vb.por_fornecedor || [];
+  const prodTop = Vb.por_produto_top || [];
+  const conc   = Vb.concentracao || {};
+  const aplic  = Vb.aplicacoes || [];
+  const compl  = meta.completude || {};
+
+  // Sem dados (placeholder)
+  if((meta.linhas_processadas||0) === 0){
+    cont.innerHTML = '<div class="ph"><div class="pk">Compras · Análise</div><h2><em>Verbas</em> e descontos comerciais</h2></div>'
+      + '<div class="ph-sep"></div><div class="page-body">'
+      + '<div class="cc" style="text-align:center;color:var(--text-muted);padding:30px;">'
+      + (esc(meta.aviso || 'Sem dados de verba neste extrato pra esta base.'))
+      + '</div></div>';
+    return;
+  }
 
   let html = '<div class="ph"><div class="pk">Compras · Análise</div><h2><em>Verbas</em> e descontos comerciais</h2></div>';
   html += '<div class="ph-sep"></div>';
   html += '<div class="page-body">';
 
-  // Banner com escopo + modelo
+  // ─── Banner de escopo ───
+  const periodo = meta.periodo || {};
   html += '<div style="background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:10px 14px;margin-bottom:14px;font-size:12px;color:var(--text-dim);">'
        +   '<strong>Modelo:</strong> '+esc(meta.modelo||'verba como redução de custo')+' · '
-       +   '<strong>Período:</strong> '+esc((meta.periodo||{}).inicio||'?')+' a '+esc((meta.periodo||{}).fim||'?')+' · '
+       +   '<strong>Período:</strong> '+esc(periodo.inicio||'?')+' a '+esc(periodo.fim||'?')+' · '
        +   fI(meta.linhas_processadas||0)+' aplicações · '
-       +   'gerado em '+esc((meta.geradoEm||'').substring(0,16).replace('T',' '))
+       +   'gerado em '+esc((meta.gerado_em||'').substring(0,16).replace('T',' '))
        + '</div>';
 
-  // Aviso TIPO_VERBA vazio (limitação do WinThor)
-  if(meta.alerta_tipo_vazio){
-    html += '<div style="background:var(--warning-bg);border:1px solid var(--warning);border-radius:8px;padding:10px 14px;margin-bottom:14px;font-size:11px;color:var(--warning);line-height:1.5;">'
-         +   '<strong>Limitação WinThor:</strong> '+esc(meta.alerta_tipo_vazio).substring(0, 200)
+  // ─── Avisos de completude ───
+  if(compl && compl.tem_custo_antes_depois_pct < 80){
+    html += '<div style="background:#fef3c7;border:1px solid #d97706;border-radius:8px;padding:10px 14px;margin-bottom:10px;font-size:11.5px;color:#92400e;line-height:1.5;">'
+         +   '<strong>Atenção:</strong> Custo antes/depois preenchido em apenas '+fP(compl.tem_custo_antes_depois_pct,1)+' das aplicações nesta base. '
+         +   'Análises de redução de custo refletem só as linhas com dado.'
          + '</div>';
   }
-
-  // Alerta concentração (se top_1 > 25% ou top_3 > 50%)
-  if(conc.alerta_concentracao){
-    html += '<div style="background:#fef3c7;border:1px solid #d97706;border-radius:8px;padding:12px 14px;margin-bottom:14px;display:flex;align-items:start;gap:10px;">'
-         +   '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#92400e" stroke-width="2" style="flex-shrink:0;margin-top:1px;"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>'
-         +   '<div style="font-size:12px;color:#92400e;line-height:1.5;"><strong>Concentração:</strong> '+esc(conc.alerta_concentracao)+'</div>'
+  if(compl && compl.tem_tipo_verba === 0){
+    html += '<div style="background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:8px 14px;margin-bottom:14px;font-size:11.5px;color:var(--text-muted);line-height:1.5;">'
+         +   '<strong>Limitação WinThor:</strong> coluna TIPO_VERBA vem 100% vazia, sem subclassificação por natureza.'
          + '</div>';
+  } else {
+    html += '<div style="margin-bottom:14px;"></div>';
   }
 
-  // KPIs (6)
-  html += '<div class="kg" style="grid-template-columns:repeat(6,1fr);margin-bottom:14px;" id="kg-vb"></div>';
+  // ─── KPIs (6 cards) ───
+  const r = resumo;
+  html += '<div class="kg" style="grid-template-columns:repeat(6,1fr);margin-bottom:14px;">';
+  html += '<div class="kc"><div class="kl">Total aplicado</div><div class="kv">'+fK(r.total_aplicado||0)+'</div><div class="ku">'+(periodo.meses||0)+' meses</div></div>';
+  html += '<div class="kc"><div class="kl">Aplicações</div><div class="kv">'+fI(r.aplicacoes||0)+'</div><div class="ku">'+fI(r.verbas||0)+' verbas distintas</div></div>';
+  html += '<div class="kc"><div class="kl">Fornecedores</div><div class="kv">'+fI(r.fornecedores||0)+'</div><div class="ku">com verba aplicada</div></div>';
+  html += '<div class="kc"><div class="kl">Produtos</div><div class="kv">'+fI(r.produtos||0)+'</div><div class="ku">distintos beneficiados</div></div>';
+  html += '<div class="kc"><div class="kl">Departamentos</div><div class="kv">'+fI(r.departamentos||0)+'</div><div class="ku">'+fI(r.secoes||0)+' seções</div></div>';
+  if(r.reducao_custo_total_pct != null){
+    html += '<div class="kc"><div class="kl">Redução de custo</div><div class="kv">'+fP(r.reducao_custo_total_pct,2)+'</div><div class="ku">média ponderada</div></div>';
+  } else {
+    html += '<div class="kc"><div class="kl">Redução de custo</div><div class="kv" style="color:var(--text-muted);">—</div><div class="ku">sem dados</div></div>';
+  }
+  html += '</div>';
 
-  // KPIs cruzamento (2 cards mais largos com info de impacto na margem)
-  html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px;" id="kg-vb-cruz"></div>';
-
-  // Linha 1: mensal (valor + % rebaixa) + por departamento
+  // ─── Linha 1: Mensal + Departamento ───
   html += '<div class="row2eq" style="margin-bottom:14px;">'
        +    '<div class="cc">'
        +      '<div class="cct">Aplicação mensal de verbas</div>'
-       +      '<div class="ccs">Valor aplicado por mês + % de rebaixa ponderado</div>'
+       +      '<div class="ccs">Valor aplicado por mês · linha mostra % de redução de custo (quando disponível)</div>'
        +      '<div style="height:280px;"><canvas id="c-vb-mensal"></canvas></div>'
        +    '</div>'
        +    '<div class="cc">'
@@ -13142,204 +13163,388 @@ function renderVerbas(){
        +    '</div>'
        + '</div>';
 
-  // Linha 2: top fornecedores + top seções
+  // ─── Linha 2: Top fornecedores + Top seções ───
   html += '<div class="row2eq" style="margin-bottom:14px;">'
        +    '<div class="cc">'
        +      '<div class="cct">Top 10 fornecedores · valor aplicado</div>'
        +      '<div class="ccs">Quem mais traz verba pra rede</div>'
-       +      '<div style="height:280px;"><canvas id="c-vb-forn"></canvas></div>'
+       +      '<div style="height:300px;"><canvas id="c-vb-forn"></canvas></div>'
        +    '</div>'
        +    '<div class="cc">'
        +      '<div class="cct">Top 10 seções · valor aplicado</div>'
        +      '<div class="ccs">Categorias de produto que mais recebem rebaixa</div>'
-       +      '<div style="height:280px;"><canvas id="c-vb-secao"></canvas></div>'
+       +      '<div style="height:300px;"><canvas id="c-vb-secao"></canvas></div>'
        +    '</div>'
        + '</div>';
 
-  // Tabela fornecedores
+  // ─── Concentração ───
   html += '<div class="cc" style="margin-bottom:14px;">'
-       +    '<div class="cct">Fornecedores com verba (ranking completo)</div>'
-       +    '<div class="ccs">Ordenado por valor aplicado · "rebate %" = verba ÷ compras totais do fornecedor</div>'
-       +    '<div class="tscroll"><table class="t" id="t-vb-forn">'
+       +   '<div class="cct">Concentração de verbas</div>'
+       +   '<div class="ccs">Quanto do total está concentrado nos primeiros</div>'
+       +   '<div style="display:grid;grid-template-columns:repeat(7,1fr);gap:8px;margin-top:10px;font-size:12px;">'
+       +     _vbConcCard('Top 1 forn.', conc.top_1_fornecedor_pct)
+       +     _vbConcCard('Top 3 forn.', conc.top_3_fornecedores_pct)
+       +     _vbConcCard('Top 5 forn.', conc.top_5_fornecedores_pct)
+       +     _vbConcCard('Top 10 forn.', conc.top_10_fornecedores_pct)
+       +     _vbConcCard('Top 1 dep.', conc.top_1_dep_pct, conc.top_1_dep_nome)
+       +     _vbConcCard('Top 3 deps.', conc.top_3_deps_pct)
+       +     '<div style="background:var(--surface-2);border:1px solid var(--border);border-radius:6px;padding:10px;text-align:center;"><div style="color:var(--text-muted);font-size:10px;text-transform:uppercase;letter-spacing:.05em;">Departamento líder</div><div style="font-weight:700;color:var(--text);margin-top:4px;font-size:13px;">'+esc(conc.top_1_dep_nome||'—')+'</div></div>'
+       +   '</div>'
+       + '</div>';
+
+  // ─── Tabela fornecedores ───
+  html += '<div class="cc" style="margin-bottom:14px;">'
+       +    '<div class="cct">Fornecedores com verba · ranking completo</div>'
+       +    '<div class="ccs">'+fI(forns.length)+' fornecedores ordenados por valor aplicado</div>'
+       +    '<div class="tscroll" style="max-height:380px;"><table class="t" id="t-vb-forn">'
        +      '<thead><tr>'
-       +      '<th class="L" style="width:24px;">#</th>'
+       +      '<th class="L" style="width:30px;">#</th>'
        +      '<th class="L">Cód.</th><th class="L">Fornecedor</th>'
-       +      '<th>Verba aplicada</th><th>Compras totais</th><th>Rebate %</th>'
-       +      '<th>% Rebaixa pond.</th>'
-       +      '<th>NF Verbas</th><th>Aplicações</th>'
+       +      '<th>Verba aplicada</th><th>% do total</th>'
+       +      '<th>Aplicações</th><th>Verbas</th><th>Produtos</th>'
        +      '</tr></thead><tbody id="tb-vb-forn"></tbody></table></div>'
        + '</div>';
 
-  // Tabela top produtos com cruzamento de margem (mostra ganho real)
+  // ─── Tabela top produtos ───
   html += '<div class="cc" style="margin-bottom:14px;">'
-       +    '<div class="cct">Top 50 produtos · ganho efetivo de margem</div>'
-       +    '<div class="ccs">Produto com verba: margem real (com verba) - margem aparente (sem verba) = ganho em pontos percentuais</div>'
-       +    '<div class="tscroll"><table class="t" id="t-vb-prod">'
+       +    '<div class="cct">Top 50 produtos · maiores valores em verba</div>'
+       +    '<div class="ccs">Produtos que mais receberam aplicação no período</div>'
+       +    '<div class="tscroll" style="max-height:380px;"><table class="t" id="t-vb-prod">'
        +      '<thead><tr>'
-       +      '<th class="L" style="width:24px;">#</th>'
-       +      '<th class="L">Cód.</th><th class="L">Produto</th><th class="L">Fornecedor</th>'
-       +      '<th>Verba</th><th>Venda líq.</th>'
-       +      '<th>Margem aparente</th><th>Margem real</th><th>Ganho (pp)</th>'
+       +      '<th class="L" style="width:30px;">#</th>'
+       +      '<th class="L">Cód.</th><th class="L">Produto</th><th class="L">Fornecedor</th><th class="L">Depto.</th>'
+       +      '<th>Verba aplicada</th><th>Aplicações</th><th>Redução custo %</th>'
        +      '</tr></thead><tbody id="tb-vb-prod"></tbody></table></div>'
        + '</div>';
 
-  // Tabela departamentos
-  html += '<div class="cc">'
-       +    '<div class="cct">Resumo por departamento</div>'
-       +    '<div class="tscroll"><table class="t" id="t-vb-dept">'
+  // ─── Quadro filtrável (aplicações detalhadas) ───
+  html += '<div class="cc" style="margin-bottom:14px;">'
+       +    '<div class="cct">Aplicações detalhadas · filtro livre</div>'
+       +    '<div class="ccs">Cada linha = uma aplicação de verba a um item · '+fI(aplic.length)+' registros</div>'
+       +    '<div style="display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin-top:14px;margin-bottom:10px;">'
+       +      '<div><label style="display:block;font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:3px;">Mês</label><select id="f-vb-ym" style="width:100%;padding:7px 8px;border:1px solid var(--border);border-radius:5px;font-size:12px;background:var(--surface);color:var(--text);"></select></div>'
+       +      '<div><label style="display:block;font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:3px;">Filial</label><select id="f-vb-filial" style="width:100%;padding:7px 8px;border:1px solid var(--border);border-radius:5px;font-size:12px;background:var(--surface);color:var(--text);"></select></div>'
+       +      '<div><label style="display:block;font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:3px;">Departamento</label><select id="f-vb-dep" style="width:100%;padding:7px 8px;border:1px solid var(--border);border-radius:5px;font-size:12px;background:var(--surface);color:var(--text);"></select></div>'
+       +      '<div><label style="display:block;font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:3px;">Fornecedor</label><select id="f-vb-forn" style="width:100%;padding:7px 8px;border:1px solid var(--border);border-radius:5px;font-size:12px;background:var(--surface);color:var(--text);"></select></div>'
+       +      '<div><label style="display:block;font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:3px;">Buscar produto</label><input type="text" id="f-vb-q" placeholder="código ou nome…" style="width:100%;padding:7px 8px;border:1px solid var(--border);border-radius:5px;font-size:12px;background:var(--surface);color:var(--text);"></div>'
+       +    '</div>'
+       +    '<div id="f-vb-summary" style="font-size:11px;color:var(--text-muted);margin-bottom:8px;"></div>'
+       +    '<div class="tscroll" style="max-height:520px;"><table class="t" id="t-vb-aplic">'
        +      '<thead><tr>'
-       +      '<th class="L">Departamento</th>'
-       +      '<th>Valor</th><th>Aplicações</th><th>Fornecedores</th>'
-       +      '<th>Produtos</th><th>% Rebaixa pond.</th>'
-       +      '</tr></thead><tbody id="tb-vb-dept"></tbody></table></div>'
+       +      '<th class="L">Data</th><th class="L">Filial</th><th class="L">Verba</th>'
+       +      '<th class="L">Cód.</th><th class="L">Produto</th>'
+       +      '<th class="L">Fornecedor</th><th class="L">Departamento</th>'
+       +      '<th>Custo antes</th><th>Verba</th><th>Custo depois</th><th>% rebaixa</th>'
+       +      '</tr></thead><tbody id="tb-vb-aplic"></tbody></table></div>'
+       +    '<div id="f-vb-pager" style="margin-top:10px;display:flex;align-items:center;justify-content:space-between;font-size:11.5px;color:var(--text-muted);"></div>'
        + '</div>';
 
-  html += '</div>';
+  html += '</div>'; // page-body
   cont.innerHTML = html;
 
-  // ─── KPIs ───
-  document.getElementById('kg-vb').innerHTML = kgHtml([
-    {l:'Total aplicado',     v:fK(resumo.total_aplicado||0), s:fI(resumo.aplicacoes||0)+' aplicações', cls:'up'},
-    {l:'Verbas distintas',   v:fI(resumo.verbas||0), s:'NFs de verba'},
-    {l:'Fornecedores',       v:fI(resumo.fornecedores||0), s:'com verba ativa'},
-    {l:'Produtos cobertos',  v:fI(resumo.produtos||0), s:'SKUs únicos'},
-    {l:'% Rebaixa ponderado', v:fP(resumo.perc_rebaixa_ponderado||0), s:'média ponderada por valor'},
-    {l:'Top 1 forn. concentr.', v:fP(conc.top_1_fornecedor_pct||0), s:'do total · top 3: '+fP(conc.top_3_fornecedores_pct||0), cls: (conc.top_1_fornecedor_pct||0)>25?'hl':''},
-  ]);
+  // ═══════════════════════════════════════════════════════════════
+  // GRÁFICOS
+  // ═══════════════════════════════════════════════════════════════
 
-  // KPIs cruzamento
-  document.getElementById('kg-vb-cruz').innerHTML = ''
-    + '<div style="background:#ecfdf5;border:1px solid #10b981;border-radius:8px;padding:12px 14px;">'
-    +   '<div style="font-size:11px;color:#065f46;font-weight:600;margin-bottom:4px;">REBATE EFETIVO · TODAS AS COMPRAS</div>'
-    +   '<div style="font-size:20px;font-weight:700;color:#065f46;">'+fP(totalGrupo.rebate_pct_geral||0)+'</div>'
-    +   '<div style="font-size:11px;color:#047857;margin-top:4px;">'+fK(totalGrupo.total_aplicado||0)+' verba ÷ '+fK(totalGrupo.compras_total_geral||0)+' compras totais</div>'
-    + '</div>'
-    + '<div style="background:#eff6ff;border:1px solid #3b82f6;border-radius:8px;padding:12px 14px;">'
-    +   '<div style="font-size:11px;color:#1e40af;font-weight:600;margin-bottom:4px;">REBATE NOS FORNECEDORES COM VERBA</div>'
-    +   '<div style="font-size:20px;font-weight:700;color:#1e40af;">'+fP(totalGrupo.rebate_pct_forn_com_verba||0)+'</div>'
-    +   '<div style="font-size:11px;color:#1d4ed8;margin-top:4px;">'+fK(totalGrupo.total_aplicado||0)+' verba ÷ '+fK(totalGrupo.compras_forn_com_verba||0)+' compras dos fornecedores ativos</div>'
-    + '</div>';
-
-  // ─── Chart mensal (valor + linha de % rebaixa) ───
-  if(mensal.length){
-    mkC('c-vb-mensal', {data:{labels:mensal.map(function(m){return _ymToLabel(m.ym);}),
-      datasets:[
-        {type:'bar', label:'Valor aplicado', data:mensal.map(function(m){return m.valor;}),
-          backgroundColor:_PAL.ok+'CC', borderRadius:4, yAxisID:'y'},
-        {type:'line', label:'% Rebaixa pond.', data:mensal.map(function(m){return m.perc_rebaixa_pond;}),
-          borderColor:_PAL.hl, backgroundColor:'rgba(245,134,52,.1)', tension:.3, pointRadius:5, yAxisID:'y2'},
-      ]},
-      options:{responsive:true, maintainAspectRatio:false,
-        plugins:{legend:{position:'bottom', labels:{padding:10, usePointStyle:true, boxWidth:8}},
-                 tooltip:{callbacks:{label:function(ctx){
-                   if(ctx.dataset.label === 'Valor aplicado'){
-                     const m = mensal[ctx.dataIndex];
-                     return [fB(ctx.raw), fI(m.aplicacoes||0)+' aplicações · '+fI(m.fornecedores||0)+' fornecedores'];
-                   }
-                   return ctx.dataset.label+': '+fP(ctx.raw);
-                 }}}},
-        scales:{
-          y:{beginAtZero:true, position:'left', ticks:{callback:function(v){return fAbbr(v);}}, title:{display:true,text:'Valor (R$)'}},
-          y2:{position:'right', grid:{display:false}, ticks:{callback:function(v){return fP(v);}}, title:{display:true,text:'% Rebaixa'}},
-          x:{grid:{display:false}}
-        }}});
+  // Gráfico mensal: barras valor + linha % redução
+  const ctxMes = document.getElementById('c-vb-mensal');
+  if(ctxMes && mensal.length){
+    new Chart(ctxMes, {
+      type: 'bar',
+      data: {
+        labels: mensal.map(m => m.ym),
+        datasets: [
+          {
+            type: 'bar',
+            label: 'Valor aplicado',
+            data: mensal.map(m => m.valor||0),
+            backgroundColor: 'rgba(245,134,52,0.7)',
+            borderColor: 'rgba(245,134,52,1)',
+            borderWidth: 1,
+            yAxisID: 'y',
+          },
+          {
+            type: 'line',
+            label: '% redução custo',
+            data: mensal.map(m => m.reducao_custo_pct),
+            borderColor: 'rgba(48,86,159,1)',
+            backgroundColor: 'rgba(48,86,159,0.1)',
+            tension: 0.3,
+            yAxisID: 'y1',
+            spanGaps: true,
+          }
+        ]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        scales: {
+          y: { position:'left', ticks:{callback:v=>fAbbr(v)} },
+          y1: { position:'right', grid:{drawOnChartArea:false}, ticks:{callback:v=>v+'%'} }
+        },
+        plugins: { legend:{position:'bottom',labels:{boxWidth:12,font:{size:11}}} }
+      }
+    });
   }
 
-  // ─── Chart departamento ───
-  if(deptos.length){
-    const dpSorted = deptos.slice().sort(function(a,b){return b.valor - a.valor;});
-    const dC = ['#2E476F','#F58634','#109854','#7c3aed','#DC7529','#1E3558','#0891B2','#94a3b8'];
-    mkC('c-vb-depto', {type:'doughnut',
-      data:{labels:dpSorted.map(function(d){return d.nome;}),
-        datasets:[{data:dpSorted.map(function(d){return d.valor;}), backgroundColor:dC, borderWidth:2, borderColor:'#fff'}]},
-      options:{responsive:true, maintainAspectRatio:false,
-        plugins:{legend:{position:'right', labels:{padding:8, usePointStyle:true, boxWidth:8, font:{size:11}}},
-                 tooltip:{callbacks:{label:function(ctx){
-                   const d = dpSorted[ctx.dataIndex];
-                   return [ctx.label+': '+fK(ctx.raw), fI(d.aplicacoes||0)+' apl. · '+fI(d.produtos||0)+' SKUs · '+fP(d.perc_rebaixa_pond||0)+' rebaixa'];
-                 }}}}}});
+  // Gráfico por departamento: pizza
+  const ctxDep = document.getElementById('c-vb-depto');
+  if(ctxDep && deptos.length){
+    const cores = ['#f58634','#30569f','#06b6d4','#10b981','#f59e0b','#8b5cf6','#ef4444','#64748b','#84cc16','#ec4899'];
+    new Chart(ctxDep, {
+      type: 'doughnut',
+      data: {
+        labels: deptos.map(d => d.nome),
+        datasets: [{
+          data: deptos.map(d => d.valor||0),
+          backgroundColor: deptos.map((_,i) => cores[i % cores.length]),
+          borderWidth: 1,
+        }]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: {
+          legend: { position:'right', labels:{boxWidth:10,font:{size:11}} },
+          tooltip: { callbacks: { label: ctx => ctx.label+': '+fK(ctx.parsed)+' ('+(ctx.parsed/(r.total_aplicado||1)*100).toFixed(1)+'%)' } }
+        }
+      }
+    });
   }
 
-  // ─── Chart top fornecedores (barras horizontais) ───
-  const fornTop10 = forn.slice().sort(function(a,b){return b.valor - a.valor;}).slice(0, 10);
-  if(fornTop10.length){
-    mkC('c-vb-forn', {type:'bar',
-      data:{labels:fornTop10.map(function(f){return (f.nome||'?').substring(0, 28);}),
-        datasets:[{label:'Verba aplicada', data:fornTop10.map(function(f){return f.valor;}),
-          backgroundColor:_PAL.ac+'CC', borderRadius:4}]},
-      options:{indexAxis:'y', responsive:true, maintainAspectRatio:false,
-        plugins:{legend:{display:false},
-                 tooltip:{callbacks:{label:function(ctx){
-                   const f = fornTop10[ctx.dataIndex];
-                   return [fB(ctx.raw), 'Rebate: '+fP(f.rebate_pct||0)+' · % rebaixa: '+fP(f.perc_rebaixa_pond||0)];
-                 }}}},
-        scales:{x:{ticks:{callback:function(v){return fAbbr(v);}}},
-                y:{grid:{display:false}, ticks:{font:{size:10}}}}}});
+  // Top fornecedores
+  const ctxForn = document.getElementById('c-vb-forn');
+  if(ctxForn && forns.length){
+    const top = forns.slice(0, 10);
+    new Chart(ctxForn, {
+      type: 'bar',
+      data: {
+        labels: top.map(f => f.nome.substring(0,28) + (f.nome.length>28?'…':'')),
+        datasets: [{
+          label: 'Verba aplicada',
+          data: top.map(f => f.valor),
+          backgroundColor: 'rgba(48,86,159,0.7)',
+          borderColor: 'rgba(48,86,159,1)',
+          borderWidth: 1,
+        }]
+      },
+      options: {
+        indexAxis: 'y', responsive: true, maintainAspectRatio: false,
+        scales: { x: { ticks:{callback:v=>fAbbr(v)} } },
+        plugins: { legend:{display:false}, tooltip:{callbacks:{label:ctx=>fK(ctx.parsed.x)}} }
+      }
+    });
   }
 
-  // ─── Chart top seções ───
-  const secTop10 = secoes.slice().sort(function(a,b){return b.valor - a.valor;}).slice(0, 10);
-  if(secTop10.length){
-    mkC('c-vb-secao', {type:'bar',
-      data:{labels:secTop10.map(function(s){return s.nome_sec;}),
-        datasets:[{label:'Verba aplicada', data:secTop10.map(function(s){return s.valor;}),
-          backgroundColor:_PAL.hl+'CC', borderRadius:4}]},
-      options:{indexAxis:'y', responsive:true, maintainAspectRatio:false,
-        plugins:{legend:{display:false},
-                 tooltip:{callbacks:{label:function(ctx){
-                   const s = secTop10[ctx.dataIndex];
-                   return [fB(ctx.raw), s.nome_dep+' · '+fI(s.produtos||0)+' SKUs · '+fP(s.perc_rebaixa_pond||0)+' rebaixa'];
-                 }}}},
-        scales:{x:{ticks:{callback:function(v){return fAbbr(v);}}},
-                y:{grid:{display:false}, ticks:{font:{size:10}}}}}});
+  // Top seções
+  const ctxSec = document.getElementById('c-vb-secao');
+  if(ctxSec && secoes.length){
+    const top = secoes.slice(0, 10);
+    new Chart(ctxSec, {
+      type: 'bar',
+      data: {
+        labels: top.map(s => s.nome_sec.substring(0,28) + (s.nome_sec.length>28?'…':'')),
+        datasets: [{
+          label: 'Verba aplicada',
+          data: top.map(s => s.valor),
+          backgroundColor: 'rgba(245,134,52,0.7)',
+          borderColor: 'rgba(245,134,52,1)',
+          borderWidth: 1,
+        }]
+      },
+      options: {
+        indexAxis: 'y', responsive: true, maintainAspectRatio: false,
+        scales: { x: { ticks:{callback:v=>fAbbr(v)} } },
+        plugins: { legend:{display:false}, tooltip:{callbacks:{label:ctx=>fK(ctx.parsed.x)}} }
+      }
+    });
   }
 
-  // ─── Tabela fornecedores ───
-  const fornSorted = forn.slice().sort(function(a,b){return b.valor - a.valor;});
-  document.getElementById('tb-vb-forn').innerHTML = fornSorted.map(function(f, i){
-    const rebateCls = f.rebate_pct>10 ? 'val-pos' : f.rebate_pct<2 ? 'val-dim' : '';
-    const isTop1 = i === 0;
-    return '<tr'+(isTop1?' style="background:#ecfdf5;"':'')+'>'
-      + '<td class="L" style="color:var(--text-muted);font-weight:700;">'+(i+1)+'</td>'
-      + '<td class="L" style="font-family:JetBrains Mono,monospace;font-size:10px;">#'+esc(f.cod)+'</td>'
+  // ═══════════════════════════════════════════════════════════════
+  // TABELAS
+  // ═══════════════════════════════════════════════════════════════
+
+  const totalForn = r.total_aplicado || 1;
+  document.getElementById('tb-vb-forn').innerHTML = forns.map((f,i) => {
+    return '<tr>'
+      + '<td class="L val-dim">'+(i+1)+'</td>'
+      + '<td class="L val-dim">'+fI(f.cod||0)+'</td>'
       + '<td class="L"><strong>'+esc(f.nome||'')+'</strong></td>'
       + '<td class="val-strong">'+fK(f.valor||0)+'</td>'
-      + '<td class="val-dim">'+fK(f.compras_total||0)+'</td>'
-      + '<td class="'+rebateCls+'"><strong>'+fP(f.rebate_pct||0)+'</strong></td>'
-      + '<td>'+fP(f.perc_rebaixa_pond||0)+'</td>'
-      + '<td class="val-dim">'+fI(f.verbas||0)+'</td>'
+      + '<td class="val-dim">'+fP(f.valor/totalForn*100,1)+'</td>'
       + '<td class="val-dim">'+fI(f.aplicacoes||0)+'</td>'
+      + '<td class="val-dim">'+fI(f.verbas||0)+'</td>'
+      + '<td class="val-dim">'+fI(f.produtos||0)+'</td>'
       + '</tr>';
   }).join('');
 
-  // ─── Tabela produtos com ganho efetivo ───
-  document.getElementById('tb-vb-prod').innerHTML = produtos.slice(0, 50).map(function(p, i){
-    const ganhoCls = p.ganho_pp>=5 ? 'val-pos' : p.ganho_pp>=2 ? '' : 'val-dim';
-    const margAparenteCls = p.margem_aparente<0 ? 'val-neg' : '';
+  document.getElementById('tb-vb-prod').innerHTML = prodTop.slice(0, 50).map((p,i) => {
+    const red = p.reducao_custo_pct;
+    const redCls = red == null ? 'val-dim' : (red > 0 ? 'val-pos' : '');
+    const redTxt = red == null ? '—' : fP(red, 2);
     return '<tr>'
-      + '<td class="L" style="color:var(--text-muted);font-weight:700;">'+(i+1)+'</td>'
-      + '<td class="L" style="font-family:JetBrains Mono,monospace;font-size:10px;">#'+esc(p.cod)+'</td>'
-      + '<td class="L"><div style="font-weight:600;font-size:11px;">'+esc(p.desc||'')+'</div></td>'
-      + '<td class="L" style="font-size:10px;color:var(--text-muted);">'+esc((p.forn||'').substring(0, 24))+'</td>'
-      + '<td>'+fK(p.valor||0)+'</td>'
-      + '<td class="val-dim">'+fK(p.venda_liq||0)+'</td>'
-      + '<td class="'+margAparenteCls+'">'+fP(p.margem_aparente||0)+'</td>'
-      + '<td class="val-pos"><strong>'+fP(p.margem_real||0)+'</strong></td>'
-      + '<td class="'+ganhoCls+'">+'+fP(p.ganho_pp||0)+'</td>'
+      + '<td class="L val-dim">'+(i+1)+'</td>'
+      + '<td class="L val-dim">'+fI(p.cod||0)+'</td>'
+      + '<td class="L"><strong>'+esc(p.desc||'')+'</strong></td>'
+      + '<td class="L val-dim">'+esc((p.forn||'').substring(0,30))+'</td>'
+      + '<td class="L val-dim">'+esc(p.dep||'')+'</td>'
+      + '<td class="val-strong">'+fK(p.valor||0)+'</td>'
+      + '<td class="val-dim">'+fI(p.aplicacoes||0)+'</td>'
+      + '<td class="'+redCls+'">'+redTxt+'</td>'
       + '</tr>';
   }).join('');
 
-  // ─── Tabela departamentos ───
-  document.getElementById('tb-vb-dept').innerHTML = deptos.slice().sort(function(a,b){return b.valor - a.valor;}).map(function(d){
+  // ═══════════════════════════════════════════════════════════════
+  // QUADRO FILTRÁVEL
+  // ═══════════════════════════════════════════════════════════════
+  _vbAplicState = {
+    todos: aplic,
+    pagina: 0,
+    tamPag: 100,
+    filtros: { ym:'', filial:'', dep:'', forn:'', q:'' }
+  };
+
+  // Popular dropdowns com valores únicos das aplicações
+  const ymsSet = new Set(), filSet = new Set(), depSet = new Set(), forSet = new Set();
+  aplic.forEach(a => {
+    if(a.ym) ymsSet.add(a.ym);
+    if(a.cod_filial) filSet.add(a.cod_filial+'|'+(a.filial||''));
+    if(a.cod_dep) depSet.add(a.cod_dep+'|'+(a.dep||''));
+    if(a.cod_forn) forSet.add(a.cod_forn+'|'+(a.forn||''));
+  });
+
+  const fillSel = (id, opts, label) => {
+    const sel = document.getElementById(id);
+    if(!sel) return;
+    let h = '<option value="">'+label+'</option>';
+    opts.forEach(o => {
+      h += '<option value="'+escAttr(o.v)+'">'+esc(o.label)+'</option>';
+    });
+    sel.innerHTML = h;
+  };
+  fillSel('f-vb-ym',
+    Array.from(ymsSet).sort().map(v => ({v:v, label:v})),
+    'Todos os meses');
+  fillSel('f-vb-filial',
+    Array.from(filSet).map(s => { const [c,n]=s.split('|'); return {v:c, label:n+' ('+c+')', _ord:parseInt(c)}; })
+      .sort((a,b)=>a._ord-b._ord),
+    'Todas as filiais');
+  fillSel('f-vb-dep',
+    Array.from(depSet).map(s => { const [c,n]=s.split('|'); return {v:c, label:n+' ('+c+')', _ord:parseInt(c)}; })
+      .sort((a,b)=>a._ord-b._ord),
+    'Todos os departamentos');
+  fillSel('f-vb-forn',
+    Array.from(forSet).map(s => { const [c,n]=s.split('|'); return {v:c, label:n.substring(0,40)+(n.length>40?'…':''), _ord:n}; })
+      .sort((a,b)=>a._ord.localeCompare(b._ord)),
+    'Todos os fornecedores');
+
+  // Listeners
+  ['f-vb-ym','f-vb-filial','f-vb-dep','f-vb-forn'].forEach(id => {
+    const el = document.getElementById(id);
+    if(el) el.addEventListener('change', _vbRenderAplic);
+  });
+  const inpQ = document.getElementById('f-vb-q');
+  if(inpQ){
+    let _vbDeb = null;
+    inpQ.addEventListener('input', () => {
+      clearTimeout(_vbDeb);
+      _vbDeb = setTimeout(_vbRenderAplic, 200);
+    });
+  }
+
+  _vbRenderAplic();
+}
+
+function _vbConcCard(label, val, sub){
+  if(val == null) return '<div style="background:var(--surface-2);border:1px solid var(--border);border-radius:6px;padding:10px;text-align:center;"><div style="color:var(--text-muted);font-size:10px;text-transform:uppercase;letter-spacing:.05em;">'+esc(label)+'</div><div style="font-weight:700;color:var(--text-muted);margin-top:4px;font-size:16px;">—</div></div>';
+  return '<div style="background:var(--surface-2);border:1px solid var(--border);border-radius:6px;padding:10px;text-align:center;"><div style="color:var(--text-muted);font-size:10px;text-transform:uppercase;letter-spacing:.05em;">'+esc(label)+'</div><div style="font-weight:700;color:var(--text);margin-top:4px;font-size:16px;">'+fP(val,1)+'</div>'+(sub?'<div style="font-size:10px;color:var(--text-muted);margin-top:2px;">'+esc(sub)+'</div>':'')+'</div>';
+}
+
+let _vbAplicState = null;
+
+function _vbRenderAplic(){
+  if(!_vbAplicState) return;
+  // Captura filtros
+  _vbAplicState.filtros.ym     = (document.getElementById('f-vb-ym')||{}).value || '';
+  _vbAplicState.filtros.filial = (document.getElementById('f-vb-filial')||{}).value || '';
+  _vbAplicState.filtros.dep    = (document.getElementById('f-vb-dep')||{}).value || '';
+  _vbAplicState.filtros.forn   = (document.getElementById('f-vb-forn')||{}).value || '';
+  _vbAplicState.filtros.q      = ((document.getElementById('f-vb-q')||{}).value || '').toLowerCase().trim();
+  _vbAplicState.pagina = 0;
+
+  const f = _vbAplicState.filtros;
+  let filtrado = _vbAplicState.todos.filter(a => {
+    if(f.ym && a.ym !== f.ym) return false;
+    if(f.filial && String(a.cod_filial) !== f.filial) return false;
+    if(f.dep && String(a.cod_dep) !== f.dep) return false;
+    if(f.forn && String(a.cod_forn) !== f.forn) return false;
+    if(f.q){
+      const hay = ((a.prod||'')+' '+(a.cod_prod||'')+' '+(a.forn||'')).toLowerCase();
+      if(hay.indexOf(f.q) === -1) return false;
+    }
+    return true;
+  });
+
+  _vbAplicState._filtrado = filtrado;
+
+  // Sumário
+  const totalVal = filtrado.reduce((s,a) => s + (a.vl_aplicado||0), 0);
+  const sumEl = document.getElementById('f-vb-summary');
+  if(sumEl){
+    sumEl.innerHTML = '<strong>'+fI(filtrado.length)+'</strong> aplicações · '
+      + '<strong>'+fK(totalVal)+'</strong> em verba'
+      + (filtrado.length !== _vbAplicState.todos.length ? ' (de '+fI(_vbAplicState.todos.length)+' totais)' : '');
+  }
+
+  _vbRenderAplicPagina();
+}
+
+function _vbRenderAplicPagina(){
+  const f = _vbAplicState._filtrado || [];
+  const tb = document.getElementById('tb-vb-aplic');
+  if(!tb) return;
+  const ini = _vbAplicState.pagina * _vbAplicState.tamPag;
+  const fim = Math.min(ini + _vbAplicState.tamPag, f.length);
+  const pag = f.slice(ini, fim);
+
+  tb.innerHTML = pag.map(a => {
+    const red = a.perc_rebaixa;
+    const redCls = (red == null || red === 0) ? 'val-dim' : (red > 0 ? 'val-pos' : '');
+    const redTxt = (red == null) ? '—' : fP(red, 2);
+    const ca = a.custo_fin_antes;
+    const cd = a.custo_fin_depois;
     return '<tr>'
-      + '<td class="L"><strong>'+esc(d.nome)+'</strong></td>'
-      + '<td class="val-strong">'+fK(d.valor||0)+'</td>'
-      + '<td class="val-dim">'+fI(d.aplicacoes||0)+'</td>'
-      + '<td class="val-dim">'+fI(d.fornecedores||0)+'</td>'
-      + '<td class="val-dim">'+fI(d.produtos||0)+'</td>'
-      + '<td>'+fP(d.perc_rebaixa_pond||0)+'</td>'
+      + '<td class="L val-dim">'+fD(a.dt)+'</td>'
+      + '<td class="L val-dim">'+esc((a.filial||'').substring(0,18))+'</td>'
+      + '<td class="L val-dim">'+esc(a.num_verba||'')+'</td>'
+      + '<td class="L val-dim">'+fI(a.cod_prod||0)+'</td>'
+      + '<td class="L"><strong>'+esc(a.prod||'')+'</strong>'+(a.embalagem?' <span style="color:var(--text-muted);font-size:10px;">'+esc(a.embalagem)+'</span>':'')+'</td>'
+      + '<td class="L val-dim">'+esc((a.forn||'').substring(0,28))+'</td>'
+      + '<td class="L val-dim">'+esc(a.dep||'')+'</td>'
+      + '<td class="val-dim">'+(ca==null?'—':fB(ca,2))+'</td>'
+      + '<td class="val-strong">'+fB(a.vl_aplicado||0,2)+'</td>'
+      + '<td class="val-dim">'+(cd==null?'—':fB(cd,2))+'</td>'
+      + '<td class="'+redCls+'">'+redTxt+'</td>'
       + '</tr>';
   }).join('');
+
+  // Pager
+  const pgEl = document.getElementById('f-vb-pager');
+  if(pgEl){
+    const totalPag = Math.max(1, Math.ceil(f.length / _vbAplicState.tamPag));
+    pgEl.innerHTML = '<div>Mostrando '+fI(ini+1)+' a '+fI(fim)+' de '+fI(f.length)+'</div>'
+      + '<div style="display:flex;gap:6px;align-items:center;">'
+      + '<button class="bt-mini" onclick="_vbPagAnt()" '+(_vbAplicState.pagina===0?'disabled':'')+' style="padding:5px 10px;border:1px solid var(--border);background:var(--surface);color:var(--text);border-radius:5px;cursor:pointer;font-size:11px;">‹ Anterior</button>'
+      + '<span>Página '+(_vbAplicState.pagina+1)+' de '+totalPag+'</span>'
+      + '<button class="bt-mini" onclick="_vbPagProx()" '+(_vbAplicState.pagina>=totalPag-1?'disabled':'')+' style="padding:5px 10px;border:1px solid var(--border);background:var(--surface);color:var(--text);border-radius:5px;cursor:pointer;font-size:11px;">Próxima ›</button>'
+      + '</div>';
+  }
+}
+
+function _vbPagAnt(){ if(_vbAplicState && _vbAplicState.pagina>0){ _vbAplicState.pagina--; _vbRenderAplicPagina(); } }
+function _vbPagProx(){
+  if(!_vbAplicState) return;
+  const f = _vbAplicState._filtrado || [];
+  const totalPag = Math.max(1, Math.ceil(f.length / _vbAplicState.tamPag));
+  if(_vbAplicState.pagina < totalPag-1){ _vbAplicState.pagina++; _vbRenderAplicPagina(); }
 }
 
 // ────────────────────────────────────────────────────────────────────
