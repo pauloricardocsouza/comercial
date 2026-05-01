@@ -1398,7 +1398,6 @@ textarea.proc-inp{resize:vertical;min-height:44px}
     <button class="sb-link" data-p="vencidos"><span class="sbi"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></span>Vencidos</button>
     <button class="sb-link" data-p="recebimentos"><span class="sbi"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 10 12 15 7 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></span>Recebimentos</button>
     <button class="sb-link" data-p="verbas"><span class="sbi"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg></span>Verbas</button>
-    <button class="sb-link" data-p="cubo"><span class="sbi"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg></span>Análise Dinâmica</button>
     <button class="sb-link" data-p="fornecedores"><span class="sbi"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/></svg></span>Fornecedores</button>
     <button class="sb-link" data-p="forn-gpc"><span class="sbi"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 21h18"/><path d="M5 21V7l8-4v18"/><path d="M19 21V11l-6-4"/><path d="M9 9v.01M9 12v.01M9 15v.01M9 18v.01"/></svg></span>GPC</button>
     <button class="sb-link" data-p="abc"><span class="sbi"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><path d="M7 12l4-4 4 6 5-7"/></svg></span>Curva ABC</button>
@@ -1428,6 +1427,7 @@ textarea.proc-inp{resize:vertical;min-height:44px}
     <button class="sb-link" data-p="v-benchmarking"><span class="sbi"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="11" width="5" height="10" rx="1"/><rect x="9" y="7" width="5" height="14" rx="1"/><rect x="16" y="3" width="5" height="18" rx="1"/></svg></span>Benchmarking</button>
     <button class="sb-link" data-p="v-ano2026"><span class="sbi"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 3"/></svg></span>Análise 2026</button>
     <button class="sb-link" data-p="v-alertas"><span class="sbi"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg></span>Alertas Vendas</button>
+    <button class="sb-link" data-p="cubo"><span class="sbi"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg></span>Análise Dinâmica</button>
     </div>
   </div>
   <div class="sb-sec">
@@ -1985,7 +1985,7 @@ const AUTH_MODE = 'firebase'; // 'mock' | 'firebase'
 // Convenção:
 //   X.x → alteração grande (quebra de compatibilidade, nova feature grande)
 //   x.X → alteração suave (fix, ajuste visual, pequeno refinamento)
-const APP_VERSION = '3.4-comercial';
+const APP_VERSION = '3.5-comercial';
 
 // ================================================================
 // HELPERS DE CHART.JS — compatíveis com Safari/iOS (sem spread ops)
@@ -2374,6 +2374,7 @@ const PAGINAS_CATALOGO = [
   {id:'v-benchmarking',   nome:'Benchmarking',        grupo:'Vendas'},
   {id:'v-ano2026',        nome:'Análise 2026',        grupo:'Vendas'},
   {id:'v-alertas',        nome:'Alertas Vendas',      grupo:'Vendas'},
+  {id:'cubo',             nome:'Análise Dinâmica',    grupo:'Vendas'},
   {id:'historico',    nome:'Histórico',           grupo:'Configuração'},
   {id:'admin',        nome:'Administração',       grupo:'Configuração'},
   {id:'proc',         nome:'Upload de relatórios',grupo:'Processamento'},
@@ -2888,9 +2889,76 @@ function _fetchJsonComGzLegacy(url){
   return _fetchGz(url);
 }
 
+/** Normaliza a estrutura do cubo CP (formato antigo: dim/fato_vendas)
+ *  para o formato ATP (dimensoes/fatos.vendas) que a UI espera. */
+function _normalizarCubo(c){
+  if(!c) return c;
+  // Se já tem fatos.vendas no formato esperado, não mexe
+  if(c.fatos && c.fatos.vendas && c.fatos.vendas.linhas) return c;
+
+  // Cubo CP: dim={dep,sec,cat,forn,sup,rca,sku} + fato_vendas={campos,linhas}
+  if(c.dim && c.fato_vendas){
+    console.log('[_normalizarCubo] convertendo formato CP→ATP');
+    // Mapeamento de nomes de dimensões: CP usa abreviações
+    const mapDim = {
+      'dep':'depto', 'sec':'secao', 'cat':'categoria',
+      'forn':'fornecedor', 'sup':'supervisor', 'rca':'vendedor', 'sku':'sku_vendas'
+    };
+    const dimensoes = {};
+    Object.keys(c.dim).forEach(function(k){
+      const nomeNovo = mapDim[k] || k;
+      dimensoes[nomeNovo] = { items: c.dim[k] || [] };
+    });
+
+    // Construir dimensão tempo a partir dos meses presentes em fato_vendas
+    const fv = c.fato_vendas;
+    const camposFv = fv.campos || [];
+    const idxYm = camposFv.indexOf('ym');
+    if(idxYm >= 0){
+      const ymsSet = new Set();
+      (fv.linhas || []).forEach(function(linha){
+        if(linha[idxYm]) ymsSet.add(linha[idxYm]);
+      });
+      const ymsOrdenados = Array.from(ymsSet).sort();
+      dimensoes.tempo = {
+        items: ymsOrdenados.map(function(ym){
+          return { cod: ym, nome: ym.substring(5,7)+'/'+ym.substring(2,4) };
+        })
+      };
+    }
+
+    // Construir dimensão loja a partir das filiais do meta
+    if(c.meta && Array.isArray(c.meta.filiais)){
+      dimensoes.loja = {
+        items: c.meta.filiais.map(function(f){
+          return { cod: f.slug || f.cod, nome: f.nome };
+        })
+      };
+    }
+
+    // Reordena os campos do fato_vendas pro nome da dimensão atualizada
+    // (campos como 'dep' → 'depto'). UI usa esses como chave em options.
+    const camposNorm = camposFv.map(function(cmp){ return mapDim[cmp] || cmp; });
+
+    // Constrói o cubo normalizado
+    return Object.assign({}, c, {
+      dimensoes: dimensoes,
+      fatos: {
+        vendas: {
+          campos: camposNorm,
+          linhas: fv.linhas || []
+        }
+      },
+      _formato_origem: 'cp'
+    });
+  }
+  return c;
+}
+
 /** Carrega o cubo OLAP sob demanda. Idempotente: se já carregou ou está carregando,
  *  retorna a promessa em andamento.
- *  Note: GRUPO consolidado não tem cubo próprio — fallback pra CP (cobre 4/5 lojas). */
+ *  Note: GRUPO consolidado não tem cubo próprio — fallback pra CP (cobre 4/5 lojas).
+ *  Tem timeout de 45s pra evitar tela travada. */
 function _carregarCuboLazy(){
   if(Cu) return Promise.resolve(Cu);
   if(_cuLoading) return _cuLoading;
@@ -2901,10 +2969,22 @@ function _carregarCuboLazy(){
     slug = 'cp';
     _cuboFallback = 'cp';
   }
-  _cuLoading = _fetchJsonComGz('cubo_'+slug+'.json')
+
+  // Timeout de 45s
+  const timeoutPromise = new Promise(function(_, reject){
+    setTimeout(function(){
+      reject(new Error('Timeout (45s) ao carregar cubo_'+slug+'.json — arquivo pode ser muito grande'));
+    }, 45000);
+  });
+
+  _cuLoading = Promise.race([
+    _fetchJsonComGz('cubo_'+slug+'.json'),
+    timeoutPromise
+  ])
     .then(function(j){
       if(j){
-        Cu = j;
+        // Normaliza a estrutura (CP usa formato antigo)
+        Cu = _normalizarCubo(j);
         Cu._slug_efetivo = slug;
         Cu._fallback_de = _cuboFallback;
         console.log('[_carregarCuboLazy] cubo_'+slug+'.json carregado'+(_cuboFallback?' (fallback de '+_cuboFallback+')':''));
@@ -2915,7 +2995,8 @@ function _carregarCuboLazy(){
     })
     .catch(function(e){
       console.error('[_carregarCuboLazy] erro:', e.message);
-      return null;
+      _cuLoading = null; // permite retry
+      throw e;
     });
   return _cuLoading;
 }
@@ -13935,12 +14016,20 @@ function renderCubo(){
   const cont = document.getElementById('page-cubo');
   if(!cont) return;
 
+  const slug = _getBaseSlug();
+  const slugEfetivo = slug === 'grupo' ? 'cp' : slug;
+  // Tamanho aproximado por base (pra mostrar algo realista no loader)
+  const tamInfo = slugEfetivo === 'cp'
+    ? '~23 MB gzip · 1,4 milhão de linhas'
+    : '~10 MB gzip · 612 mil linhas';
+
   cont.innerHTML = '<div class="ph"><div class="pk">Análise Dinâmica</div><h2>Pivot interativo · <em>cubo OLAP</em></h2></div>'
                  + '<div class="ph-sep"></div>'
                  + '<div class="page-body" id="cubo-body">'
                  +   '<div class="cc" style="text-align:center;padding:40px;">'
                  +     '<div style="font-size:14px;color:var(--text-dim);margin-bottom:8px;">Carregando cubo OLAP…</div>'
-                 +     '<div style="font-size:11px;color:var(--text-muted);">~10 MB gzip · 612 mil linhas de fato</div>'
+                 +     '<div style="font-size:11px;color:var(--text-muted);">'+tamInfo+'</div>'
+                 +     '<div style="font-size:10px;color:var(--text-muted);margin-top:4px;">Arquivos grandes podem levar 30 a 60 segundos. Aguarde.</div>'
                  +     '<div style="margin-top:14px;width:200px;height:4px;background:var(--surface-2);border-radius:2px;margin-left:auto;margin-right:auto;overflow:hidden;">'
                  +       '<div style="width:40%;height:100%;background:var(--accent);animation:pulseLoad 1.4s ease-in-out infinite;"></div>'
                  +     '</div>'
@@ -13955,18 +14044,48 @@ function renderCubo(){
     document.head.appendChild(st);
   }
 
-  _carregarCuboLazy().then(function(c){
-    if(!c){
-      const slug = _getBaseSlug();
-      const arq = slug === 'grupo' ? 'cubo_cp.json' : 'cubo_'+slug+'.json';
-      document.getElementById('cubo-body').innerHTML = '<div class="cc" style="text-align:center;color:var(--text-muted);padding:30px;">'
-        + 'Cubo OLAP indisponível para esta visão. '
-        + 'Arquivo esperado: <code>'+arq+'</code>.'
-        + '</div>';
-      return;
-    }
-    _renderCuboUI(c);
-  });
+  function _exibirErroCubo(msg, detalhe){
+    const arq = slugEfetivo === slug ? 'cubo_'+slug+'.json' : 'cubo_'+slugEfetivo+'.json (fallback)';
+    const body = document.getElementById('cubo-body');
+    if(!body) return;
+    body.innerHTML = '<div class="cc" style="text-align:center;padding:30px;">'
+      + '<div style="font-size:14px;font-weight:700;color:#dc2626;margin-bottom:8px;">⚠ '+esc(msg)+'</div>'
+      + '<div style="font-size:12px;color:var(--text-dim);margin-bottom:14px;">'+(detalhe ? esc(detalhe) : '')+'</div>'
+      + '<div style="font-size:11px;color:var(--text-muted);font-family:JetBrains Mono,monospace;">Arquivo: '+esc(arq)+'</div>'
+      + '<button onclick="Cu=null; _cuLoading=null; renderCubo();" class="ebtn" style="background:var(--accent);color:white;border:none;margin-top:14px;padding:8px 16px;font-size:12px;">Tentar novamente</button>'
+      + '</div>';
+  }
+
+  _carregarCuboLazy()
+    .then(function(c){
+      if(!c){
+        _exibirErroCubo('Cubo OLAP indisponível', 'O arquivo não foi encontrado ou retornou vazio.');
+        return;
+      }
+      // Validação básica: tem dimensões e fato vendas com linhas?
+      const fv = (c.fatos && c.fatos.vendas) || {};
+      if(!fv.linhas || fv.linhas.length === 0){
+        _exibirErroCubo(
+          'Cubo OLAP em formato incompatível',
+          'O arquivo carregou mas não foi possível extrair os dados de vendas. Estrutura esperada: fatos.vendas.linhas. Pode ser uma versão antiga do ETL.'
+        );
+        return;
+      }
+      try {
+        _renderCuboUI(c);
+      } catch(e){
+        console.error('[renderCubo] erro renderizando UI:', e);
+        _exibirErroCubo('Erro ao renderizar cubo', e.message || 'Erro desconhecido');
+      }
+    })
+    .catch(function(e){
+      const msg = (e && e.message) || 'Erro desconhecido';
+      const isTimeout = msg.indexOf('Timeout') >= 0;
+      _exibirErroCubo(
+        isTimeout ? 'Tempo esgotado ao carregar cubo' : 'Erro ao carregar cubo',
+        msg
+      );
+    });
 }
 
 // Constrói índices de dimensões para lookup O(1)
