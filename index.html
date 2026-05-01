@@ -1554,25 +1554,6 @@ textarea.proc-inp{resize:vertical;min-height:44px}
   <div class="page-body">
     <div class="kg" style="grid-template-columns:repeat(4,1fr);" id="kg-cv"></div>
     <div class="cc">
-      <div class="cct">Evolução mensal — detalhe completo</div>
-      <div class="ccs">Valores líquidos: vendas deduzem dev. de clientes · compras deduzem dev. a fornecedor</div>
-      <div style="height:260px;"><canvas id="c-cv-det"></canvas></div>
-    </div>
-    <div class="cc">
-      <div class="cct">Cobertura de compras (% compras líq. / vendas líq.)</div>
-      <div class="ccs">
-        <span class="tag grn">✓ OK</span> ≤ 80% &nbsp;&nbsp;
-        <span class="tag ori">⚡ Atenção</span> 80–100% &nbsp;&nbsp;
-        <span class="tag dnd">⚠ Excesso</span> &gt; 100%
-      </div>
-      <div style="height:200px;"><canvas id="c-cv-cob"></canvas></div>
-    </div>
-    <div class="cc">
-      <div class="cct">Visão semanal — Compras líq. × Vendas líq.</div>
-      <div class="ccs">Estimativa baseada em médias mensais · Para dados reais, exportar rotina 111 por semana</div>
-      <div style="height:220px;"><canvas id="c-cv-semanal"></canvas></div>
-    </div>
-    <div class="cc">
       <div class="cct">Tabela mensal consolidada</div>
       <div class="tscroll"><table class="t">
         <thead><tr>
@@ -2004,7 +1985,7 @@ const AUTH_MODE = 'firebase'; // 'mock' | 'firebase'
 // Convenção:
 //   X.x → alteração grande (quebra de compatibilidade, nova feature grande)
 //   x.X → alteração suave (fix, ajuste visual, pequeno refinamento)
-const APP_VERSION = '3.0-comercial';
+const APP_VERSION = '3.4-comercial';
 
 // ================================================================
 // HELPERS DE CHART.JS — compatíveis com Safari/iOS (sem spread ops)
@@ -2073,6 +2054,106 @@ function _auditLog(tipo, detalhes, identidadeOverride){
     console.warn('_auditLog erro:', e);
   }
 }
+
+
+// ================================================================
+// SUPERVISORES IGNORADOS POR LOJA · service layer
+// ================================================================
+// Estrutura no Firestore: config/supervisores_loja
+//   { ignorados: { 'CP1': [9, 11], 'ATP-V': [], ... } }
+// Estrutura no localStorage: chave 'supervisores_ignorados'
+//
+// Uso nas páginas: _isSupervisorIgnorado(loja, codSup) → bool
+//                  _filtrarPorSupervisor(linha) → bool (true se devo INCLUIR)
+
+let _supIgnoradosCache = null;     // {loja: [cod, cod, ...]}
+let _supIgnoradosLoading = null;
+const SUP_IGN_LS_KEY = 'supervisores_ignorados';
+
+async function _carregarSupervisoresIgnorados(){
+  if(_supIgnoradosCache) return _supIgnoradosCache;
+  if(_supIgnoradosLoading) return _supIgnoradosLoading;
+
+  _supIgnoradosLoading = (async function(){
+    // Tenta Firestore primeiro
+    if(AUTH_MODE === 'firebase' && window.fbDb){
+      try {
+        const doc = await window.fbDb.collection('config').doc('supervisores_loja').get();
+        if(doc.exists){
+          const data = doc.data();
+          _supIgnoradosCache = (data && data.ignorados) || {};
+          // Sincroniza localStorage
+          try { localStorage.setItem(SUP_IGN_LS_KEY, JSON.stringify(_supIgnoradosCache)); } catch(e){}
+          return _supIgnoradosCache;
+        }
+      } catch(e){
+        console.warn('[supIgn] erro ao ler Firestore, caindo pro cache local:', e.message);
+      }
+    }
+    // Fallback: localStorage
+    try {
+      const raw = localStorage.getItem(SUP_IGN_LS_KEY);
+      _supIgnoradosCache = raw ? JSON.parse(raw) : {};
+    } catch(e){
+      _supIgnoradosCache = {};
+    }
+    return _supIgnoradosCache;
+  })();
+
+  return _supIgnoradosLoading;
+}
+
+async function _salvarSupervisoresIgnorados(novoMapa){
+  _supIgnoradosCache = novoMapa || {};
+  // localStorage sempre
+  try { localStorage.setItem(SUP_IGN_LS_KEY, JSON.stringify(_supIgnoradosCache)); } catch(e){}
+  // Firestore se disponível
+  if(AUTH_MODE === 'firebase' && window.fbDb){
+    try {
+      await window.fbDb.collection('config').doc('supervisores_loja').set({
+        ignorados: _supIgnoradosCache,
+        atualizado_em: new Date().toISOString(),
+        atualizado_por: (_getSessao() || {}).email || 'desconhecido'
+      });
+      _auditLog('config_save', {tipo:'supervisores_loja', mapa:_supIgnoradosCache});
+      return {ok:true};
+    } catch(e){
+      console.error('[supIgn] erro ao salvar no Firestore:', e);
+      return {ok:false, erro:e.message};
+    }
+  }
+  return {ok:true, modo:'local'};
+}
+
+/** Verifica se supervisor está marcado como ignorado naquela loja. */
+function _isSupervisorIgnorado(loja, codSup){
+  if(!_supIgnoradosCache || !loja || codSup == null) return false;
+  const lst = _supIgnoradosCache[loja];
+  if(!Array.isArray(lst) || lst.length === 0) return false;
+  return lst.indexOf(Number(codSup)) >= 0;
+}
+
+/** Extrai supervisores únicos por loja a partir de V.vendedores.cadastro. */
+function _getSupervisoresPorLoja(){
+  if(!V || !V.vendedores || !V.vendedores.cadastro) return {};
+  const por_loja = {};
+  V.vendedores.cadastro.forEach(function(v){
+    if(!v.loja || v.cod_supervisor == null) return;
+    if(!por_loja[v.loja]) por_loja[v.loja] = new Map();
+    por_loja[v.loja].set(Number(v.cod_supervisor), v.supervisor || '');
+  });
+  // Converte Map em array ordenado
+  const out = {};
+  Object.keys(por_loja).forEach(function(l){
+    out[l] = Array.from(por_loja[l].entries())
+      .map(function(e){ return {cod: e[0], nome: e[1]}; })
+      .sort(function(a,b){ return a.cod - b.cod; });
+  });
+  return out;
+}
+
+// Expor pra console pra debug
+window._supIgnDebug = function(){ return _supIgnoradosCache; };
 
 
 // ================================================================
@@ -2808,16 +2889,25 @@ function _fetchJsonComGzLegacy(url){
 }
 
 /** Carrega o cubo OLAP sob demanda. Idempotente: se já carregou ou está carregando,
- *  retorna a promessa em andamento. */
+ *  retorna a promessa em andamento.
+ *  Note: GRUPO consolidado não tem cubo próprio — fallback pra CP (cobre 4/5 lojas). */
 function _carregarCuboLazy(){
   if(Cu) return Promise.resolve(Cu);
   if(_cuLoading) return _cuLoading;
-  const slug = _getBaseSlug();
+  let slug = _getBaseSlug();
+  // Fallback: GRUPO → CP (cubo do grupo não existe, CP é a base maior)
+  let _cuboFallback = null;
+  if(slug === 'grupo'){
+    slug = 'cp';
+    _cuboFallback = 'cp';
+  }
   _cuLoading = _fetchJsonComGz('cubo_'+slug+'.json')
     .then(function(j){
       if(j){
         Cu = j;
-        console.log('[_carregarCuboLazy] cubo_'+slug+'.json carregado.');
+        Cu._slug_efetivo = slug;
+        Cu._fallback_de = _cuboFallback;
+        console.log('[_carregarCuboLazy] cubo_'+slug+'.json carregado'+(_cuboFallback?' (fallback de '+_cuboFallback+')':''));
       } else {
         console.warn('[_carregarCuboLazy] cubo_'+slug+'.json indisponível.');
       }
@@ -3398,6 +3488,11 @@ async function _initSistema(){
   } catch(e){
     console.warn('[_initSistema] Erro ao popular perfil:', e);
   }
+  // Carregar config de supervisores ignorados em paralelo (não bloqueante)
+  _carregarSupervisoresIgnorados().then(function(m){
+    const total = Object.values(m||{}).reduce(function(s,a){return s+(a?a.length:0);}, 0);
+    console.log('[_initSistema] supervisores ignorados:', total, 'configs em', Object.keys(m||{}).length, 'lojas');
+  }).catch(function(e){ console.warn('[_initSistema] erro supervisores ignorados:', e); });
   _renderSnapshotBanner();
   _renderSeletorFilial();
   _renderUserWidget();
@@ -6341,7 +6436,22 @@ function renderEstoqueNovo(){
   if(!cont || !E) return;
   const r = E.resumo || {};
   const meta = E.meta || {};
-  const pd = E.por_depto || [];
+  let pd = E.por_depto || [];
+  // Se por_depto não veio no JSON (consolidados podem não trazer), calcular on-the-fly
+  if((!pd || pd.length === 0) && Array.isArray(E.produtos)){
+    const acc = {};
+    E.produtos.forEach(function(p){
+      if(!p.depto || !p.depto.cod) return;
+      const k = p.depto.cod;
+      if(!acc[k]) acc[k] = {cod:p.depto.cod, nome:p.depto.nome, vl_custo:0, vl_preco:0, qt:0, skus:0};
+      const e = p.estoque || {};
+      acc[k].vl_custo += e.vl_custo || 0;
+      acc[k].vl_preco += e.vl_preco || 0;
+      acc[k].qt += e.qt || 0;
+      acc[k].skus += 1;
+    });
+    pd = Object.values(acc).sort(function(a,b){return b.vl_custo - a.vl_custo;});
+  }
 
   let html = '<div class="ph"><div class="pk">Compras</div><h2>Estoque · snapshot atual</h2></div>'
            + '<div class="ph-sep"></div>'
@@ -6349,11 +6459,11 @@ function renderEstoqueNovo(){
 
   html += '<div style="background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:10px 14px;margin-bottom:14px;font-size:12px;color:var(--text-dim);">'
        + '<strong>Snapshot:</strong> '+esc(meta.data_referencia||r.data_ref||'?')+' · '
-       + '<strong>'+fI(r.skus_total||0)+'</strong> SKUs · '
-       + 'Markup médio <strong>'+fP(r.markup_pct||0)+'</strong>'
+       + '<strong>'+fI(r.skus_total||0)+'</strong> SKUs'
+       + (r.markup_pct != null ? ' · Markup médio <strong>'+fP(r.markup_pct)+'</strong>' : '')
        + '</div>';
 
-  html += '<div id="kg-est-novo"></div>';
+  html += '<div class="kg" style="grid-template-columns:repeat(6,1fr);margin-bottom:14px;" id="kg-est-novo"></div>';
 
   html += '<div class="cc"><div class="cct">Distribuição por status</div>'
        +    '<div class="ccs">SKUs e capital imobilizado por classificação de giro</div>'
@@ -6396,12 +6506,13 @@ function renderEstoqueNovo(){
   html += '</div>';
   cont.innerHTML = html;
 
-  const teCusto = r.vl_custo || 0;
-  const tePreco = r.vl_preco || 0;
+  const teCusto = r.vl_custo || r.vl_custo_total || 0;
+  const tePreco = r.vl_preco || r.vl_preco_total || r.vl_venda_total || 0;
+  const acima = teCusto > 0 ? ((tePreco - teCusto) / teCusto * 100) : 0;
   document.getElementById('kg-est-novo').innerHTML = kgHtml([
     {l:'Valor a custo',v:fK(teCusto),s:'Total imobilizado em estoque'},
-    {l:'Valor a preço de venda',v:fK(tePreco),s:fP((tePreco-teCusto)/teCusto*100)+' acima do custo',cls:'vio'},
-    {l:'Margem potencial',v:fK(tePreco-teCusto),s:'Se vender tudo pelo preço tabela',cls:'up'},
+    {l:'Valor a preço de venda',v:tePreco>0?fK(tePreco):'—',s:tePreco>0?(fP(acima)+' acima do custo'):'sem dados',cls:'vio'},
+    {l:'Margem potencial',v:tePreco>0?fK(tePreco-teCusto):'—',s:'Se vender tudo pelo preço tabela',cls:'up'},
     {l:'SKUs em estoque',v:fI(r.skus_total||0),s:'Total cadastrado'},
     {l:'SKUs ativos',v:fI((r.por_status&&r.por_status.ATIVO&&r.por_status.ATIVO.skus)||0),s:'Com giro normal',cls:'ok'},
     {l:'SKUs parados/mortos',v:fI(((r.por_status&&r.por_status.PARADO&&r.por_status.PARADO.skus)||0)+((r.por_status&&r.por_status.MORTO&&r.por_status.MORTO.skus)||0)),s:'Sem giro · candidatos a desova',cls:'dn'},
@@ -6458,11 +6569,7 @@ function renderExcessoNovo(){
 
   const pctSku = skusTotal>0?(excessos.length/skusTotal*100):0;
   const pctVl = vlCustoTotal>0?(totVlCusto/vlCustoTotal*100):0;
-  html += '<div id="kg-exc-novo"></div>';
-
-  html += '<div class="cc"><div class="cct">Composição do excesso por status</div>'
-       +    '<div style="height:240px;margin-top:8px;"><canvas id="c-exc-status"></canvas></div>'
-       + '</div>';
+  html += '<div class="kg" style="grid-template-columns:repeat(6,1fr);margin-bottom:14px;" id="kg-exc-novo"></div>';
 
   const top = excessos.slice().sort(function(a,b){return (b.estoque?b.estoque.vl_custo:0) - (a.estoque?a.estoque.vl_custo:0);}).slice(0, 50);
   html += '<div class="cc"><div class="cct">Top 50 · maior valor imobilizado</div>'
@@ -6558,12 +6665,7 @@ function renderABCNovo(){
        + 'Total faturado considerado: <strong>'+fK(totalGeral)+'</strong>.'
        + '</div>';
 
-  html += '<div id="kg-abc-novo"></div>';
-
-  html += '<div class="cc"><div class="cct">Curva de Pareto · top 100 SKUs</div>'
-       +    '<div class="ccs">Faturamento acumulado em 80/95/100%</div>'
-       +    '<div style="height:280px;margin-top:8px;"><canvas id="c-abc-pareto"></canvas></div>'
-       + '</div>';
+  html += '<div class="kg" style="grid-template-columns:repeat(6,1fr);margin-bottom:14px;" id="kg-abc-novo"></div>';
 
   html += '<div class="cc"><div class="cct">Composição por classe</div>'
        +    '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-top:10px;">';
@@ -7324,30 +7426,9 @@ function renderFinanceiroNovo(){
        + '</div>';
 
   // KPIs
-  html += '<div id="kg-fin-novo"></div>';
+  html += '<div class="kg" style="grid-template-columns:repeat(6,1fr);margin-bottom:14px;" id="kg-fin-novo"></div>';
 
-  // Row 1: Mensal pago + Aging em aberto
-  html += '<div class="row2">'
-       +    '<div class="cc"><div class="cct">Pagamentos por mês</div>'
-       +      '<div class="ccs">Valor efetivamente desembolsado · grupo + juros</div>'
-       +      '<div style="height:240px;margin-top:8px;"><canvas id="c-fin-novo-mensal"></canvas></div>'
-       +    '</div>'
-       +    '<div class="cc"><div class="cct">Aging das contas em aberto</div>'
-       +      '<div class="ccs">Total a pagar: <strong>'+fK(resAbr.total_pagar||0)+'</strong> em '+fI(resAbr.titulos||0)+' títulos</div>'
-       +      '<div style="height:240px;margin-top:8px;"><canvas id="c-fin-novo-aging"></canvas></div>'
-       +    '</div>'
-       + '</div>';
-
-  // Row 2: Performance prazo + Por grupo
-  html += '<div class="row2eq">'
-       +    '<div class="cc"><div class="cct">Performance de prazo</div>'
-       +      '<div class="ccs">Distribuição dos títulos pagos por intervalo de cumprimento</div>'
-       +      '<div style="height:230px;margin-top:8px;"><canvas id="c-fin-novo-perf"></canvas></div>'
-       +    '</div>'
-       +    '<div class="cc"><div class="cct">Top grupos de despesa · pago no período</div>'
-       +      '<div style="height:230px;margin-top:8px;"><canvas id="c-fin-novo-grupo"></canvas></div>'
-       +    '</div>'
-       + '</div>';
+  // Gráficos removidos a pedido do usuário (Pagamentos por mês, Aging, Performance, Top grupos)
 
   // Próximos 30 dias (calculado dos títulos abertos)
   const titulos = abr.titulos || [];
@@ -7661,15 +7742,7 @@ function renderDeptosNovo(){
        + 'Drill: clique no nome para ver seções → categorias'
        + '</div>';
 
-  // Charts (sempre do nível atual)
-  html += '<div class="row2eq">'
-       +    '<div class="cc"><div class="cct" id="dn-chart-title-1">Faturamento × Estoque (a custo)</div>'
-       +      '<div style="height:280px;margin-top:8px;"><canvas id="c-dn-vc"></canvas></div>'
-       +    '</div>'
-       +    '<div class="cc"><div class="cct" id="dn-chart-title-2">Margem por departamento</div>'
-       +      '<div style="height:280px;margin-top:8px;"><canvas id="c-dn-marg"></canvas></div>'
-       +    '</div>'
-       + '</div>';
+  // Charts removidos a pedido do usuário (mantida só a tabela com drill)
 
   // Tabela com drill
   html += '<div class="cc">'
@@ -9086,7 +9159,7 @@ const VENDAS_PANELS_STRUCTURE = {
   'v-visao-grupo': {
     pk: 'Vendas · Grupo',
     h2: 'Visão <em>Consolidada</em> GPC',
-    desc: 'Faturamento consolidado das 4 unidades · 27 meses (Jan/2024 – Mar/2026)',
+    desc: 'Faturamento consolidado das 4 unidades · 27 meses (Jan/2025 – Abr/2026)',
     kpis: [
       {l:'GPC · Fat. 2024', v:'R$ —', s:'4 lojas · ano completo'},
       {l:'GPC · Fat. 2025', v:'R$ —', s:'crescimento vs 2024'},
@@ -9105,7 +9178,7 @@ const VENDAS_PANELS_STRUCTURE = {
   'v-evolucao': {
     pk: 'Vendas · Grupo',
     h2: 'Evolução <em>Mensal</em>',
-    desc: 'Série temporal de faturamento por unidade · Jan/2024 – Mar/2026',
+    desc: 'Série temporal de faturamento por unidade · Jan/2025 – Abr/2026',
     kpis: [],
     rows: [
       [{t:'ATP — Varejo + Atacado', s:'Faturamento mensal'}, {t:'Cestão Loja 1', s:'Faturamento mensal'}],
@@ -9208,7 +9281,7 @@ const VENDAS_PANELS_STRUCTURE = {
   'v-vendas-diarias': {
     pk: 'Vendas · Análise',
     h2: 'Vendas <em>Diárias</em>',
-    desc: 'Faturamento diário consolidado · 780 dias · Jan/2024 – Mar/2026',
+    desc: 'Faturamento diário consolidado · 780 dias · Jan/2025 – Abr/2026',
     kpis: [
       {l:'Média diária GPC', v:'R$ —', s:'Desvio padrão ±—'},
       {l:'Maior dia GPC', v:'R$ —', s:'Data e dia da semana'},
@@ -9267,7 +9340,7 @@ const VENDAS_PANELS_STRUCTURE = {
     ],
     rows: [
       [{t:'GPC — Meta vs Realizado mensal', s:'R$ Milhões'}, {t:'GPC — Desvio mensal da meta', s:'R$k'}],
-      [{t:'Atingimento mensal (%) — 4 lojas', s:'Por unidade'}, {t:'GPC Consolidado', s:'4 lojas · Jan/2024 – Mar/2026'}],
+      [{t:'Atingimento mensal (%) — 4 lojas', s:'Por unidade'}, {t:'GPC Consolidado', s:'4 lojas · Jan/2025 – Abr/2026'}],
       [{t:'ATP - Varejo — Atingimento por mês', s:'%'}, {t:'ATP - Varejo — histórico completo', s:'Meta vs Realizado'}],
       [{t:'ATP - Atacado — Atingimento por mês', s:'%'}, {t:'ATP - Atacado — histórico completo', s:'Meta vs Realizado'}],
       [{t:'Cestão L1 — Atingimento por mês', s:'%'}, {t:'Cestão Loja 1 — histórico completo', s:'Meta vs Realizado'}],
@@ -9416,16 +9489,8 @@ function renderVVisaoGrupo(){
   html += '<div class="ph-sep"></div>';
   html += '<div class="page-body">';
 
-  // Banner informativo se faltar dado
-  if(fat2024 === 0){
-    html += '<div style="background:var(--accent-bg);border:1px solid var(--border);border-radius:8px;padding:10px 14px;margin-bottom:14px;display:flex;align-items:start;gap:10px;font-size:12px;color:var(--text-dim);">'
-      + '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2" style="flex-shrink:0;margin-top:2px;"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>'
-      + '<div>Cobertura atual: <strong>jan/2025 a abr/2026</strong>. Comparativos com 2024 indisponíveis (dados não carregados ainda).</div>'
-      + '</div>';
-  }
-
   // KPIs
-  html += '<div class="kg" style="grid-template-columns:repeat(4,1fr);margin-bottom:14px;" id="kg-v-visao"></div>';
+  html += '<div class="kg" style="grid-template-columns:repeat(3,1fr);margin-bottom:14px;" id="kg-v-visao"></div>';
 
   // Linha 1 de gráficos
   html += '<div class="row2eq" style="margin-bottom:14px;">'
@@ -9465,8 +9530,7 @@ function renderVVisaoGrupo(){
 
   // ─── Popular KPIs ───
   document.getElementById('kg-v-visao').innerHTML = kgHtml([
-    {l:'Fat. Líq. 2024', v: fat2024 ? fK(fat2024) : '—', s: fat2024 ? 'Ano completo' : 'Sem dados'},
-    {l:'Fat. Líq. 2025', v: fK(fat2025), s: fat2024 ? (cresce25>=0?'+':'') + fP(cresce25) + ' vs 2024' : 'Ano completo'},
+    {l:'Fat. Líq. 2025', v: fK(fat2025), s: 'Ano completo'},
     {l:'Fat. Líq. jan-abr/26', v: fK(fat2026), s: '4 meses'},
     {l:'Crescimento jan-mar 26 vs 25', v: (cresceJM>=0?'+':'') + fP(cresceJM), s: 'Período comparável', cls: cresceJM>=0?'up':'dn'},
   ]);
@@ -9596,54 +9660,86 @@ function renderVEvolucao(){
   if(!cont) return;
 
   const periodo = (V.meta && V.meta.periodo) || {};
+  // Detectar lojas disponíveis no V.mensal (não hardcoded)
+  const lojasDisp = (function(){
+    if(!V || !V.mensal) return [];
+    const set = new Set();
+    V.mensal.forEach(function(r){ if(r.loja) set.add(r.loja); });
+    // Ordem preferencial: ATP primeiro, depois CP por código
+    const ordem = ['ATP-V','ATP-A','CP1','CP3','CP5','CP40'];
+    const arr = Array.from(set);
+    arr.sort(function(a,b){
+      const ia = ordem.indexOf(a), ib = ordem.indexOf(b);
+      if(ia >= 0 && ib >= 0) return ia - ib;
+      if(ia >= 0) return -1;
+      if(ib >= 0) return 1;
+      return a.localeCompare(b);
+    });
+    return arr;
+  })();
+
+  // Mapeamento de label amigável (para gráficos e tabelas)
+  const lojaLabel = {
+    'ATP-V':'ATP Varejo', 'ATP-A':'ATP Atacado',
+    'CP1':'Comercial Pinto', 'CP3':'Cestão Loja 1',
+    'CP5':'Cestão Inhambupe', 'CP40':'Barros 40'
+  };
+  const labelDe = function(l){ return lojaLabel[l] || l; };
 
   let html = '<div class="ph"><div class="pk">Vendas · Grupo</div><h2>Evolução <em>Mensal</em></h2></div>';
   html += '<div class="ph-sep"></div>';
   html += '<div class="page-body">';
 
   html += '<div style="background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:10px 14px;margin-bottom:14px;font-size:12px;color:var(--text-dim);">'
-       +   '<strong>Cobertura:</strong> '+esc(periodo.inicio||'?')+' a '+esc(periodo.fim||'?')+' · '+(periodo.meses||0)+' meses · '+(periodo.dias||0)+' dias'
+       +   '<strong>Cobertura:</strong> '+esc(periodo.inicio||'?')+' a '+esc(periodo.fim||'?')+' · '+(periodo.meses||0)+' meses · '
+       +   '<strong>'+lojasDisp.length+'</strong> lojas: '+lojasDisp.map(esc).join(', ')
        + '</div>';
 
-  // Linha 1: ATP V+A consolidado e por loja
+  // ── Gráfico consolidado: todas as lojas + total ──
+  html += '<div class="cc" style="margin-bottom:14px;">'
+       +    '<div class="cct">Faturamento líquido mensal · todas as lojas</div>'
+       +    '<div class="ccs">Linha total + linha por loja (sobreposto)</div>'
+       +    '<div style="height:340px;"><canvas id="c-vevo-multi"></canvas></div>'
+       + '</div>';
+
+  // ── Cards individuais (uma loja por card) ──
+  html += '<div class="cct" style="margin:18px 0 8px;font-size:14px;">Por loja · faturamento mensal</div>';
+  // grid responsivo: 3 colunas em telas largas, 2 em médias, 1 em pequenas
+  const cols = lojasDisp.length >= 6 ? 3 : (lojasDisp.length >= 3 ? 3 : lojasDisp.length);
+  html += '<div style="display:grid;grid-template-columns:repeat('+cols+',1fr);gap:10px;margin-bottom:14px;">';
+  lojasDisp.forEach(function(l){
+    html += '<div class="cc">'
+         +   '<div class="cct" style="font-size:12px;">'+esc(labelDe(l))+'</div>'
+         +   '<div class="ccs" style="font-size:10px;">cód: '+esc(l)+'</div>'
+         +   '<div style="height:160px;"><canvas id="c-vevo-loja-'+esc(l)+'"></canvas></div>'
+         + '</div>';
+  });
+  html += '</div>';
+
+  // ── Margem mensal (consolidada GRUPO) ──
   html += '<div class="row2eq" style="margin-bottom:14px;">'
        +    '<div class="cc">'
-       +      '<div class="cct">ATP — Varejo + Atacado</div>'
-       +      '<div class="ccs">Faturamento líquido mensal (consolidado)</div>'
-       +      '<div style="height:240px;"><canvas id="c-vevo-atp"></canvas></div>'
-       +    '</div>'
-       +    '<div class="cc">'
-       +      '<div class="cct">Margem mensal — ATP</div>'
-       +      '<div class="ccs">% sobre faturamento líquido</div>'
+       +      '<div class="cct">Margem mensal · GRUPO consolidado</div>'
+       +      '<div class="ccs">% sobre faturamento líquido (todas as lojas)</div>'
        +      '<div style="height:240px;"><canvas id="c-vevo-marg"></canvas></div>'
        +    '</div>'
-       + '</div>';
-
-  // Linha 2: comparativo ATP-V vs ATP-A
-  html += '<div class="row2eq" style="margin-bottom:14px;">'
        +    '<div class="cc">'
-       +      '<div class="cct">ATP Varejo · série mensal</div>'
-       +      '<div class="ccs">Faturamento líquido</div>'
-       +      '<div style="height:220px;"><canvas id="c-vevo-varejo"></canvas></div>'
-       +    '</div>'
-       +    '<div class="cc">'
-       +      '<div class="cct">ATP Atacado · série mensal</div>'
-       +      '<div class="ccs">Faturamento líquido</div>'
-       +      '<div style="height:220px;"><canvas id="c-vevo-atacado"></canvas></div>'
+       +      '<div class="cct">Variação YoY · GRUPO</div>'
+       +      '<div class="ccs">% de variação 2026 vs 2025 (mesmo mês)</div>'
+       +      '<div style="height:240px;"><canvas id="c-vevo-yoy"></canvas></div>'
        +    '</div>'
        + '</div>';
 
-  // Linha 3: variação YoY (2026 vs 2025)
-  html += '<div class="cc" style="margin-bottom:14px;">'
-       +    '<div class="cct">Variação YoY · ATP consolidado</div>'
-       +    '<div class="ccs">% de variação 2026 vs 2025 (mesmo mês)</div>'
-       +    '<div style="height:200px;"><canvas id="c-vevo-yoy"></canvas></div>'
-       + '</div>';
-
-  // Tabela mensal completa
+  // ── Seletor de loja para tabela mensal ──
   html += '<div class="cc">'
-       +    '<div class="cct">Tabela mensal — ATP consolidado</div>'
-       +    '<div class="tscroll"><table class="t" id="t-vevo">'
+       +    '<div class="cch">'
+       +      '<div><div class="cct">Tabela mensal</div><div class="ccs">Selecione uma loja ou veja o GRUPO consolidado</div></div>'
+       +      '<select id="vevo-loja-select" style="padding:6px 10px;border:1px solid var(--border);border-radius:5px;font-size:12px;background:var(--surface);color:var(--text);">'
+       +        '<option value="">GRUPO (consolidado)</option>'
+       +        lojasDisp.map(function(l){return '<option value="'+esc(l)+'">'+esc(labelDe(l))+'</option>';}).join('')
+       +      '</select>'
+       +    '</div>'
+       +    '<div class="tscroll" style="margin-top:10px;"><table class="t">'
        +      '<thead><tr><th class="L">Mês</th>'
        +      '<th>Fat. Bruto</th><th>Devol.</th><th>Fat. Líquido</th>'
        +      '<th>Lucro</th><th>Margem</th><th>QT</th><th>NFs</th>'
@@ -9653,23 +9749,98 @@ function renderVEvolucao(){
   html += '</div>'; // page-body
   cont.innerHTML = html;
 
-  // ─── Charts ───
-  const grupo = _vendasMensalPor(null);
-  const atpV = _vendasMensalPor('ATP-V');
-  const atpA = _vendasMensalPor('ATP-A');
+  // ═══════════════════════════════════════════════════════════
+  // GRÁFICOS
+  // ═══════════════════════════════════════════════════════════
 
+  const grupo = _vendasMensalPor(null);
   const lblG = grupo.map(function(r){return _ymToLabel(r.ym);});
 
-  // ATP consolidado
-  mkC('c-vevo-atp', {type:'bar', data:{labels:lblG, datasets:[{
-    label:'Fat. Líquido',
-    data: grupo.map(function(r){return r.fat_liq;}),
-    backgroundColor:_PAL.hl+'CC', borderRadius:4,
-  }]}, options:{responsive:true, maintainAspectRatio:false,
-    plugins:{legend:{display:false}, tooltip:{callbacks:{label:function(ctx){return fB(ctx.raw);}}}},
-    scales:{y:{beginAtZero:true, ticks:{callback:function(v){return fAbbr(v);}}}, x:{grid:{display:false}}}}});
+  // Cores fixas por loja (consistência visual)
+  const cores = {
+    'ATP-V': '#f58634', 'ATP-A': '#30569f',
+    'CP1':   '#10b981', 'CP3':   '#8b5cf6',
+    'CP5':   '#ef4444', 'CP40':  '#06b6d4'
+  };
 
-  // Margem
+  // ── Multi-line chart: total + cada loja ──
+  const datasetsMulti = [
+    {
+      label: 'GRUPO (total)',
+      data: grupo.map(function(r){return r.fat_liq;}),
+      borderColor: '#1f2937',
+      backgroundColor: 'rgba(31,41,55,0.10)',
+      borderWidth: 2.5,
+      tension: 0.3,
+      fill: false,
+      pointRadius: 3
+    }
+  ];
+  lojasDisp.forEach(function(l){
+    const m = _vendasMensalPor(l);
+    // Alinhar pelo eixo do grupo (preencher 0 onde não tiver mês)
+    const data = lblG.map(function(_, i){
+      const ym = grupo[i].ym;
+      const linha = m.find(function(x){return x.ym === ym;});
+      return linha ? linha.fat_liq : 0;
+    });
+    datasetsMulti.push({
+      label: labelDe(l),
+      data: data,
+      borderColor: cores[l] || '#999',
+      backgroundColor: (cores[l] || '#999') + '20',
+      borderWidth: 1.5,
+      tension: 0.3,
+      fill: false,
+      pointRadius: 2
+    });
+  });
+
+  mkC('c-vevo-multi', {
+    type:'line',
+    data:{labels: lblG, datasets: datasetsMulti},
+    options:{
+      responsive:true, maintainAspectRatio:false,
+      interaction:{mode:'index', intersect:false},
+      plugins:{
+        legend:{position:'bottom', labels:{boxWidth:12, font:{size:11}, padding:8}},
+        tooltip:{callbacks:{label:function(ctx){return ctx.dataset.label+': '+fK(ctx.raw);}}}
+      },
+      scales:{
+        y:{beginAtZero:true, ticks:{callback:function(v){return fAbbr(v);}}},
+        x:{grid:{display:false}}
+      }
+    }
+  });
+
+  // ── Cards individuais por loja ──
+  lojasDisp.forEach(function(l){
+    const m = _vendasMensalPor(l);
+    if(!m.length) return;
+    const lbl = m.map(function(r){return _ymToLabel(r.ym);});
+    mkC('c-vevo-loja-'+l, {
+      type:'bar',
+      data:{labels:lbl, datasets:[{
+        label: labelDe(l),
+        data: m.map(function(r){return r.fat_liq;}),
+        backgroundColor: (cores[l] || '#999')+'CC',
+        borderRadius: 3
+      }]},
+      options:{
+        responsive:true, maintainAspectRatio:false,
+        plugins:{
+          legend:{display:false},
+          tooltip:{callbacks:{label:function(ctx){return fK(ctx.raw);}}}
+        },
+        scales:{
+          y:{beginAtZero:true, ticks:{callback:function(v){return fAbbr(v);},font:{size:9}}},
+          x:{grid:{display:false}, ticks:{font:{size:9}, maxRotation:0}}
+        }
+      }
+    });
+  });
+
+  // ── Margem mensal consolidada ──
   mkC('c-vevo-marg', {type:'line', data:{labels:lblG, datasets:[{
     label:'Margem %',
     data: grupo.map(function(r){return r.fat_liq>0?r.lucro/r.fat_liq*100:0;}),
@@ -9679,21 +9850,7 @@ function renderVEvolucao(){
     plugins:{legend:{display:false}, tooltip:{callbacks:{label:function(ctx){return fP(ctx.raw,2);}}}},
     scales:{y:{beginAtZero:false, ticks:{callback:function(v){return fP(v);}}}, x:{grid:{display:false}}}}});
 
-  // ATP Varejo
-  mkC('c-vevo-varejo', {type:'bar', data:{labels:atpV.map(function(r){return _ymToLabel(r.ym);}),
-    datasets:[{label:'Varejo', data:atpV.map(function(r){return r.fat_liq;}), backgroundColor:_PAL.ac+'CC', borderRadius:4}]},
-    options:{responsive:true, maintainAspectRatio:false,
-      plugins:{legend:{display:false}, tooltip:{callbacks:{label:function(ctx){return fB(ctx.raw);}}}},
-      scales:{y:{beginAtZero:true, ticks:{callback:function(v){return fAbbr(v);}}}, x:{grid:{display:false}}}}});
-
-  // ATP Atacado
-  mkC('c-vevo-atacado', {type:'bar', data:{labels:atpA.map(function(r){return _ymToLabel(r.ym);}),
-    datasets:[{label:'Atacado', data:atpA.map(function(r){return r.fat_liq;}), backgroundColor:_PAL.hl+'CC', borderRadius:4}]},
-    options:{responsive:true, maintainAspectRatio:false,
-      plugins:{legend:{display:false}, tooltip:{callbacks:{label:function(ctx){return fB(ctx.raw);}}}},
-      scales:{y:{beginAtZero:true, ticks:{callback:function(v){return fAbbr(v);}}}, x:{grid:{display:false}}}}});
-
-  // YoY: para cada mês de 2026 que tem 2025 correspondente, % variação
+  // ── YoY ──
   const yoyData = [];
   const yoyLbl = [];
   grupo.forEach(function(r){
@@ -9715,21 +9872,31 @@ function renderVEvolucao(){
         scales:{y:{ticks:{callback:function(v){return (v>=0?'+':'')+fP(v);}}}, x:{grid:{display:false}}}}});
   }
 
-  // Tabela mensal
-  document.getElementById('tb-vevo').innerHTML = grupo.slice().reverse().map(function(r){
-    const marg = r.fat_liq>0 ? r.lucro/r.fat_liq*100 : 0;
-    const margCls = marg<10 ? 'val-neg' : marg>15 ? 'val-pos' : '';
-    return '<tr>'
-      + '<td class="L">'+_ymToLabel(r.ym)+'</td>'
-      + '<td>'+fK(r.fat_brt)+'</td>'
-      + '<td class="val-dim">'+fK(r.devol)+'</td>'
-      + '<td class="val-strong">'+fK(r.fat_liq)+'</td>'
-      + '<td>'+fK(r.lucro)+'</td>'
-      + '<td class="'+margCls+'">'+fP(marg)+'</td>'
-      + '<td class="val-dim">'+fI(r.qt)+'</td>'
-      + '<td class="val-dim">'+fI(r.nfs)+'</td>'
-      + '</tr>';
-  }).join('');
+  // ── Tabela mensal com seletor de loja ──
+  function renderTabelaVevo(loja){
+    const dados = _vendasMensalPor(loja || null);
+    const tb = document.getElementById('tb-vevo');
+    if(!tb) return;
+    tb.innerHTML = dados.slice().reverse().map(function(r){
+      const marg = r.fat_liq>0 ? r.lucro/r.fat_liq*100 : 0;
+      const margCls = marg<10 ? 'val-neg' : marg>15 ? 'val-pos' : '';
+      return '<tr>'
+        + '<td class="L">'+_ymToLabel(r.ym)+'</td>'
+        + '<td>'+fK(r.fat_brt)+'</td>'
+        + '<td class="val-dim">'+fK(r.devol)+'</td>'
+        + '<td class="val-strong">'+fK(r.fat_liq)+'</td>'
+        + '<td>'+fK(r.lucro)+'</td>'
+        + '<td class="'+margCls+'">'+fP(marg)+'</td>'
+        + '<td class="val-dim">'+fI(r.qt)+'</td>'
+        + '<td class="val-dim">'+fI(r.nfs)+'</td>'
+        + '</tr>';
+    }).join('');
+  }
+  renderTabelaVevo(null);
+  const sel = document.getElementById('vevo-loja-select');
+  if(sel){
+    sel.addEventListener('change', function(){ renderTabelaVevo(sel.value); });
+  }
 }
 
 // ────────────────────────────────────────────────────────────────────
@@ -10232,11 +10399,15 @@ function renderVendasStruct(pg){
     + '</div>'
     + '</div>';
 
-  // KPIs (se houver)
-  if(cfg.kpis && cfg.kpis.length){
-    const cols = cfg.kpis.length <= 4 ? cfg.kpis.length : (cfg.kpis.length <= 6 ? 3 : 4);
+  // KPIs (se houver) — filtrar 2024 (sem dados)
+  const kpisFiltrados = (cfg.kpis || []).filter(function(k){
+    const txt = (k.l || '') + ' ' + (k.s || '');
+    return txt.indexOf('2024') === -1;
+  });
+  if(kpisFiltrados.length){
+    const cols = kpisFiltrados.length <= 4 ? kpisFiltrados.length : (kpisFiltrados.length <= 6 ? 3 : 4);
     html += '<div class="kg" style="grid-template-columns:repeat('+cols+',1fr);margin-bottom:14px;">';
-    cfg.kpis.forEach(function(k){
+    kpisFiltrados.forEach(function(k){
       html += '<div class="kc" style="opacity:.7;">'
         + '<div class="kl">'+esc(k.l)+'</div>'
         + '<div class="kv" style="color:var(--text-muted);font-style:italic;font-size:18px;">'+esc(k.v)+'</div>'
@@ -10245,6 +10416,20 @@ function renderVendasStruct(pg){
     });
     html += '</div>';
   }
+
+  // Linhas de gráficos — filtrar charts que mencionam 2024
+  const rowsFiltradas = (cfg.rows || []).map(function(row){
+    return row.filter(function(c){
+      const txt = (c.t || '') + ' ' + (c.s || '');
+      return txt.indexOf('2024') === -1;
+    });
+  }).filter(function(row){ return row.length > 0; });
+  cfg.rows = rowsFiltradas;
+  // Tabelas — filtrar
+  cfg.tables = (cfg.tables || []).filter(function(tab){
+    const txt = (tab.t || '') + ' ' + (tab.cols || []).join(' ');
+    return txt.indexOf('2024') === -1;
+  });
 
   // Linhas de gráficos
   if(cfg.rows && cfg.rows.length){
@@ -10910,8 +11095,15 @@ function renderVDrilldown(){
   const cont = document.getElementById('page-v-drilldown');
   if(!cont) return;
 
-  const cad = (V.vendedores && V.vendedores.cadastro) || [];
-  const mensalV = (V.vendedores && V.vendedores.mensal) || [];
+  const cadOriginal = (V.vendedores && V.vendedores.cadastro) || [];
+  const mensalVorig = (V.vendedores && V.vendedores.mensal) || [];
+
+  // Aplicar filtro de supervisores ignorados (configurado em Administração)
+  const cad = cadOriginal.filter(function(v){
+    return !_isSupervisorIgnorado(v.loja, v.cod_supervisor);
+  });
+  const codsValidos = new Set(cad.map(function(v){return v.cod;}));
+  const mensalV = mensalVorig.filter(function(r){return codsValidos.has(r.cod);});
 
   if(!cad.length || !mensalV.length){
     cont.innerHTML = '<div class="ph"><div class="pk">Vendas · Análise</div><h2>Drill-Down por <em>Vendedor</em></h2></div>'
@@ -11174,8 +11366,15 @@ function renderVBenchmarking(){
   const cont = document.getElementById('page-v-benchmarking');
   if(!cont) return;
 
-  const cad = (V.vendedores && V.vendedores.cadastro) || [];
-  const mensalV = (V.vendedores && V.vendedores.mensal) || [];
+  const cadOriginal = (V.vendedores && V.vendedores.cadastro) || [];
+  const mensalVorig = (V.vendedores && V.vendedores.mensal) || [];
+
+  // Aplicar filtro de supervisores ignorados
+  const cad = cadOriginal.filter(function(v){
+    return !_isSupervisorIgnorado(v.loja, v.cod_supervisor);
+  });
+  const codsValidos = new Set(cad.map(function(v){return v.cod;}));
+  const mensalV = mensalVorig.filter(function(r){return codsValidos.has(r.cod);});
 
   if(!cad.length || !mensalV.length){
     cont.innerHTML = '<div class="ph"><div class="pk">Vendas · Análise</div><h2><em>Benchmarking</em> entre Vendedores</h2></div>'
@@ -11264,12 +11463,7 @@ function renderVBenchmarking(){
        +   '</div>'
        + '</div>';
 
-  // Linha 2: scatter loja vs ranking
-  html += '<div class="cc" style="margin-bottom:14px;">'
-       +    '<div class="cct">Distribuição: faturamento jan-mar 26 × crescimento vs 25</div>'
-       +    '<div class="ccs">Cada bolha = 1 vendedor · cor por loja · tamanho ∝ ticket médio</div>'
-       +    '<div style="height:320px;"><canvas id="c-vbm-scatter"></canvas></div>'
-       + '</div>';
+  // Scatter de distribuição removido a pedido do usuário
 
   // Linha 3: Top 10 por margem + Top 10 por ticket
   html += '<div class="row2eq" style="margin-bottom:12px;">'
@@ -12202,7 +12396,9 @@ function renderVAlertas(){
 
   // Tipo 1: Vendedores em queda forte (jan-mar 26 vs 25, > -30%)
   if(V && V.vendedores && V.vendedores.cadastro && V.vendedores.mensal){
-    const cad = V.vendedores.cadastro;
+    const cad = V.vendedores.cadastro.filter(function(v){
+      return !_isSupervisorIgnorado(v.loja, v.cod_supervisor);
+    });
     const mensalIdx = new Map();
     V.vendedores.mensal.forEach(function(r){
       if(!mensalIdx.has(r.cod)) mensalIdx.set(r.cod, []);
@@ -12291,8 +12487,13 @@ function renderVAlertas(){
 
   // Tipo 4: Concentração crítica em vendedores (top 5 > 50% do total)
   if(V && V.vendedores && V.vendedores.mensal){
+    // Identificar vendedores cujo supervisor está ignorado
+    const cadIdx = new Map();
+    (V.vendedores.cadastro||[]).forEach(function(v){ cadIdx.set(v.cod, v); });
     const totalVend = new Map();
     V.vendedores.mensal.forEach(function(r){
+      const v = cadIdx.get(r.cod);
+      if(v && _isSupervisorIgnorado(v.loja, v.cod_supervisor)) return;
       totalVend.set(r.cod, (totalVend.get(r.cod)||0) + (r.fat_liq||0));
     });
     const arr = Array.from(totalVend.entries()).map(function(kv){return {cod:kv[0], fat:kv[1]};})
@@ -12501,6 +12702,15 @@ function renderVMetas(){
   html += '<div class="ph-sep"></div>';
   html += '<div class="page-body">';
 
+  // Header com botão Editor de Metas
+  html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:10px;">';
+  html += '<div style="font-size:12px;color:var(--text-dim);">Ano <select id="metas-ano" style="padding:4px 10px;border-radius:5px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-weight:600;">' + anos.map(a => '<option value="'+a+'" '+(a===anoSel?'selected':'')+'>'+a+'</option>').join('') + '</select></div>';
+  html += '<button id="btn-abrir-editor-metas" class="ebtn" style="background:var(--accent);color:white;border:none;display:inline-flex;align-items:center;gap:6px;padding:7px 14px;font-size:12px;">';
+  html += '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>';
+  html += 'Editor de metas';
+  html += '</button>';
+  html += '</div>';
+
   // Card resumo do mapeamento de supervisores
   html += '<div class="cc">';
   html += '<div class="cct">Mapeamento de supervisores por filial</div>';
@@ -12518,32 +12728,6 @@ function renderVMetas(){
       +  '</div>';
   });
   html += '</div></div>';
-
-  // Editor de metas
-  html += '<div class="cc" style="margin-top:14px;">';
-  html += '<div class="cct">Editor de metas <span style="font-weight:400;color:#666;">· Ano <select id="metas-ano" style="padding:3px 8px;border-radius:4px;border:1px solid #ccc;">' + anos.map(a => '<option value="'+a+'" '+(a===anoSel?'selected':'')+'>'+a+'</option>').join('') + '</select></span></div>';
-  html += '<div class="ccs">Edite os valores diretamente nas células. As alterações são salvas localmente; quando o Firebase estiver ativo, sincronizam pra todos os usuários.</div>';
-
-  if(filiaisComMeta.length === 0){
-    html += '<div style="background:#fff3cd;border:1px solid #ffc107;border-radius:6px;padding:12px;margin-top:10px;color:#664d03;">Nenhuma filial com meta configurada nesta visão.</div>';
-  } else {
-    html += '<div class="tscroll" style="margin-top:10px;"><table class="t" id="tb-metas-edit">';
-    html += '<thead><tr>';
-    html += '<th class="L" style="position:sticky;left:0;background:var(--bg-card);">Mês</th>';
-    filiaisComMeta.forEach(f => {
-      const fNome = (_filiaisDisponiveis.find(x => x.sigla === f) || {}).nome || f.toUpperCase();
-      html += '<th>'+esc(fNome)+'<br><span style="font-weight:400;font-size:10px;color:#888;">meta R$ líq</span></th>';
-    });
-    html += '<th>Total visão</th>';
-    html += '</tr></thead><tbody></tbody></table></div>';
-    html += '<div style="margin-top:10px;display:flex;gap:10px;align-items:center;">';
-    html += '<button id="metas-save" class="btn btn-primary" style="padding:6px 14px;">Salvar metas</button>';
-    html += '<span id="metas-save-status" style="font-size:12px;color:#666;"></span>';
-    html += '<button id="metas-import" class="btn" style="padding:6px 14px;">Importar de CSV</button>';
-    html += '<button id="metas-export" class="btn" style="padding:6px 14px;">Exportar CSV</button>';
-    html += '</div>';
-  }
-  html += '</div>';
 
   // Realizado vs Meta
   html += '<div class="cc" style="margin-top:14px;">';
@@ -12572,39 +12756,151 @@ function renderVMetas(){
   html += '</div>'; // page-body
   cont.innerHTML = html;
 
-  // Listeners e popular
-  _renderTabelaMetasEdit(filiaisComMeta, anoSel);
+  // Popular tabela Realizado vs Meta (a tabela de edição agora vive no modal)
   _renderTabelaRealVsMeta(filiaisComMeta, anoSel);
 
-  // Trocar ano
+  // Trocar ano (re-renderiza Real vs Meta na página)
   const selAno = document.getElementById('metas-ano');
   if(selAno){
     selAno.addEventListener('change', function(e){
-      _renderTabelaMetasEdit(filiaisComMeta, e.target.value);
       _renderTabelaRealVsMeta(filiaisComMeta, e.target.value);
     });
   }
 
-  // Salvar
-  const btnSave = document.getElementById('metas-save');
-  if(btnSave){
-    btnSave.addEventListener('click', function(){
-      _saveMetas();
-      _renderTabelaRealVsMeta(filiaisComMeta, document.getElementById('metas-ano').value);
-      const status = document.getElementById('metas-save-status');
-      if(status){
-        status.textContent = '✓ salvo localmente';
-        status.style.color = '#0a7';
-        setTimeout(function(){ status.textContent = ''; }, 3000);
-      }
+  // Botão "Editor de metas" → abre modal
+  const btnEditor = document.getElementById('btn-abrir-editor-metas');
+  if(btnEditor){
+    btnEditor.addEventListener('click', function(){
+      _abrirEditorMetas(filiaisComMeta, (selAno && selAno.value) || anoSel);
+    });
+  }
+}
+
+// ────────────────────────────────────────────────────────────────────
+// EDITOR DE METAS · modal flutuante
+// ────────────────────────────────────────────────────────────────────
+function _abrirEditorMetas(filiaisComMeta, anoSel){
+  // Remove modal anterior se existir
+  const antigo = document.getElementById('editor-metas-modal');
+  if(antigo) antigo.remove();
+
+  const M = window._metas || {};
+  const cfg = M.config || {};
+  const supByFilial = cfg.supervisor_por_filial || {};
+  const supNomes = cfg.supervisor_nomes || {};
+
+  // Anos disponíveis (do realizado)
+  const mensal = (V && V.mensal) || [];
+  const anos = [...new Set(mensal.map(m => m.ym ? m.ym.slice(0,4) : null).filter(Boolean))].sort();
+
+  const overlay = document.createElement('div');
+  overlay.id = 'editor-metas-modal';
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:9000;display:flex;align-items:center;justify-content:center;padding:20px;';
+
+  let html = '<div style="background:var(--surface);border-radius:10px;width:100%;max-width:1100px;max-height:90vh;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,0.4);">';
+
+  // Header
+  html += '<div style="padding:16px 20px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;">';
+  html += '<div>';
+  html += '<div style="font-size:16px;font-weight:800;color:var(--text);">Editor de metas</div>';
+  html += '<div style="font-size:11px;color:var(--text-dim);margin-top:2px;">Edite as células diretamente. Salvar grava no Firestore (visível pra todos os usuários).</div>';
+  html += '</div>';
+  html += '<button id="editor-metas-fechar" style="background:none;border:none;cursor:pointer;padding:6px;color:var(--text-muted);" aria-label="Fechar">';
+  html += '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>';
+  html += '</button>';
+  html += '</div>';
+
+  // Toolbar
+  html += '<div style="padding:12px 20px;border-bottom:1px solid var(--border);background:var(--surface-2);display:flex;flex-wrap:wrap;gap:12px;align-items:center;">';
+  html += '<div><label style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;font-weight:600;margin-right:6px;">Ano:</label>';
+  html += '<select id="editor-metas-ano" style="padding:5px 10px;border-radius:5px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-weight:600;">' + anos.map(a => '<option value="'+a+'" '+(a===anoSel?'selected':'')+'>'+a+'</option>').join('') + '</select></div>';
+  html += '<div style="flex:1;"></div>';
+  html += '<button id="editor-metas-import" class="ebtn" style="background:var(--surface-2);border:1px solid var(--border);color:var(--text);font-size:12px;padding:6px 12px;">Importar CSV</button>';
+  html += '<button id="editor-metas-export" class="ebtn" style="background:var(--surface-2);border:1px solid var(--border);color:var(--text);font-size:12px;padding:6px 12px;">Exportar CSV</button>';
+  html += '</div>';
+
+  // Body (tabela)
+  html += '<div style="flex:1;overflow:auto;padding:16px 20px;">';
+  if(filiaisComMeta.length === 0){
+    html += '<div style="background:#fff3cd;border:1px solid #ffc107;border-radius:6px;padding:14px;color:#664d03;">Nenhuma filial com meta configurada nesta visão.</div>';
+  } else {
+    html += '<table class="t" id="tb-metas-edit"><thead><tr>';
+    html += '<th class="L" style="position:sticky;left:0;background:var(--surface);">Mês</th>';
+    filiaisComMeta.forEach(f => {
+      const fNome = (_filiaisDisponiveis.find(x => x.sigla === f) || {}).nome || f.toUpperCase();
+      html += '<th>'+esc(fNome)+'<br><span style="font-weight:400;font-size:10px;color:#888;">meta R$ líq</span></th>';
+    });
+    html += '<th>Total visão</th>';
+    html += '</tr></thead><tbody></tbody></table>';
+  }
+  html += '</div>';
+
+  // Footer
+  html += '<div style="padding:14px 20px;border-top:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;background:var(--surface-2);">';
+  html += '<span id="editor-metas-status" style="font-size:12px;color:var(--text-muted);"></span>';
+  html += '<div style="display:flex;gap:10px;">';
+  html += '<button id="editor-metas-cancelar" class="ebtn" style="background:var(--surface);border:1px solid var(--border);color:var(--text);padding:8px 16px;">Cancelar</button>';
+  html += '<button id="editor-metas-salvar" class="ebtn" style="background:var(--accent);color:white;border:none;padding:8px 18px;font-weight:700;">Salvar metas</button>';
+  html += '</div>';
+  html += '</div>';
+
+  html += '</div>';
+  overlay.innerHTML = html;
+  document.body.appendChild(overlay);
+
+  // Popular tabela
+  if(filiaisComMeta.length > 0){
+    _renderTabelaMetasEdit(filiaisComMeta, anoSel);
+  }
+
+  // Função pra fechar
+  function fechar(){
+    overlay.remove();
+  }
+
+  // Listeners
+  document.getElementById('editor-metas-fechar').addEventListener('click', fechar);
+  document.getElementById('editor-metas-cancelar').addEventListener('click', fechar);
+  // Click fora do modal fecha
+  overlay.addEventListener('click', function(e){
+    if(e.target === overlay) fechar();
+  });
+
+  // Trocar ano dentro do modal
+  const selAnoModal = document.getElementById('editor-metas-ano');
+  if(selAnoModal){
+    selAnoModal.addEventListener('change', function(e){
+      _renderTabelaMetasEdit(filiaisComMeta, e.target.value);
     });
   }
 
-  // Importar/Exportar
-  const btnExp = document.getElementById('metas-export');
-  if(btnExp) btnExp.addEventListener('click', _exportMetasCSV);
-  const btnImp = document.getElementById('metas-import');
-  if(btnImp) btnImp.addEventListener('click', _importMetasCSV);
+  // Salvar
+  document.getElementById('editor-metas-salvar').addEventListener('click', function(){
+    _saveMetas();
+    const status = document.getElementById('editor-metas-status');
+    if(status){
+      status.textContent = '✓ salvo · atualizando análises…';
+      status.style.color = 'var(--success-text)';
+    }
+    // Re-renderiza Real vs Meta na página de fundo (com o ano atualmente selecionado lá)
+    const selAnoPagina = document.getElementById('metas-ano');
+    const anoP = (selAnoPagina && selAnoPagina.value) || anoSel;
+    _renderTabelaRealVsMeta(filiaisComMeta, anoP);
+    setTimeout(fechar, 700);
+  });
+
+  // Import/Export
+  document.getElementById('editor-metas-import').addEventListener('click', _importMetasCSV);
+  document.getElementById('editor-metas-export').addEventListener('click', _exportMetasCSV);
+
+  // Atalho ESC pra fechar
+  function escListener(e){
+    if(e.key === 'Escape'){
+      fechar();
+      document.removeEventListener('keydown', escListener);
+    }
+  }
+  document.addEventListener('keydown', escListener);
 }
 
 function _renderTabelaMetasEdit(filiais, ano){
@@ -12687,6 +12983,8 @@ function _renderTabelaRealVsMeta(filiais, ano){
         return;
       }
       if(supsAlvo.indexOf(cad.cod_supervisor) >= 0){
+        // Filtro adicional: supervisores ignorados pelo usuário em Administração
+        if(_isSupervisorIgnorado(cad.loja, cad.cod_supervisor)) return;
         total += vm.fat_liq || 0;
       }
     });
@@ -12841,12 +13139,21 @@ function _importMetasCSV(){
           n++;
         });
         _saveMetas();
-        alert(n + ' metas importadas. Recarregando...');
-        const ano = document.getElementById('metas-ano').value;
+        alert(n + ' metas importadas.');
+        // Pega ano da fonte ativa (modal se aberto, senão página)
+        const elModal = document.getElementById('editor-metas-ano');
+        const elPag = document.getElementById('metas-ano');
+        const ano = (elModal && elModal.value) || (elPag && elPag.value) || (new Date()).getFullYear().toString();
         const M = window._metas;
         const filiais = Object.keys(M.config.supervisor_por_filial).filter(f => Array.isArray(M.config.supervisor_por_filial[f]) && M.config.supervisor_por_filial[f].length);
-        _renderTabelaMetasEdit(filiais, ano);
-        _renderTabelaRealVsMeta(filiais, ano);
+        // Re-renderiza tabela do editor (se modal estiver aberto)
+        if(document.getElementById('tb-metas-edit')){
+          _renderTabelaMetasEdit(filiais, ano);
+        }
+        // Re-renderiza Real vs Meta na página (sempre)
+        if(document.getElementById('tb-metas-rvr')){
+          _renderTabelaRealVsMeta(filiais, ano);
+        }
       } catch(e){
         alert('Erro lendo CSV: ' + e.message);
       }
@@ -12949,13 +13256,7 @@ function renderRecebimentos(){
        +   'gerado em '+esc((meta.geradoEm||'').substring(0,16).replace('T',' '))
        + '</div>';
 
-  // Alerta de concentração crítica (se top_1_pct > 30%)
-  if(conc.alerta_concentracao){
-    html += '<div style="background:#fee2e2;border:1px solid #dc2626;border-radius:8px;padding:12px 14px;margin-bottom:14px;display:flex;align-items:start;gap:10px;">'
-         +   '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#991b1b" stroke-width="2" style="flex-shrink:0;margin-top:1px;"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>'
-         +   '<div style="font-size:12px;color:#991b1b;line-height:1.5;"><strong>Alerta de concentração crítica:</strong> '+esc(conc.alerta_concentracao)+'</div>'
-         + '</div>';
-  }
+  // Alerta de concentração removido a pedido do usuário
 
   // KPIs (6)
   html += '<div class="kg" style="grid-template-columns:repeat(6,1fr);margin-bottom:14px;" id="kg-rec"></div>';
@@ -13656,8 +13957,11 @@ function renderCubo(){
 
   _carregarCuboLazy().then(function(c){
     if(!c){
+      const slug = _getBaseSlug();
+      const arq = slug === 'grupo' ? 'cubo_cp.json' : 'cubo_'+slug+'.json';
       document.getElementById('cubo-body').innerHTML = '<div class="cc" style="text-align:center;color:var(--text-muted);padding:30px;">'
-        + 'Cubo OLAP indisponível. Verifique se <code>cubo_atp.json</code> está em <code>/dados-modulares/</code>.'
+        + 'Cubo OLAP indisponível para esta visão. '
+        + 'Arquivo esperado: <code>'+arq+'</code>.'
         + '</div>';
       return;
     }
@@ -13708,6 +14012,13 @@ function _renderCuboUI(c){
   const supervisores = (dims.supervisor||{}).items || [];
 
   let html = '';
+
+  // Aviso de fallback (quando GRUPO usa cubo CP)
+  if(c._fallback_de){
+    html += '<div style="background:#fef3c7;border:1px solid #d97706;border-radius:8px;padding:10px 14px;margin-bottom:10px;font-size:12px;color:#92400e;">'
+         +   '<strong>Atenção:</strong> a visão GRUPO não tem cubo próprio. Mostrando dados do cubo de Comercial Pinto (4 lojas: CP1, CP3, CP5, CP40). ATP não está incluído nesta análise.'
+         + '</div>';
+  }
 
   // Banner com info do cubo
   html += '<div style="background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:10px 14px;margin-bottom:14px;font-size:12px;color:var(--text-dim);">'
@@ -16679,6 +16990,31 @@ function renderAdmin(){
 
       <div class="ds" style="margin-top:14px;">
         <div class="ds-hdr">
+          <div class="ds-ico" style="background:#0369a1;color:white;">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>
+          </div>
+          <div>
+            <div class="ds-title">Supervisores ignorados por loja</div>
+            <div class="ds-sub">Marque supervisores que devem ser excluídos das análises de Vendas (todas as páginas)</div>
+          </div>
+          <span id="adm-sup-status" style="margin-left:auto;font-size:11px;color:var(--success-text);opacity:0;transition:opacity .3s;">✓ Salvo</span>
+        </div>
+        <div class="ds-body">
+          <div id="adm-sup-list">
+            <div style="padding:20px;text-align:center;color:var(--text-muted);font-size:12px;">Carregando supervisores...</div>
+          </div>
+          <div style="margin-top:14px;display:flex;gap:8px;align-items:center;">
+            <button onclick="_salvarSupIgnUI()" class="ebtn" style="background:var(--accent);color:white;border:none;display:inline-flex;align-items:center;gap:6px;">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+              Salvar configuração
+            </button>
+            <span style="font-size:11px;color:var(--text-muted);">Aplica em todas as páginas de Vendas após recarregar</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="ds" style="margin-top:14px;">
+        <div class="ds-hdr">
           <div class="ds-ico" style="background:var(--danger-bg);color:var(--danger-text);">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19m-6.72-1.07a3 3 0 11-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
           </div>
@@ -16793,6 +17129,9 @@ function renderAdmin(){
     if(!e.target.closest('#adm-hid-srch') && !e.target.closest('#adm-hid-drop')) hdrp.style.display='none';
   });
 
+  // Renderizar UI de supervisores ignorados
+  _renderSupIgnUI();
+
   // Renderizar usuários, perfis, auditoria e smoke tests (se admin)
   if(podeGerenciarUsuarios){
     renderAdmUsuarios();
@@ -16810,6 +17149,97 @@ function renderAdmin(){
     });
   }
 }
+
+// ────────────────────────────────────────────────────────────────────
+// SUPERVISORES IGNORADOS · UI da Administração
+// ────────────────────────────────────────────────────────────────────
+
+function _renderSupIgnUI(){
+  const cont = document.getElementById('adm-sup-list');
+  if(!cont) return;
+
+  // Garante que cache foi carregado
+  _carregarSupervisoresIgnorados().then(function(mapaIgnorados){
+    const supPorLoja = _getSupervisoresPorLoja();
+    const lojas = Object.keys(supPorLoja).sort(function(a,b){
+      const ordem = ['ATP-V','ATP-A','CP1','CP3','CP5','CP40'];
+      const ia = ordem.indexOf(a), ib = ordem.indexOf(b);
+      if(ia >= 0 && ib >= 0) return ia - ib;
+      if(ia >= 0) return -1;
+      if(ib >= 0) return 1;
+      return a.localeCompare(b);
+    });
+
+    if(lojas.length === 0){
+      cont.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text-muted);font-size:12px;">Nenhuma loja ou supervisor encontrado nos dados de vendas.</div>';
+      return;
+    }
+
+    const lojaLabel = {
+      'ATP-V':'ATP Varejo', 'ATP-A':'ATP Atacado',
+      'CP1':'Comercial Pinto 1', 'CP3':'Cestão Loja 1',
+      'CP5':'Cestão Inhambupe', 'CP40':'Barros 40'
+    };
+
+    let html = '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:10px;">';
+    lojas.forEach(function(loja){
+      const sups = supPorLoja[loja];
+      const ignorados = (mapaIgnorados[loja] || []).map(Number);
+      const totIgn = sups.filter(function(s){ return ignorados.indexOf(s.cod) >= 0; }).length;
+      html += '<div style="border:1px solid var(--border);border-radius:8px;padding:10px;background:var(--surface);">';
+      html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid var(--border);">';
+      html += '<div style="font-weight:700;font-size:13px;">'+esc(lojaLabel[loja]||loja)+' <span style="color:var(--text-muted);font-weight:400;font-size:11px;">('+esc(loja)+')</span></div>';
+      html += '<span style="font-size:10px;color:'+(totIgn>0?'#dc2626':'var(--text-muted)')+';font-weight:600;">'+totIgn+' ignorados</span>';
+      html += '</div>';
+      sups.forEach(function(s){
+        const checked = ignorados.indexOf(s.cod) >= 0;
+        html += '<label style="display:flex;align-items:center;gap:8px;padding:5px 4px;cursor:pointer;font-size:12px;border-radius:4px;'+(checked?'background:#fee2e2;':'')+'" onmouseover="this.style.background=\''+(checked?'#fecaca':'var(--surface-2)')+'\'" onmouseout="this.style.background=\''+(checked?'#fee2e2':'')+'\'">';
+        html += '<input type="checkbox" data-loja="'+escAttr(loja)+'" data-cod="'+s.cod+'" '+(checked?'checked':'')+' class="sup-ign-chk" style="cursor:pointer;">';
+        html += '<span style="font-family:\'JetBrains Mono\',monospace;font-size:10px;color:var(--text-muted);min-width:28px;">#'+s.cod+'</span>';
+        html += '<span style="flex:1;'+(checked?'text-decoration:line-through;color:#991b1b;':'')+'">'+esc(s.nome)+'</span>';
+        html += '</label>';
+      });
+      html += '</div>';
+    });
+    html += '</div>';
+    html += '<div style="margin-top:10px;padding:8px 10px;background:var(--surface-2);border-left:3px solid var(--accent);border-radius:4px;font-size:11px;color:var(--text-dim);">';
+    html += '<strong>Como funciona:</strong> supervisores marcados serão excluídos das análises de vendas (KPIs, totais, gráficos por supervisor/vendedor). Útil para esconder grupos como INATIVOS, NEGOCIAÇÕES ESPECIAIS ou GPC INTRAGRUPO que distorcem as métricas.';
+    html += '</div>';
+    cont.innerHTML = html;
+  }).catch(function(e){
+    cont.innerHTML = '<div style="padding:20px;text-align:center;color:#dc2626;font-size:12px;">Erro ao carregar configuração: '+esc(e.message||'')+'</div>';
+  });
+}
+
+async function _salvarSupIgnUI(){
+  const status = document.getElementById('adm-sup-status');
+  const checkboxes = document.querySelectorAll('.sup-ign-chk');
+  const novoMapa = {};
+  checkboxes.forEach(function(chk){
+    const loja = chk.getAttribute('data-loja');
+    const cod = Number(chk.getAttribute('data-cod'));
+    if(chk.checked){
+      if(!novoMapa[loja]) novoMapa[loja] = [];
+      novoMapa[loja].push(cod);
+    }
+  });
+  // Limpa lojas sem ignorados (mantém objeto enxuto)
+  Object.keys(novoMapa).forEach(function(l){ if(!novoMapa[l].length) delete novoMapa[l]; });
+
+  const r = await _salvarSupervisoresIgnorados(novoMapa);
+  if(status){
+    status.style.opacity = '1';
+    status.textContent = r.ok ? '✓ Salvo' : '✗ Erro';
+    status.style.color = r.ok ? 'var(--success-text)' : '#dc2626';
+    setTimeout(function(){ status.style.opacity = '0'; }, 2500);
+  }
+  if(r.ok){
+    _renderSupIgnUI();
+  } else {
+    alert('Erro ao salvar: ' + (r.erro||'desconhecido'));
+  }
+}
+window._salvarSupIgnUI = _salvarSupIgnUI;
 
 function renderAdmList(){
   const list=getGpcSuppliers(_baseAdminSelecionada);
