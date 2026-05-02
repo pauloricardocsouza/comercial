@@ -4,6 +4,31 @@ Lista das melhorias do sistema de BI da R2 Soluções para o Grupo Pinto Cerquei
 
 ---
 
+## v4.43 · 02/mai/2026
+
+**ATP · GPC INTRAGRUPO agora soma no total**
+
+Você reportou (com print do WinThor): em jan/26, o WinThor mostra os 3 supervisores de ATP somados:
+
+- VAREJO: R$ 5.263.999,25
+- ATACADO BALCÃO: R$ 1.559.701,53
+- GPC INTRAGRUPO: R$ 624.017,54
+- **Total: R$ 7.447.718,32**
+
+Mas o sistema mostrava só R$ 6.823.697 — exatamente o intragrupo de fora. Causa: o ETL antigo separava o GPC INTRAGRUPO num bloco `intragrupo` à parte e o agregado mensal usado no Compras × Vendas e em outras telas não considerava esse bloco.
+
+Correção: GPC INTRAGRUPO agora entra no `mensal` regular (vai pra ATP-V junto com VAREJO). O bloco `intragrupo` separado ainda existe para análises específicas, mas o total que aparece nas telas bate com o WinThor.
+
+Validação: jan/26 agora soma R$ 7.447.714,65 — diferença de R$ 3,67 só de arredondamento de centavos.
+
+Para 2025 (que veio do JSON antigo), o intragrupo separado foi reincorporado no mensal de ATP-V mês a mês. ATP-V 2025 passou a totalizar R$ 80,7M (antes era ~R$ 75,2M, faltavam ~R$ 5,5M de intragrupo).
+
+Limitação: para os agregados mais granulares de 2025 (vendas_por_sku, deptos, categorias_top, fornecedores_top, produtos_top), o intragrupo não foi reincorporado porque o JSON antigo não preservou esses dados separadamente. Esses 5 agregados de 2025 estão subestimados em ~6%. Quando você enviar os dados originais de 2025 reprocesso tudo do zero e o problema some.
+
+vendas_grupo.json também atualizado pra refletir os mesmos vendedores de ATP (incluindo o supervisor 3 GPC INTRAGRUPO).
+
+---
+
 ## v4.42 · 02/mai/2026
 
 **ATP reprocessado · entradas, saídas e devoluções 2026**
