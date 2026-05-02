@@ -1753,7 +1753,7 @@ function _renderSupIgnUI(){
   if(!cont) return;
 
   // Garante que cache foi carregado
-  _carregarSupervisoresIgnorados().then(function(mapaIgnorados){
+  _carregarSupervisoresIgnorados().then(function(cfg){
     const supPorLoja = _getSupervisoresPorLoja();
     const lojas = Object.keys(supPorLoja).sort(function(a,b){
       const ordem = ['ATP-V','ATP-A','CP1','CP3','CP5','CP40'];
@@ -1775,10 +1775,65 @@ function _renderSupIgnUI(){
       'CP5':'Cestão Inhambupe', 'CP40':'Barros 40'
     };
 
-    let html = '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:10px;">';
+    const catalogo = (typeof _SUP_IGN_PAGINAS_CATALOGO !== 'undefined') ? _SUP_IGN_PAGINAS_CATALOGO : [];
+    if(!catalogo.length){
+      cont.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text-muted);font-size:12px;">Nenhuma página configurável.</div>';
+      return;
+    }
+
+    // Determina página selecionada (mantém escolha do usuário entre re-renders)
+    if(!window._supIgnPaginaSel) window._supIgnPaginaSel = catalogo[0].id;
+    const paginaSel = window._supIgnPaginaSel;
+    const paginaInfo = catalogo.find(function(p){return p.id === paginaSel;}) || catalogo[0];
+
+    // Configuração ativa pra essa página
+    const cfgPag = (cfg.paginas && cfg.paginas[paginaSel]) || {};
+
+    let html = '';
+
+    // Seletor de página (dropdown)
+    html += '<div style="margin-bottom:14px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;">';
+    html += '<div style="flex:1;min-width:240px;">';
+    html += '<label style="display:block;font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;font-weight:700;margin-bottom:4px;">Configurar página:</label>';
+    html += '<select id="adm-sup-pagina" style="width:100%;padding:8px 10px;border:1px solid var(--border-strong);border-radius:5px;font-size:12.5px;background:var(--surface);">';
+    // Agrupa por grupo
+    const porGrupo = {};
+    catalogo.forEach(function(p){
+      if(!porGrupo[p.grupo]) porGrupo[p.grupo] = [];
+      porGrupo[p.grupo].push(p);
+    });
+    Object.keys(porGrupo).forEach(function(g){
+      html += '<optgroup label="'+esc(g)+'">';
+      porGrupo[g].forEach(function(p){
+        const cfgEsta = (cfg.paginas && cfg.paginas[p.id]) || {};
+        const totIgn = Object.keys(cfgEsta).reduce(function(s,l){return s + (cfgEsta[l]||[]).length;}, 0);
+        html += '<option value="'+escAttr(p.id)+'"'+(p.id===paginaSel?' selected':'')+'>'
+          + esc(p.label) + (totIgn>0 ? ' · '+totIgn+' ignorado(s)' : '')
+          + '</option>';
+      });
+      html += '</optgroup>';
+    });
+    html += '</select>';
+    html += '</div>';
+    // Atalhos
+    html += '<div style="display:flex;gap:6px;flex-wrap:wrap;">';
+    html += '<button id="adm-sup-limpar-pag" style="padding:7px 12px;background:white;color:var(--text);border:1px solid var(--border-strong);border-radius:5px;cursor:pointer;font-size:11px;font-weight:600;" title="Desmarca todos os supervisores ignorados desta página">Limpar página</button>';
+    html += '<button id="adm-sup-copiar-pag" style="padding:7px 12px;background:white;color:var(--text);border:1px solid var(--border-strong);border-radius:5px;cursor:pointer;font-size:11px;font-weight:600;" title="Copia a configuração desta página para outras páginas">Copiar para...</button>';
+    html += '</div>';
+    html += '</div>';
+
+    // Indicador da página selecionada
+    html += '<div style="margin-bottom:12px;padding:10px 12px;background:var(--accent-bg);border-left:3px solid var(--accent);border-radius:5px;font-size:12px;">';
+    html += '<strong style="color:var(--text);">'+esc(paginaInfo.label)+'</strong>';
+    html += ' <span style="color:var(--text-muted);">·</span> ';
+    html += '<span style="color:var(--text-dim);">Marque os supervisores que devem ser ignorados ao calcular esta página específica. Outras páginas continuam considerando todos.</span>';
+    html += '</div>';
+
+    // Cards por loja
+    html += '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:10px;">';
     lojas.forEach(function(loja){
       const sups = supPorLoja[loja];
-      const ignorados = (mapaIgnorados[loja] || []).map(Number);
+      const ignorados = (cfgPag[loja] || []).map(Number);
       const totIgn = sups.filter(function(s){ return ignorados.indexOf(s.cod) >= 0; }).length;
       html += '<div style="border:1px solid var(--border);border-radius:8px;padding:10px;background:var(--surface);">';
       html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid var(--border);">';
@@ -1796,31 +1851,131 @@ function _renderSupIgnUI(){
       html += '</div>';
     });
     html += '</div>';
-    html += '<div style="margin-top:10px;padding:8px 10px;background:var(--surface-2);border-left:3px solid var(--accent);border-radius:4px;font-size:11px;color:var(--text-dim);">';
-    html += '<strong>Como funciona:</strong> supervisores marcados serão excluídos das análises de vendas (KPIs, totais, gráficos por supervisor/vendedor). Útil para esconder grupos como INATIVOS, NEGOCIAÇÕES ESPECIAIS ou GPC INTRAGRUPO que distorcem as métricas.';
+
+    html += '<div style="margin-top:10px;padding:8px 10px;background:var(--surface-2);border-left:3px solid var(--accent);border-radius:4px;font-size:11px;color:var(--text-dim);line-height:1.5;">';
+    html += '<strong>Como funciona:</strong> a configuração de supervisores ignorados agora é por página. Cada página da lista acima tem sua própria lista. Páginas que não aparecem no seletor consideram todos os supervisores. Útil para esconder grupos como INATIVOS, NEGOCIAÇÕES ESPECIAIS ou GPC INTRAGRUPO em algumas análises mas mantê-los visíveis em outras.';
     html += '</div>';
+
     cont.innerHTML = html;
+
+    // Bind do seletor
+    document.getElementById('adm-sup-pagina').addEventListener('change', function(e){
+      window._supIgnPaginaSel = e.target.value;
+      _renderSupIgnUI();
+    });
+
+    // Limpar página
+    document.getElementById('adm-sup-limpar-pag').addEventListener('click', async function(){
+      const ok = await _confirm('Remover todos os supervisores ignorados de "'+paginaInfo.label+'"?', {titulo:'Limpar página', btnOk:'Limpar', perigo:true});
+      if(!ok) return;
+      const cfg = await _carregarSupervisoresIgnorados();
+      if(cfg.paginas && cfg.paginas[paginaSel]){
+        delete cfg.paginas[paginaSel];
+      }
+      const r = await _salvarSupervisoresIgnorados(cfg);
+      if(r.ok){ _renderSupIgnUI(); }
+      else { alert('Erro ao limpar: '+(r.erro||'desconhecido')); }
+    });
+
+    // Copiar para outras páginas
+    document.getElementById('adm-sup-copiar-pag').addEventListener('click', function(){
+      _supIgnAbrirCopiarUI(paginaSel, paginaInfo.label);
+    });
+
   }).catch(function(e){
     cont.innerHTML = '<div style="padding:20px;text-align:center;color:#dc2626;font-size:12px;">Erro ao carregar configuração: '+esc(e.message||'')+'</div>';
+  });
+}
+
+// Modal pra copiar config de uma página pra outras
+function _supIgnAbrirCopiarUI(paginaOrigem, labelOrigem){
+  const catalogo = (typeof _SUP_IGN_PAGINAS_CATALOGO !== 'undefined') ? _SUP_IGN_PAGINAS_CATALOGO : [];
+  const outras = catalogo.filter(function(p){return p.id !== paginaOrigem;});
+  if(!outras.length){
+    alert('Não há outras páginas para copiar.');
+    return;
+  }
+
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px;';
+  let html = '<div style="background:white;border-radius:10px;max-width:480px;width:100%;padding:20px;box-shadow:0 10px 40px rgba(0,0,0,.3);">';
+  html += '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">';
+  html += '<h3 style="margin:0;font-size:16px;font-weight:700;">Copiar configuração</h3>';
+  html += '<button id="sicp-close" style="background:transparent;border:none;cursor:pointer;font-size:18px;color:var(--text-muted);">✕</button>';
+  html += '</div>';
+  html += '<div style="font-size:12px;color:var(--text-muted);margin-bottom:14px;line-height:1.5;">Copiar a configuração de <strong style="color:var(--text);">'+esc(labelOrigem)+'</strong> para as páginas selecionadas. A configuração existente nessas páginas será <strong>substituída</strong>.</div>';
+  html += '<div style="display:flex;flex-direction:column;gap:6px;max-height:280px;overflow-y:auto;border:1px solid var(--border);border-radius:6px;padding:8px;">';
+  outras.forEach(function(p){
+    html += '<label style="display:flex;align-items:center;gap:8px;padding:5px 4px;cursor:pointer;font-size:12.5px;">'
+      + '<input type="checkbox" data-pagina-destino="'+escAttr(p.id)+'" class="sicp-chk" style="cursor:pointer;">'
+      + '<span style="color:var(--text-muted);font-size:10.5px;text-transform:uppercase;min-width:54px;">'+esc(p.grupo)+'</span>'
+      + '<span style="flex:1;">'+esc(p.label)+'</span>'
+      + '</label>';
+  });
+  html += '</div>';
+  html += '<div style="display:flex;justify-content:flex-end;gap:8px;margin-top:16px;">';
+  html += '<button id="sicp-cancel" style="padding:8px 14px;background:white;color:var(--text);border:1px solid var(--border-strong);border-radius:5px;cursor:pointer;font-size:12px;">Cancelar</button>';
+  html += '<button id="sicp-aplicar" style="padding:8px 14px;background:var(--accent);color:white;border:none;border-radius:5px;cursor:pointer;font-size:12px;font-weight:700;">Copiar</button>';
+  html += '</div>';
+  html += '</div>';
+  overlay.innerHTML = html;
+  document.body.appendChild(overlay);
+
+  document.getElementById('sicp-close').addEventListener('click', function(){overlay.remove();});
+  document.getElementById('sicp-cancel').addEventListener('click', function(){overlay.remove();});
+  document.getElementById('sicp-aplicar').addEventListener('click', async function(){
+    const destinos = Array.from(overlay.querySelectorAll('.sicp-chk:checked')).map(function(c){return c.getAttribute('data-pagina-destino');});
+    if(!destinos.length){ alert('Selecione ao menos uma página de destino.'); return; }
+    const cfg = await _carregarSupervisoresIgnorados();
+    const cfgOrig = (cfg.paginas && cfg.paginas[paginaOrigem]) || {};
+    if(!cfg.paginas) cfg.paginas = {};
+    destinos.forEach(function(d){
+      cfg.paginas[d] = JSON.parse(JSON.stringify(cfgOrig));
+      // Remove se vazio
+      const tot = Object.keys(cfg.paginas[d]).reduce(function(s,l){return s + (cfg.paginas[d][l]||[]).length;}, 0);
+      if(tot === 0) delete cfg.paginas[d];
+    });
+    const r = await _salvarSupervisoresIgnorados(cfg);
+    overlay.remove();
+    if(r.ok){
+      _renderSupIgnUI();
+      _toast('Copiado para '+destinos.length+' página(s)', 'ok');
+    } else {
+      alert('Erro ao copiar: '+(r.erro||'desconhecido'));
+    }
   });
 }
 
 async function _salvarSupIgnUI(){
   const status = document.getElementById('adm-sup-status');
   const checkboxes = document.querySelectorAll('.sup-ign-chk');
-  const novoMapa = {};
+  const paginaSel = window._supIgnPaginaSel;
+  if(!paginaSel){ console.warn('[supIgn] página não selecionada'); return; }
+
+  // Carrega config atual e atualiza só a página selecionada
+  const cfg = await _carregarSupervisoresIgnorados();
+  if(!cfg.paginas) cfg.paginas = {};
+
+  const novoMapaPag = {};
   checkboxes.forEach(function(chk){
     const loja = chk.getAttribute('data-loja');
     const cod = Number(chk.getAttribute('data-cod'));
     if(chk.checked){
-      if(!novoMapa[loja]) novoMapa[loja] = [];
-      novoMapa[loja].push(cod);
+      if(!novoMapaPag[loja]) novoMapaPag[loja] = [];
+      novoMapaPag[loja].push(cod);
     }
   });
-  // Limpa lojas sem ignorados (mantém objeto enxuto)
-  Object.keys(novoMapa).forEach(function(l){ if(!novoMapa[l].length) delete novoMapa[l]; });
+  // Limpa lojas sem ignorados
+  Object.keys(novoMapaPag).forEach(function(l){ if(!novoMapaPag[l].length) delete novoMapaPag[l]; });
 
-  const r = await _salvarSupervisoresIgnorados(novoMapa);
+  // Se ficou vazio, remove a página inteira pra manter o objeto enxuto
+  if(Object.keys(novoMapaPag).length === 0){
+    delete cfg.paginas[paginaSel];
+  } else {
+    cfg.paginas[paginaSel] = novoMapaPag;
+  }
+
+  const r = await _salvarSupervisoresIgnorados(cfg);
   if(status){
     status.style.opacity = '1';
     status.textContent = r.ok ? '✓ Salvo' : '✗ Erro';

@@ -552,37 +552,117 @@ function renderExcessoNovo(){
 // ════════════════════════════════════════════════════════════════════════
 // CURVA ABC NOVA · usa estoque_atp.json (E) · sub-etapa 4i
 // ════════════════════════════════════════════════════════════════════════
+// Estado ABC: modo de ranking + meses filtrados.
+// Modo "valor": ranking por faturamento (12m total, sem filtro de mês).
+// Modo "qt": ranking por quantidade vendida — permite filtrar meses específicos.
+let _abcModo = 'valor'; // 'valor' | 'qt'
+let _abcMesesSel = null; // null = todos · array de YMs = só esses
+
 function renderABCNovo(){
   const cont = document.getElementById('page-abc');
   if(!cont || !E) return;
   const produtos = E.produtos || [];
 
-  const comVenda = produtos.filter(function(p){return p.vendas && p.vendas.valor>0;});
-  const ordenado = comVenda.slice().sort(function(a,b){return (b.vendas.valor||0) - (a.vendas.valor||0);});
-  const totalGeral = ordenado.reduce(function(t,p){return t+(p.vendas.valor||0);},0);
-
-  let acum = 0;
-  ordenado.forEach(function(p){
-    acum += p.vendas.valor;
-    p._pctAcum = totalGeral>0?(acum/totalGeral*100):0;
-    p._classe = p._pctAcum<=80?'A':p._pctAcum<=95?'B':'C';
+  // YMs disponíveis (vindos de vendas_por_mes)
+  const ymsSet = {};
+  produtos.forEach(function(p){
+    (p.vendas_por_mes||[]).forEach(function(v){ ymsSet[v.ym] = true; });
   });
+  const ymsTodos = Object.keys(ymsSet).sort();
 
-  const cA = ordenado.filter(function(p){return p._classe==='A';});
-  const cB = ordenado.filter(function(p){return p._classe==='B';});
-  const cC = ordenado.filter(function(p){return p._classe==='C';});
+  // Se _abcMesesSel é null, considera todos. Se array vazio, também todos (defensivo).
+  const mesesAtivos = (Array.isArray(_abcMesesSel) && _abcMesesSel.length) ? _abcMesesSel : ymsTodos;
+  const mesesSet = new Set(mesesAtivos);
 
-  function sumEst(arr){return arr.reduce(function(t,p){return t+(p.estoque?p.estoque.vl_custo:0);},0);}
+  // Calcula ranking de acordo com o modo
+  let comVenda, ordenado, totalGeral;
+  if(_abcModo === 'qt'){
+    // Ranking por quantidade vendida nos meses selecionados
+    comVenda = produtos.map(function(p){
+      const qtPeriodo = (p.vendas_por_mes||[]).reduce(function(s,v){
+        return s + (mesesSet.has(v.ym) ? (v.qt||0) : 0);
+      }, 0);
+      return {p:p, _qtPeriodo:qtPeriodo};
+    }).filter(function(x){return x._qtPeriodo > 0;});
+    ordenado = comVenda.slice().sort(function(a,b){return b._qtPeriodo - a._qtPeriodo;});
+    totalGeral = ordenado.reduce(function(t,x){return t + x._qtPeriodo;}, 0);
+    let acum = 0;
+    ordenado.forEach(function(x){
+      acum += x._qtPeriodo;
+      x._pctAcum = totalGeral>0?(acum/totalGeral*100):0;
+      x._classe = x._pctAcum<=80?'A':x._pctAcum<=95?'B':'C';
+    });
+  } else {
+    // Modo valor (original): por faturamento total (12m fechado, ignora seleção de meses)
+    comVenda = produtos.filter(function(p){return p.vendas && p.vendas.valor>0;})
+                       .map(function(p){return {p:p};});
+    ordenado = comVenda.slice().sort(function(a,b){return (b.p.vendas.valor||0) - (a.p.vendas.valor||0);});
+    totalGeral = ordenado.reduce(function(t,x){return t+(x.p.vendas.valor||0);},0);
+    let acum = 0;
+    ordenado.forEach(function(x){
+      acum += x.p.vendas.valor;
+      x._pctAcum = totalGeral>0?(acum/totalGeral*100):0;
+      x._classe = x._pctAcum<=80?'A':x._pctAcum<=95?'B':'C';
+    });
+  }
+
+  const cA = ordenado.filter(function(x){return x._classe==='A';});
+  const cB = ordenado.filter(function(x){return x._classe==='B';});
+  const cC = ordenado.filter(function(x){return x._classe==='C';});
+
+  function sumEst(arr){return arr.reduce(function(t,x){return t+(x.p.estoque?x.p.estoque.vl_custo:0);},0);}
   const vlA = sumEst(cA), vlB = sumEst(cB), vlC = sumEst(cC);
 
-  let html = '<div class="ph"><div class="pk">Compras</div><h2>Curva ABC · '+fI(comVenda.length)+' SKUs com venda</h2></div>'
+  const isQt = _abcModo === 'qt';
+  const subTitleSufixo = isQt
+    ? (mesesAtivos.length === ymsTodos.length
+        ? ' · ranking por quantidade · todos os meses'
+        : ' · ranking por quantidade · '+mesesAtivos.length+' mês(es) selecionado(s)')
+    : ' · ranking por faturamento (12m total)';
+
+  let html = '<div class="ph"><div class="pk">Compras</div><h2>Curva ABC · '+fI(comVenda.length)+' SKUs com venda<span style="font-size:11px;color:var(--text-muted);font-weight:400;display:block;margin-top:2px;">'+esc(subTitleSufixo)+'</span></h2></div>'
            + '<div class="ph-sep"></div>'
            + '<div class="page-body">';
 
+  // ── Toggle modo + filtro de mês ──
+  html += '<div class="cc" style="padding:12px 14px;margin-bottom:12px;">';
+  html += '<div style="display:flex;flex-wrap:wrap;gap:14px;align-items:center;">';
+  // Toggle modo
+  html += '<div style="display:flex;align-items:center;gap:8px;">';
+  html += '<span style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;font-weight:700;">Ranking por:</span>';
+  html += '<div style="display:inline-flex;border:1px solid var(--border-strong);border-radius:6px;overflow:hidden;">';
+  html += '<button class="abc-modo-btn" data-modo="valor" style="padding:6px 12px;font-size:12px;border:none;cursor:pointer;background:'+(isQt?'transparent':'var(--accent)')+';color:'+(isQt?'var(--text)':'white')+';font-weight:600;">Faturamento</button>';
+  html += '<button class="abc-modo-btn" data-modo="qt" style="padding:6px 12px;font-size:12px;border:none;cursor:pointer;background:'+(isQt?'var(--accent)':'transparent')+';color:'+(isQt?'white':'var(--text)')+';font-weight:600;border-left:1px solid var(--border-strong);">Quantidade</button>';
+  html += '</div>';
+  html += '</div>';
+
+  // Filtro de meses (só ativo no modo qt)
+  if(isQt){
+    html += '<div style="display:flex;align-items:center;gap:8px;flex:1;min-width:280px;">';
+    html += '<span style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;font-weight:700;">Meses:</span>';
+    html += '<button id="abc-meses-btn" style="padding:6px 12px;font-size:12px;border:1px solid var(--border-strong);border-radius:5px;cursor:pointer;background:var(--surface);font-weight:600;">';
+    if(mesesAtivos.length === ymsTodos.length){
+      html += 'Todos os '+ymsTodos.length+' meses';
+    } else {
+      html += fI(mesesAtivos.length)+' de '+ymsTodos.length+' meses';
+    }
+    html += ' ▼</button>';
+    if(mesesAtivos.length !== ymsTodos.length){
+      html += '<button id="abc-meses-clear" style="padding:5px 8px;font-size:11px;border:1px solid var(--border);border-radius:4px;cursor:pointer;background:transparent;color:var(--text-muted);">Limpar</button>';
+    }
+    html += '</div>';
+  } else {
+    html += '<div style="font-size:11.5px;color:var(--text-dim);font-style:italic;">No modo Faturamento, o filtro de mês não está disponível porque os dados de venda mensal só têm quantidade — não trazem valor monetário. Use o modo Quantidade pra filtrar por mês.</div>';
+  }
+
+  html += '</div>';
+  html += '</div>';
+
+  // ── Card de critério ──
   html += '<div style="background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:10px 14px;margin-bottom:14px;font-size:12px;color:var(--text-dim);">'
-       + '<strong>Critério:</strong> SKUs ordenados por faturamento. <strong>A</strong> = primeiros 80% do faturamento · '
+       + '<strong>Critério:</strong> SKUs ordenados por '+(isQt?'quantidade vendida':'faturamento')+'. <strong>A</strong> = primeiros 80% do '+(isQt?'volume':'faturamento')+' · '
        + '<strong>B</strong> = próximos 15% (até 95%) · <strong>C</strong> = restante (5%). '
-       + 'Total faturado considerado: <strong>'+fK(totalGeral)+'</strong>.'
+       + 'Total '+(isQt?'de unidades':'faturado')+' considerado: <strong>'+(isQt?fI(totalGeral)+' un':fK(totalGeral))+'</strong>.'
        + '</div>';
 
   html += '<div class="kg" style="grid-template-columns:repeat(6,1fr);margin-bottom:14px;" id="kg-abc-novo"></div>';
@@ -591,39 +671,42 @@ function renderABCNovo(){
        +    '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-top:10px;">';
   [['A',cA,vlA,_PAL.ok],['B',cB,vlB,_PAL.hl],['C',cC,vlC,_PAL.dn]].forEach(function(t){
     const cls = t[0], arr = t[1], vl = t[2], color = t[3];
-    const fat = arr.reduce(function(s,p){return s+(p.vendas.valor||0);},0);
+    const tot = arr.reduce(function(s,x){return s + (isQt ? x._qtPeriodo : (x.p.vendas.valor||0));}, 0);
     const pctSku = comVenda.length>0?(arr.length/comVenda.length*100):0;
-    const pctFat = totalGeral>0?(fat/totalGeral*100):0;
+    const pctTot = totalGeral>0?(tot/totalGeral*100):0;
     html += '<div style="background:var(--surface-2);border-left:4px solid '+color+';padding:12px 14px;border-radius:6px;">'
          +    '<div style="font-size:24px;font-weight:800;color:'+color+';">Classe '+cls+'</div>'
          +    '<div style="font-size:11px;color:var(--text-muted);margin-top:4px;">SKUs</div>'
          +    '<div style="font-size:18px;font-weight:700;color:var(--text);">'+fI(arr.length)+' <span style="font-size:11px;color:var(--text-muted);font-weight:400;">('+fP(pctSku)+')</span></div>'
-         +    '<div style="font-size:11px;color:var(--text-muted);margin-top:8px;">Faturamento</div>'
-         +    '<div style="font-size:14px;font-weight:600;color:var(--text);">'+fK(fat)+' <span style="font-size:11px;color:var(--text-muted);font-weight:400;">('+fP(pctFat)+')</span></div>'
+         +    '<div style="font-size:11px;color:var(--text-muted);margin-top:8px;">'+(isQt?'Quantidade':'Faturamento')+'</div>'
+         +    '<div style="font-size:14px;font-weight:600;color:var(--text);">'+(isQt?fI(tot)+' un':fK(tot))+' <span style="font-size:11px;color:var(--text-muted);font-weight:400;">('+fP(pctTot)+')</span></div>'
          +    '<div style="font-size:11px;color:var(--text-muted);margin-top:8px;">Estoque a custo</div>'
          +    '<div style="font-size:14px;font-weight:600;color:var(--text);">'+fK(vl)+'</div>'
          +  '</div>';
   });
   html += '</div></div>';
 
-  html += '<div class="cc"><div class="cct">Classe A · '+fI(cA.length)+' SKUs (80% do faturamento)</div>'
+  // Tabela Classe A
+  html += '<div class="cc"><div class="cct">Classe A · '+fI(cA.length)+' SKUs (80% do '+(isQt?'volume':'faturamento')+')</div>'
        +    '<div class="tscroll" style="margin-top:8px;max-height:480px;overflow-y:auto;"><table class="t"><thead><tr>'
        +      '<th class="L" style="width:24px;">#</th>'
        +      '<th class="L">Produto</th>'
        +      '<th>Depto</th>'
-       +      '<th>Faturamento</th>'
+       +      '<th>'+(isQt?'Qtde no período':'Faturamento')+'</th>'
        +      '<th>% acumulado</th>'
        +      '<th>Margem %</th>'
        +      '<th>Estoque (custo)</th>'
        +    '</tr></thead><tbody>';
-  cA.slice(0, 100).forEach(function(p, i){
+  cA.slice(0, 100).forEach(function(x, i){
+    const p = x.p;
     const e = p.estoque || {};
+    const valExibido = isQt ? fI(x._qtPeriodo)+' un' : fK(p.vendas.valor||0);
     html += '<tr>'
          +    '<td class="L" style="color:var(--text-muted);font-weight:700;">'+(i+1)+'</td>'
          +    '<td class="L" data-prod-cod="'+esc(p.cod)+'" title="Clique para ver diagnóstico do produto"><strong>'+esc((p.desc||'').substring(0,40))+'</strong></td>'
          +    '<td>'+esc((p.depto&&p.depto.nome)||'-')+'</td>'
-         +    '<td class="val-strong">'+fK(p.vendas.valor||0)+'</td>'
-         +    '<td>'+fP(p._pctAcum||0)+'</td>'
+         +    '<td class="val-strong">'+valExibido+'</td>'
+         +    '<td>'+fP(x._pctAcum||0)+'</td>'
          +    '<td>'+fP(p.vendas.marg||0)+'</td>'
          +    '<td>'+fK(e.vl_custo||0)+'</td>'
          +  '</tr>';
@@ -634,14 +717,35 @@ function renderABCNovo(){
   html += '</div>';
   cont.innerHTML = html;
 
+  // KPIs
   document.getElementById('kg-abc-novo').innerHTML = kgHtml([
-    {l:'SKUs com venda',v:fI(comVenda.length),s:'No período de '+(E.meta&&E.meta.periodo_vendas?E.meta.periodo_vendas.meses+' meses':'?')},
-    {l:'Faturamento total',v:fK(totalGeral),s:'Soma de todos os SKUs'},
-    {l:'Classe A',v:fI(cA.length)+' SKUs',s:fP(comVenda.length>0?cA.length/comVenda.length*100:0)+' do total · 80% do faturamento',cls:'ok'},
+    {l:'SKUs com venda',v:fI(comVenda.length),s:isQt?'No período selecionado':'No período de '+(E.meta&&E.meta.periodo_vendas?E.meta.periodo_vendas.meses+' meses':'?')},
+    {l:isQt?'Volume total':'Faturamento total',v:isQt?fI(totalGeral)+' un':fK(totalGeral),s:isQt?'Soma de unidades vendidas':'Soma de todos os SKUs'},
+    {l:'Classe A',v:fI(cA.length)+' SKUs',s:fP(comVenda.length>0?cA.length/comVenda.length*100:0)+' do total · 80% do '+(isQt?'volume':'faturamento'),cls:'ok'},
     {l:'Classe B',v:fI(cB.length)+' SKUs',s:fP(comVenda.length>0?cB.length/comVenda.length*100:0)+' do total · 15% adicional',cls:'vio'},
-    {l:'Classe C',v:fI(cC.length)+' SKUs',s:fP(comVenda.length>0?cC.length/comVenda.length*100:0)+' do total · só 5% do faturamento',cls:'dn'},
+    {l:'Classe C',v:fI(cC.length)+' SKUs',s:fP(comVenda.length>0?cC.length/comVenda.length*100:0)+' do total · só 5% do '+(isQt?'volume':'faturamento'),cls:'dn'},
     {l:'Cauda longa',v:fI(cC.length)+' SKUs',s:'Avalie descontinuação de itens classe C de baixo giro',cls:''},
   ]);
+
+  // Bind toggle modo
+  document.querySelectorAll('.abc-modo-btn').forEach(function(btn){
+    btn.addEventListener('click', function(){
+      const novoModo = btn.getAttribute('data-modo');
+      if(novoModo === _abcModo) return;
+      _abcModo = novoModo;
+      // Ao trocar modo, reseta seleção de meses
+      _abcMesesSel = null;
+      renderABCNovo();
+    });
+  });
+
+  // Bind seletor de meses (só no modo qt)
+  if(isQt){
+    const btnMeses = document.getElementById('abc-meses-btn');
+    if(btnMeses) btnMeses.addEventListener('click', function(){ _abcAbrirSeletorMeses(ymsTodos); });
+    const btnClear = document.getElementById('abc-meses-clear');
+    if(btnClear) btnClear.addEventListener('click', function(){ _abcMesesSel = null; renderABCNovo(); });
+  }
 
   const top100 = ordenado.slice(0, 100);
   mkC('c-abc-pareto',{
@@ -649,22 +753,103 @@ function renderABCNovo(){
     data:{
       labels:top100.map(function(_,i){return (i+1).toString();}),
       datasets:[
-        {label:'Faturamento (R$)',type:'bar',data:top100.map(function(p){return p.vendas.valor;}),
-         backgroundColor:top100.map(function(p){return p._classe==='A'?_PAL.ok+'CC':p._classe==='B'?_PAL.hl+'CC':_PAL.dn+'CC';}),
+        {label:isQt?'Quantidade':'Faturamento (R$)',type:'bar',data:top100.map(function(x){return isQt?x._qtPeriodo:x.p.vendas.valor;}),
+         backgroundColor:top100.map(function(x){return x._classe==='A'?_PAL.ok+'CC':x._classe==='B'?_PAL.hl+'CC':_PAL.dn+'CC';}),
          yAxisID:'y'},
-        {label:'% acumulado',type:'line',data:top100.map(function(p){return p._pctAcum;}),
+        {label:'% acumulado',type:'line',data:top100.map(function(x){return x._pctAcum;}),
          borderColor:_PAL.vi,backgroundColor:_PAL.vi+'33',tension:0.2,pointRadius:0,borderWidth:2,yAxisID:'y2'}
       ]
     },
     options:{responsive:true,maintainAspectRatio:false,
       plugins:{legend:{position:'top',labels:{padding:6,usePointStyle:true,boxWidth:8,font:{size:10}}},
-               tooltip:{callbacks:{title:function(ctx){var i=ctx[0].dataIndex;return '#'+(i+1)+' '+(top100[i].desc||'').substring(0,40);},
-                                   label:function(ctx){return ctx.dataset.label+': '+(ctx.dataset.type==='line'?fP(ctx.raw):fK(ctx.raw));}}}},
+               tooltip:{callbacks:{title:function(ctx){var i=ctx[0].dataIndex;return '#'+(i+1)+' '+(top100[i].p.desc||'').substring(0,40);},
+                                   label:function(ctx){
+                                     if(ctx.dataset.type==='line') return ctx.dataset.label+': '+fP(ctx.raw);
+                                     return ctx.dataset.label+': '+(isQt?fI(ctx.raw)+' un':fK(ctx.raw));
+                                   }}}},
       scales:{
-        x:{ticks:{display:false},grid:{display:false},title:{display:true,text:'Posição (rank de faturamento)',font:{size:10}}},
-        y:{position:'left',ticks:{callback:function(v){return fAbbr(v);}},title:{display:true,text:'R$',font:{size:10}}},
+        x:{ticks:{display:false},grid:{display:false},title:{display:true,text:'Posição (rank de '+(isQt?'volume':'faturamento')+')',font:{size:10}}},
+        y:{position:'left',ticks:{callback:function(v){return isQt?fI(v):fAbbr(v);}},title:{display:true,text:isQt?'Unidades':'R$',font:{size:10}}},
         y2:{position:'right',min:0,max:100,grid:{display:false},ticks:{callback:function(v){return v+'%';}},title:{display:true,text:'% acumulado',font:{size:10}}}
       }}});
+}
+
+// Modal de seleção de meses pra modo qt
+function _abcAbrirSeletorMeses(ymsTodos){
+  const selecionados = new Set(_abcMesesSel || ymsTodos);
+
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px;';
+  let html = '<div style="background:white;border-radius:10px;max-width:480px;width:100%;padding:20px;box-shadow:0 10px 40px rgba(0,0,0,.3);">';
+  html += '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">';
+  html += '<h3 style="margin:0;font-size:16px;font-weight:700;">📅 Selecione os meses</h3>';
+  html += '<button id="abcm-close" style="background:transparent;border:none;cursor:pointer;font-size:18px;color:var(--text-muted);">✕</button>';
+  html += '</div>';
+  html += '<div style="font-size:11px;color:var(--text-muted);margin-bottom:8px;">Marque os meses que devem entrar no ranking de quantidade.</div>';
+  html += '<div style="display:flex;gap:6px;margin-bottom:10px;">';
+  html += '<button id="abcm-todos" style="padding:5px 10px;font-size:11px;border:1px solid var(--border-strong);border-radius:4px;background:white;cursor:pointer;">Todos</button>';
+  html += '<button id="abcm-nenhum" style="padding:5px 10px;font-size:11px;border:1px solid var(--border-strong);border-radius:4px;background:white;cursor:pointer;">Nenhum</button>';
+  html += '<button id="abcm-12m" style="padding:5px 10px;font-size:11px;border:1px solid var(--border-strong);border-radius:4px;background:white;cursor:pointer;">Últimos 12m</button>';
+  html += '<button id="abcm-3m" style="padding:5px 10px;font-size:11px;border:1px solid var(--border-strong);border-radius:4px;background:white;cursor:pointer;">Últimos 3m</button>';
+  html += '</div>';
+  html += '<div style="max-height:280px;overflow-y:auto;border:1px solid var(--border);border-radius:6px;padding:8px;display:grid;grid-template-columns:1fr 1fr;gap:4px;">';
+  ymsTodos.forEach(function(ym){
+    const checked = selecionados.has(ym);
+    html += '<label style="display:flex;align-items:center;gap:6px;padding:4px 6px;cursor:pointer;font-size:12px;border-radius:4px;'+(checked?'background:#fef3c7;':'')+'">'
+      + '<input type="checkbox" data-ym="'+esc(ym)+'" '+(checked?'checked':'')+' class="abcm-chk" style="cursor:pointer;">'
+      + '<span style="font-family:JetBrains Mono,monospace;font-size:11px;">'+_ymToLabel(ym)+'</span>'
+      + '</label>';
+  });
+  html += '</div>';
+  html += '<div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px;">';
+  html += '<button id="abcm-cancel" style="padding:8px 14px;background:white;color:var(--text);border:1px solid var(--border-strong);border-radius:5px;cursor:pointer;font-size:12px;">Cancelar</button>';
+  html += '<button id="abcm-apply" style="padding:8px 14px;background:var(--accent);color:white;border:none;border-radius:5px;cursor:pointer;font-size:12px;font-weight:700;">Aplicar</button>';
+  html += '</div>';
+  html += '</div>';
+  overlay.innerHTML = html;
+  document.body.appendChild(overlay);
+
+  function close(){ overlay.remove(); }
+  document.getElementById('abcm-close').addEventListener('click', close);
+  document.getElementById('abcm-cancel').addEventListener('click', close);
+  document.getElementById('abcm-todos').addEventListener('click', function(){
+    overlay.querySelectorAll('.abcm-chk').forEach(function(c){c.checked = true; c.closest('label').style.background = '#fef3c7';});
+  });
+  document.getElementById('abcm-nenhum').addEventListener('click', function(){
+    overlay.querySelectorAll('.abcm-chk').forEach(function(c){c.checked = false; c.closest('label').style.background = '';});
+  });
+  document.getElementById('abcm-12m').addEventListener('click', function(){
+    const last12 = new Set(ymsTodos.slice(-12));
+    overlay.querySelectorAll('.abcm-chk').forEach(function(c){
+      const ok = last12.has(c.getAttribute('data-ym'));
+      c.checked = ok;
+      c.closest('label').style.background = ok ? '#fef3c7' : '';
+    });
+  });
+  document.getElementById('abcm-3m').addEventListener('click', function(){
+    const last3 = new Set(ymsTodos.slice(-3));
+    overlay.querySelectorAll('.abcm-chk').forEach(function(c){
+      const ok = last3.has(c.getAttribute('data-ym'));
+      c.checked = ok;
+      c.closest('label').style.background = ok ? '#fef3c7' : '';
+    });
+  });
+  // toggle de fundo no clique
+  overlay.querySelectorAll('.abcm-chk').forEach(function(c){
+    c.addEventListener('change', function(){
+      c.closest('label').style.background = c.checked ? '#fef3c7' : '';
+    });
+  });
+  document.getElementById('abcm-apply').addEventListener('click', function(){
+    const sel = Array.from(overlay.querySelectorAll('.abcm-chk:checked')).map(function(c){return c.getAttribute('data-ym');});
+    if(sel.length === 0){
+      alert('Selecione ao menos um mês.');
+      return;
+    }
+    _abcMesesSel = (sel.length === ymsTodos.length) ? null : sel;
+    overlay.remove();
+    renderABCNovo();
+  });
 }
 
 // ════════════════════════════════════════════════════════════════════════
@@ -762,11 +947,12 @@ function renderFornecedoresNovo(){
 
   // Banner explicativo
   const periodoCompra = (E.meta && E.meta.periodo_vendas) ? E.meta.periodo_vendas.meses+' meses' : '12 meses';
-  html += '<div style="background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:10px 14px;margin-bottom:14px;font-size:12px;color:var(--text-dim);">'
+  html += '<div style="background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:10px 14px;margin-bottom:14px;font-size:12px;color:var(--text-dim);line-height:1.5;">'
        + '<strong>Período:</strong> compras 12 meses · vendas '+periodoCompra+' · '
        + '<strong>'+fI(fornAll.length)+'</strong> fornecedores cadastrados · '
        + '<strong>'+fI(fornAtivos.length)+'</strong> com compras no período · '
        + 'Retrato estoque: '+esc((E.meta&&E.meta.data_referencia)||'?')
+       + '<br><span style="color:var(--text-muted);font-size:11px;">Filtro por mês não disponível: o ETL atual exporta vendas mensais só em quantidade (sem valor) e compras só em agregado anual. Para análises por mês específico, use a Análise Dinâmica.</span>'
        + '</div>';
 
   html += '<div id="kg-forn-novo"></div>';
@@ -1867,10 +2053,11 @@ function renderDeptosNovo(){
   // Banner
   const meta = E.meta || {};
   const periodoTxt = (meta.periodo_vendas && meta.periodo_vendas.meses) ? meta.periodo_vendas.meses+' meses' : '?';
-  html += '<div style="background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:10px 14px;margin-bottom:14px;font-size:12px;color:var(--text-dim);">'
+  html += '<div style="background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:10px 14px;margin-bottom:14px;font-size:12px;color:var(--text-dim);line-height:1.5;">'
        + '<strong>Período de vendas:</strong> '+esc(periodoTxt)+' · '
        + '<strong>'+fI(_deptosCache.deptos.length)+'</strong> departamentos · '
        + 'Drill: clique no nome para ver seções → categorias'
+       + '<br><span style="color:var(--text-muted);font-size:11px;">Filtro por mês não disponível: o ETL exporta vendas mensais só em quantidade. Para análises por mês específico use a Análise Dinâmica.</span>'
        + '</div>';
 
   // Legenda dos status

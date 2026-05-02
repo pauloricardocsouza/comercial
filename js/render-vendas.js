@@ -2126,9 +2126,9 @@ function renderVDrilldown(){
   const cadOriginal = (V.vendedores && V.vendedores.cadastro) || [];
   const mensalVorig = (V.vendedores && V.vendedores.mensal) || [];
 
-  // Aplicar filtro de supervisores ignorados (configurado em Administração)
-  const cad = Filtros.vendedoresAtivos(cadOriginal);
-  const codsValidos = Filtros.codsValidos(cad);
+  // Aplicar filtro de supervisores ignorados (configurado em Administração) — escopo desta página
+  const cad = Filtros.vendedoresAtivos(cadOriginal, 'v-drilldown');
+  const codsValidos = Filtros.codsValidos(cad, 'v-drilldown');
   const mensalV = mensalVorig.filter(function(r){return codsValidos.has(r.cod);});
 
   if(!cad.length || !mensalV.length){
@@ -2395,9 +2395,9 @@ function renderVBenchmarking(){
   const cadOriginal = (V.vendedores && V.vendedores.cadastro) || [];
   const mensalVorig = (V.vendedores && V.vendedores.mensal) || [];
 
-  // Aplicar filtro de supervisores ignorados
-  const cad = Filtros.vendedoresAtivos(cadOriginal);
-  const codsValidos = Filtros.codsValidos(cad);
+  // Aplicar filtro de supervisores ignorados — escopo desta página
+  const cad = Filtros.vendedoresAtivos(cadOriginal, 'v-benchmarking');
+  const codsValidos = Filtros.codsValidos(cad, 'v-benchmarking');
   const mensalV = mensalVorig.filter(function(r){return codsValidos.has(r.cod);});
 
   if(!cad.length || !mensalV.length){
@@ -3712,7 +3712,7 @@ function renderVAlertas(){
 
   // Tipo 1: Vendedores em queda forte (jan-mar 26 vs 25, > -30%)
   if(V && V.vendedores && V.vendedores.cadastro && V.vendedores.mensal){
-    const cad = Filtros.vendedoresAtivos(V.vendedores.cadastro);
+    const cad = Filtros.vendedoresAtivos(V.vendedores.cadastro, 'v-alertas');
     const mensalIdx = new Map();
     V.vendedores.mensal.forEach(function(r){
       if(!mensalIdx.has(r.cod)) mensalIdx.set(r.cod, []);
@@ -3808,7 +3808,7 @@ function renderVAlertas(){
       const v = cadIdx.get(r.cod);
       // Pula se temos cadastro E ele está com supervisor marcado como ignorado.
       // Se não houver cadastro, mantém (vendedor desconhecido conta).
-      if(v && _isSupervisorIgnorado(v.loja, v.cod_supervisor)) return;
+      if(v && _isSupervisorIgnorado('v-alertas', v.loja, v.cod_supervisor)) return;
       totalVend.set(r.cod, (totalVend.get(r.cod)||0) + (r.fat_liq||0));
     });
     const arr = Array.from(totalVend.entries()).map(function(kv){return {cod:kv[0], fat:kv[1]};})

@@ -216,7 +216,7 @@ const AUTH_MODE = 'firebase'; // 'mock' | 'firebase'
 // Convenção:
 //   X.x → alteração grande (quebra de compatibilidade, nova feature grande)
 //   x.X → alteração suave (fix, ajuste visual, pequeno refinamento)
-const APP_VERSION = '4.36-comercial';
+const APP_VERSION = '4.39-comercial';
 
 // ================================================================
 // HELPERS DE CHART.JS — compatíveis com Safari/iOS (sem spread ops)
@@ -288,18 +288,39 @@ function _auditLog(tipo, detalhes, identidadeOverride){
 
 
 // ================================================================
-// SUPERVISORES IGNORADOS POR LOJA · service layer
+// SUPERVISORES IGNORADOS POR PÁGINA · service layer v2 (v4.37)
 // ================================================================
-// Estrutura no Firestore: config/supervisores_loja
-//   { ignorados: { 'CP1': [9, 11], 'ATP-V': [], ... } }
-// Estrutura no localStorage: chave 'supervisores_ignorados'
+// Estrutura no Firestore: config/supervisores_loja_v2
+//   { paginas: { 'v-diarias': { 'CP1': [9, 11], 'ATP-V': [] }, ... } }
+// Estrutura no localStorage: chave 'supervisores_ignorados_v2'
 //
-// Uso nas páginas: _isSupervisorIgnorado(loja, codSup) → bool
-//                  _filtrarPorSupervisor(linha) → bool (true se devo INCLUIR)
+// Uso nas páginas: _isSupervisorIgnorado(pagina, loja, codSup) → bool
+//                  Filtros.vendedoresAtivos(cad, pagina) → array filtrado
+//
+// IMPORTANTE: agora exige passar a página como primeiro parâmetro.
+// Cada página define se quer aplicar o filtro chamando com seu próprio id.
+// Páginas que NÃO chamam o filtro consideram TODOS os supervisores.
+//
+// Catálogo de páginas que podem ter o filtro aplicado (pra UI do admin):
+// IMPORTANTE: o `id` deve bater com o id usado nas chamadas de _isSupervisorIgnorado
+// e Filtros.vendedoresAtivos dentro de cada página.
+//
+// Páginas listadas aqui SÃO as que efetivamente respeitam o filtro hoje.
+// Se quiser estender pra outras páginas, é necessário (1) adicionar aqui e
+// (2) chamar _isSupervisorIgnorado(id_pagina, loja, cod) ou
+// Filtros.vendedoresAtivos(cad, id_pagina) na função render daquela página.
+const _SUP_IGN_PAGINAS_CATALOGO = [
+  // Vendas — drill por vendedor/supervisor
+  {id:'v-drilldown',    label:'Drill-Down por Vendedor',grupo:'Vendas'},
+  {id:'v-benchmarking', label:'Benchmarking',           grupo:'Vendas'},
+  {id:'v-alertas',      label:'Alertas',                grupo:'Vendas'},
+  // Outros
+  {id:'recebimentos',   label:'Recebimentos',           grupo:'Financeiro'},
+];
 
-let _supIgnoradosCache = null;     // {loja: [cod, cod, ...]}
+let _supIgnoradosCache = null;     // {paginas: {pagina: {loja: [cod, ...]}}}
 let _supIgnoradosLoading = null;
-const SUP_IGN_LS_KEY = 'supervisores_ignorados';
+const SUP_IGN_LS_KEY = 'supervisores_ignorados_v2';
 
 async function _carregarSupervisoresIgnorados(){
   if(_supIgnoradosCache) return _supIgnoradosCache;
@@ -309,10 +330,10 @@ async function _carregarSupervisoresIgnorados(){
     // Tenta Firestore primeiro
     if(AUTH_MODE === 'firebase' && window.fbDb){
       try {
-        const doc = await window.fbDb.collection('config').doc('supervisores_loja').get();
+        const doc = await window.fbDb.collection('config').doc('supervisores_loja_v2').get();
         if(doc.exists){
           const data = doc.data();
-          _supIgnoradosCache = (data && data.ignorados) || {};
+          _supIgnoradosCache = {paginas: (data && data.paginas) || {}};
           // Sincroniza localStorage
           try { localStorage.setItem(SUP_IGN_LS_KEY, JSON.stringify(_supIgnoradosCache)); } catch(e){}
           return _supIgnoradosCache;
@@ -324,9 +345,11 @@ async function _carregarSupervisoresIgnorados(){
     // Fallback: localStorage
     try {
       const raw = localStorage.getItem(SUP_IGN_LS_KEY);
-      _supIgnoradosCache = raw ? JSON.parse(raw) : {};
+      _supIgnoradosCache = raw ? JSON.parse(raw) : {paginas:{}};
+      // Garante shape
+      if(!_supIgnoradosCache.paginas) _supIgnoradosCache.paginas = {};
     } catch(e){
-      _supIgnoradosCache = {};
+      _supIgnoradosCache = {paginas:{}};
     }
     return _supIgnoradosCache;
   })();
@@ -335,7 +358,10 @@ async function _carregarSupervisoresIgnorados(){
 }
 
 async function _salvarSupervisoresIgnorados(novoMapa){
-  _supIgnoradosCache = novoMapa || {};
+  // novoMapa esperado: {paginas: {pagina: {loja: [cods]}}}
+  if(!novoMapa) novoMapa = {paginas:{}};
+  if(!novoMapa.paginas) novoMapa.paginas = {};
+  _supIgnoradosCache = novoMapa;
   // localStorage sempre
   try { localStorage.setItem(SUP_IGN_LS_KEY, JSON.stringify(_supIgnoradosCache)); } catch(e){}
   // Firestore se disponível
@@ -347,28 +373,27 @@ async function _salvarSupervisoresIgnorados(novoMapa){
         await window.fbAuth.currentUser.getIdToken(true);
       }
     } catch(eRefresh){
-      // Falha no refresh não impede a tentativa — apenas log
       console.warn('[supIgn] aviso: falha ao refrescar token, segue com token atual:', eRefresh.message);
     }
     try {
-      await window.fbDb.collection('config').doc('supervisores_loja').set({
-        ignorados: _supIgnoradosCache,
+      await window.fbDb.collection('config').doc('supervisores_loja_v2').set({
+        paginas: _supIgnoradosCache.paginas,
         atualizado_em: new Date().toISOString(),
         atualizado_por: (_getSessao() || {}).email || 'desconhecido'
       });
-      _auditLog('config_save', {tipo:'supervisores_loja', mapa:_supIgnoradosCache});
+      _auditLog('config_save', {tipo:'supervisores_loja_v2', mapa:_supIgnoradosCache});
       return {ok:true};
     } catch(e){
       // Se erro de permissão, tenta forçar reload do token uma vez e refazer
       if(e && e.code === 'permission-denied' && window.fbAuth && window.fbAuth.currentUser){
         try {
           await window.fbAuth.currentUser.getIdToken(true);
-          await window.fbDb.collection('config').doc('supervisores_loja').set({
-            ignorados: _supIgnoradosCache,
+          await window.fbDb.collection('config').doc('supervisores_loja_v2').set({
+            paginas: _supIgnoradosCache.paginas,
             atualizado_em: new Date().toISOString(),
             atualizado_por: (_getSessao() || {}).email || 'desconhecido'
           });
-          _auditLog('config_save', {tipo:'supervisores_loja', mapa:_supIgnoradosCache, retry:true});
+          _auditLog('config_save', {tipo:'supervisores_loja_v2', mapa:_supIgnoradosCache, retry:true});
           return {ok:true, retry:true};
         } catch(e2){
           console.error('[supIgn] erro ao salvar no Firestore (após retry):', e2);
@@ -383,13 +408,20 @@ async function _salvarSupervisoresIgnorados(novoMapa){
 }
 
 /**
- * Verifica se supervisor está marcado como ignorado naquela loja.
- * Função primitiva — em código novo, prefira `Filtros.vendedorEhValido(cad)`
- * que combina esta verificação com checagens de cad existir, cod_supervisor != null, etc.
+ * Verifica se supervisor está marcado como ignorado naquela página + loja.
+ * @param {string} pagina  - id da página (ex: 'v-diarias'). Páginas que não chamam essa função consideram TODOS os supervisores.
+ * @param {string} loja    - código da loja (ex: 'CP1', 'ATP-V')
+ * @param {number|string} codSup - código do supervisor
+ * @returns {boolean} true se está ignorado
+ *
+ * Função primitiva — em código novo, prefira `Filtros.vendedorEhValido(cad, pagina)`.
  */
-function _isSupervisorIgnorado(loja, codSup){
-  if(!_supIgnoradosCache || !loja || codSup == null) return false;
-  const lst = _supIgnoradosCache[loja];
+function _isSupervisorIgnorado(pagina, loja, codSup){
+  if(!_supIgnoradosCache || !pagina || !loja || codSup == null) return false;
+  const paginas = _supIgnoradosCache.paginas || {};
+  const cfgPag = paginas[pagina];
+  if(!cfgPag) return false;
+  const lst = cfgPag[loja];
   if(!Array.isArray(lst) || lst.length === 0) return false;
   return lst.indexOf(Number(codSup)) >= 0;
 }
@@ -420,58 +452,59 @@ function _getSupervisoresPorLoja(){
 // e facilitar adicionar novas regras (ex: ignorar departamentos específicos).
 //
 // Uso:
-//   Filtros.vendedoresAtivos(V.vendedores.cadastro)  → array filtrado
-//   Filtros.mensalVendedoresAtivos(V.vendedores)     → mensal filtrado
-//   Filtros.deptosValidos(V.deptos)                  → sem INATIVO
-//   Filtros.vendedorEhValido(cad)                    → bool
-//   Filtros.codsValidos(cad)                         → Set<cod>
+//   Filtros.vendedoresAtivos(V.vendedores.cadastro, 'v-diarias')  → array filtrado
+//   Filtros.mensalVendedoresAtivos(V.vendedores, 'v-diarias')     → mensal filtrado
+//   Filtros.deptosValidos(V.deptos)                                → sem INATIVO
+//   Filtros.vendedorEhValido(cad, 'v-diarias')                     → bool
+//   Filtros.codsValidos(cad, 'v-diarias')                          → Set<cod>
 //
-// Quando adicionar uma nova regra (ex: "ignorar depto NEGOCIAÇÕES"),
-// muda APENAS aqui. As páginas continuam chamando Filtros.X() e ganham
-// a regra automaticamente.
+// IMPORTANTE: o parâmetro `pagina` é OPCIONAL. Se não passado, ignora o filtro
+// de supervisores e mantém todos. Cada página decide se quer aplicar.
 
 const Filtros = {
   /**
    * Vendedor é válido se:
    * - tem cod_supervisor (não é null)
    * - tem loja
-   * - o (loja, supervisor) NÃO está marcado como ignorado em Administração
+   * - se `pagina` foi passada: o (pagina, loja, supervisor) NÃO está marcado como ignorado
+   *   se `pagina` for null/undefined: ignora a regra de supervisores e considera todos
    */
-  vendedorEhValido: function(cad){
+  vendedorEhValido: function(cad, pagina){
     if(!cad) return false;
     if(cad.cod_supervisor == null) return false;
     if(!cad.loja) return false;
-    if(_isSupervisorIgnorado(cad.loja, cad.cod_supervisor)) return false;
+    if(pagina && _isSupervisorIgnorado(pagina, cad.loja, cad.cod_supervisor)) return false;
     return true;
   },
 
   /**
-   * Filtra V.vendedores.cadastro removendo vendedores cujo (loja, supervisor)
+   * Filtra V.vendedores.cadastro removendo vendedores cujo (pagina, loja, supervisor)
    * está marcado como ignorado, ou que não têm cod_supervisor.
+   * Se `pagina` for omitida, retorna todos os com cod_supervisor não-nulo.
    */
-  vendedoresAtivos: function(cadastro){
+  vendedoresAtivos: function(cadastro, pagina){
     if(!Array.isArray(cadastro)) return [];
-    return cadastro.filter(Filtros.vendedorEhValido);
+    return cadastro.filter(function(c){ return Filtros.vendedorEhValido(c, pagina); });
   },
 
   /**
    * Retorna Set<cod> dos vendedores ativos (útil pra cruzar com .mensal).
    * Aceita V.vendedores ou um cadastro direto.
    */
-  codsValidos: function(vendedoresOuCadastro){
+  codsValidos: function(vendedoresOuCadastro, pagina){
     const cad = vendedoresOuCadastro && vendedoresOuCadastro.cadastro
               ? vendedoresOuCadastro.cadastro
               : vendedoresOuCadastro;
-    return new Set(Filtros.vendedoresAtivos(cad).map(function(v){ return v.cod; }));
+    return new Set(Filtros.vendedoresAtivos(cad, pagina).map(function(v){ return v.cod; }));
   },
 
   /**
    * Filtra .mensal mantendo apenas linhas de vendedores ativos.
    * Aceita V.vendedores ({cadastro, mensal}) ou um par direto.
    */
-  mensalVendedoresAtivos: function(vendedores){
+  mensalVendedoresAtivos: function(vendedores, pagina){
     if(!vendedores || !Array.isArray(vendedores.mensal)) return [];
-    const cods = Filtros.codsValidos(vendedores.cadastro || []);
+    const cods = Filtros.codsValidos(vendedores.cadastro || [], pagina);
     return vendedores.mensal.filter(function(r){ return cods.has(r.cod); });
   },
 
@@ -1297,26 +1330,38 @@ function _normalizarCubo(c){
     }
 
     // Construir dimensão loja a partir das filiais do meta
+    // Cruza com valores reais que aparecem no fato pra garantir que
+    // todas as filiais com dados sejam listadas (defensivo contra
+    // meta.filiais incompleto ou desordenado).
+    const idxFilForVendas = camposFv.indexOf('filial');
+    const filiaisNoFato = new Set();
+    if(idxFilForVendas >= 0){
+      (fv.linhas || []).forEach(function(linha){
+        if(linha[idxFilForVendas]) filiaisNoFato.add(String(linha[idxFilForVendas]));
+      });
+    }
+
     if(c.meta && Array.isArray(c.meta.filiais)){
+      // Começa com o que está em meta.filiais (na ordem certa)
+      const itemsFromMeta = c.meta.filiais.map(function(f){
+        return { cod: f.slug || f.cod, nome: f.nome };
+      });
+      const codsMeta = new Set(itemsFromMeta.map(function(it){return String(it.cod);}));
+      // Adiciona qualquer filial que apareça no fato mas não esteja em meta
+      filiaisNoFato.forEach(function(slug){
+        if(!codsMeta.has(String(slug))){
+          itemsFromMeta.push({cod: slug, nome: slug});
+          console.warn('[_normalizarCubo] filial '+slug+' aparece no fato mas não está em meta.filiais — adicionada como cod='+slug);
+        }
+      });
+      dimensoes.loja = { items: itemsFromMeta };
+    } else {
+      // Fallback total: extrair só do fato
       dimensoes.loja = {
-        items: c.meta.filiais.map(function(f){
-          return { cod: f.slug || f.cod, nome: f.nome };
+        items: Array.from(filiaisNoFato).sort().map(function(l){
+          return { cod: l, nome: l };
         })
       };
-    } else {
-      // Fallback: extrair valores únicos de 'filial' do fato
-      const idxFil = camposFv.indexOf('filial');
-      if(idxFil >= 0){
-        const set = new Set();
-        (fv.linhas || []).forEach(function(linha){
-          if(linha[idxFil]) set.add(linha[idxFil]);
-        });
-        dimensoes.loja = {
-          items: Array.from(set).sort().map(function(l){
-            return { cod: l, nome: l };
-          })
-        };
-      }
     }
 
     // Reordena os campos do fato_vendas para o schema novo (lj, v_brt, etc.)
@@ -5614,9 +5659,11 @@ function _pinToast(msg, tipo){
 function _pinBotao(id){
   const ativo = _pinAtivos.some(function(p){return p.id === id;});
   return '<button class="pin-btn" data-pin-id="'+esc(id)+'" '
-    + 'title="'+(ativo?'Remover da home':'Fixar na home')+'" '
-    + 'style="background:transparent;border:none;cursor:pointer;font-size:14px;padding:4px;border-radius:4px;color:'
-    + (ativo?'#f58634':'rgba(0,0,0,.25)')+';" '
+    + 'title="'+(ativo?'Remover da minha home':'Fixar na minha home')+'" '
+    + 'style="background:'+(ativo?'rgba(245,134,52,.18)':'rgba(0,0,0,.06)')
+    + ';border:1px solid '+(ativo?'rgba(245,134,52,.5)':'rgba(0,0,0,.10)')
+    + ';cursor:pointer;font-size:14px;padding:3px 7px;border-radius:6px;color:'
+    + (ativo?'#f58634':'rgba(0,0,0,.55)')+';line-height:1;" '
     + '>'+(ativo?'📌':'📍')+'</button>';
 }
 window._pinBotao = _pinBotao;
@@ -5627,8 +5674,10 @@ function _pinAtualizarBotoes(){
     const id = btn.getAttribute('data-pin-id');
     const ativo = _pinAtivos.some(function(p){return p.id === id;});
     btn.textContent = ativo ? '📌' : '📍';
-    btn.style.color = ativo ? '#f58634' : 'rgba(0,0,0,.25)';
-    btn.title = ativo ? 'Remover da home' : 'Fixar na home';
+    btn.style.color = ativo ? '#f58634' : 'rgba(0,0,0,.55)';
+    btn.style.background = ativo ? 'rgba(245,134,52,.18)' : 'rgba(0,0,0,.06)';
+    btn.style.borderColor = ativo ? 'rgba(245,134,52,.5)' : 'rgba(0,0,0,.10)';
+    btn.title = ativo ? 'Remover da minha home' : 'Fixar na minha home';
   });
 }
 window._pinAtualizarBotoes = _pinAtualizarBotoes;

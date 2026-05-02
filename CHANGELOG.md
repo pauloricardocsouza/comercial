@@ -4,6 +4,102 @@ Lista das melhorias do sistema de BI da R2 Soluções para o Grupo Pinto Cerquei
 
 ---
 
+## v4.39 · 02/mai/2026
+
+**Curva ABC com toggle de modo e filtro de meses**
+
+A página Curva ABC ganhou um seletor "Ranking por:" com duas opções:
+
+- **Faturamento** (modo padrão): comportamento atual, ranking baseado no faturamento total dos últimos 12 meses. Sem filtro de mês, porque os dados de venda mensal só trazem quantidade. O agregado de faturamento é fechado em 12m.
+- **Quantidade**: ranking por unidades vendidas. Aqui aparece um seletor de meses que permite escolher quais meses entram no cálculo. Atalhos: Todos / Nenhum / Últimos 12m / Últimos 3m.
+
+No modo Quantidade os títulos, eixos do gráfico, KPIs e a coluna de valores se ajustam pra mostrar unidades em vez de R$.
+
+Importante: o ranking por quantidade não é o ABC tradicional (que usa receita), mas é honesto. Útil pra identificar produtos de alto giro independente do preço unitário.
+
+**Páginas Fornecedores e Departamentos**
+
+Adicionei nota explicativa no banner dessas páginas dizendo por que o filtro de mês não está disponível: o ETL hoje exporta vendas mensais só em quantidade, e compras só em agregado anual. Pra análises mensais detalhadas a sugestão é usar Análise Dinâmica.
+
+Quando o ETL for atualizado pra exportar valor + lucro mensal, libero o filtro nas duas páginas.
+
+**Inhambupe (CP5) na Análise Dinâmica · pendente**
+
+Continuo aguardando você abrir a Análise Dinâmica no console (F12) e me dizer o que aparece no log `[Análise Dinâmica] base = ... · filiais na dim Loja: [...]`. Sem isso não consigo fechar o diagnóstico.
+
+---
+
+## v4.38 · 02/mai/2026
+
+**Análise Dinâmica · melhorias no mobile e investigação Inhambupe**
+
+Mobile
+
+- Painel de configuração agora vira coluna única no celular (até 720px de largura). Antes ele forçava o layout de duas colunas e ficava apertado.
+- Dimensões e métricas exibidas em duas colunas no celular. Antes era uma só, ocupava muito espaço vertical.
+- Bloqueada a seleção de texto nos campos arrastáveis e nas pílulas das zonas. Quando você tentava arrastar e o gesto pegava errado, acabava selecionando o texto. Agora não acontece mais.
+- Botões de ação (limpar, salvar, carregar) viram coluna única no mobile, ocupando largura total.
+
+Inhambupe não aparece
+
+Investiguei o código e os dados no cubo CP. CESTÃO INHAMBUPE (CP5) está presente no cubo com 272 mil linhas de vendas e 4 entradas de compras. A configuração `meta.filiais` lista as 4 filiais corretamente: CP1, CP3, CP5, CP40.
+
+Não consegui reproduzir o problema só lendo o código. Pra te ajudar a debugar, fiz duas coisas:
+
+1. Adicionei log no console: ao abrir Análise Dinâmica, aparece no console do navegador uma linha tipo `[Análise Dinâmica] base = COMERCIAL PINTO · filiais na dim Loja: ['CP1 (COMERCIAL PINTO)', 'CP3 (CESTÃO LOJA 1)', 'CP5 (CESTÃO INHAMBUPE)', 'CP40 (BARROS 40)']`. Confere ali se aparecem as 4. Se aparecer só 3, é problema de meta.filiais e o ETL precisa regerar. Se aparecer 4 mas a tela mostra 3, é bug de renderização.
+2. Reforcei o `_normalizarCubo`: agora cruza `meta.filiais` com os valores reais que aparecem no fato. Se alguma filial está nos dados mas falta no meta, ela é adicionada com aviso no console.
+3. No modal de filtro agora aparece "N itens disponíveis" abaixo do título. Se ali mostrar 4 mas você só vê 3, é problema de overflow de tela e me avisa.
+
+Me passa o que aparece no console quando abrir a página pra eu fechar o diagnóstico.
+
+Importante: se a base atual for ATP, CP5 não vai aparecer mesmo, porque o cubo ATP não tem CP5. CP5 só está no cubo CP. Pra ver Inhambupe na Análise Dinâmica é necessário estar com a base CP ou GRUPO selecionada no topo.
+
+---
+
+## v4.37 · 02/mai/2026
+
+**Supervisores ignorados agora é por página**
+
+A configuração de supervisores ignorados deixou de ser global e passou a ser por página. Cada página da lista pode ter sua própria seleção de supervisores excluídos, mantendo as outras intactas.
+
+**Como funciona**
+
+Em Administração → Supervisores ignorados agora aparece um seletor "Configurar página". Você escolhe a página (ex: Drill-Down por Vendedor), marca quais supervisores ignorar nessa página, salva. Outras páginas (ex: Benchmarking) seguem com sua própria configuração independente.
+
+O dropdown mostra ao lado de cada página o número de supervisores ignorados nela, pra você ter visão rápida do que está configurado.
+
+**Páginas que respeitam o filtro**
+
+Apenas estas páginas hoje aplicam o filtro de supervisores ignorados:
+
+- **Vendas**: Drill-Down por Vendedor, Benchmarking, Alertas
+- **Financeiro**: Recebimentos
+
+Páginas fora dessa lista consideram todos os supervisores. Se quiser estender pra mais páginas, é necessário trabalho de código (adicionar a chamada do filtro dentro daquela função render).
+
+**Atalhos no admin**
+
+- **Limpar página**: remove todos os supervisores ignorados da página selecionada
+- **Copiar para...**: abre um modal pra replicar a configuração da página atual em outras páginas (substitui a configuração existente nas selecionadas)
+
+**Estrutura nova no Firestore**
+
+- Documento novo: `config/supervisores_loja_v2`
+- Formato: `{paginas: {pagina_id: {loja: [cod_supervisor, ...]}}}`
+- O documento antigo `config/supervisores_loja` fica intocado mas o sistema não lê mais dele
+
+**Reset conforme combinado**
+
+A migração foi um reset: nenhuma página começa com supervisores ignorados. Você precisa reconfigurar caso a caso. Os supervisores que estavam globalmente ignorados antes não foram trazidos.
+
+**API interna (pra desenvolvedores)**
+
+- `_isSupervisorIgnorado(pagina, loja, codSup)` agora exige `pagina` como primeiro argumento
+- `Filtros.vendedoresAtivos(cad, pagina)` aceita opcionalmente `pagina` — se omitido, considera todos os supervisores
+- Mesma coisa pra `Filtros.codsValidos`, `Filtros.mensalVendedoresAtivos`, `Filtros.vendedorEhValido`
+
+---
+
 ## v4.36 · 02/mai/2026
 
 **Diagnóstico de Fornecedor melhorado**

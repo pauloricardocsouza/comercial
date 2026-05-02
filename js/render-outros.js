@@ -268,8 +268,8 @@ function renderRecebimentos(){
       const k = (rNome||'').trim().toUpperCase();
       const info = supPorNomeRca.get(k);
       if(info && info.cod != null){
-        // Aplica filtro de supervisores ignorados (config Administração)
-        if(_isSupervisorIgnorado(info.loja, info.cod)) return;
+        // Aplica filtro de supervisores ignorados (config Administração) — escopo desta página
+        if(_isSupervisorIgnorado('recebimentos', info.loja, info.cod)) return;
         if(!supsSet.has(info.cod)) supsSet.set(info.cod, info.nome);
       }
     });
@@ -1073,11 +1073,33 @@ function renderCubo(){
                  +   '</div>'
                  + '</div>';
 
-  // Injeta CSS de animação (uma vez)
+  // Injeta CSS de animação + ajustes de usabilidade (uma vez)
   if(!document.getElementById('cubo-anim-css')){
     const st = document.createElement('style');
     st.id = 'cubo-anim-css';
-    st.textContent = '@keyframes pulseLoad{0%,100%{transform:translateX(-100%);}50%{transform:translateX(250%);}}';
+    st.textContent = ''
+      + '@keyframes pulseLoad{0%,100%{transform:translateX(-100%);}50%{transform:translateX(250%);}}'
+      // Sem seleção de texto nos campos arrastáveis e nas pílulas das zonas
+      // (evita o gesto de arrastar virar seleção de texto, principalmente no mobile)
+      + '.pv-field, .pv-pill, .pv-zone, .pv-chip {'
+      +   '-webkit-user-select:none;-moz-user-select:none;-ms-user-select:none;user-select:none;'
+      +   '-webkit-touch-callout:none;'
+      +   'touch-action:manipulation;'
+      + '}'
+      // Mobile: painel vira coluna única, dimensões e métricas em duas colunas
+      + '@media (max-width: 720px){'
+      +   '.pv-painel{grid-template-columns:1fr !important;gap:10px !important;}'
+      +   '.pv-fields-pane{max-height:none !important;}'
+      +   '.pv-fields-scroll{max-height:280px;}'
+      +   '#pv-fields{display:grid !important;grid-template-columns:1fr 1fr !important;gap:5px !important;margin-bottom:10px !important;}'
+      +   '#pv-metrics{display:grid !important;grid-template-columns:1fr 1fr !important;gap:5px !important;}'
+      +   '#pv-metrics > div[style*="text-transform"]{grid-column:1/-1;margin-top:8px !important;}'
+      +   '.pv-field{padding:6px 8px !important;font-size:11.5px !important;}'
+      +   '.pv-zones-grid{gap:8px !important;}'
+      +   '.pv-zone{min-height:60px !important;}'
+      +   '.pv-acoes{flex-direction:column !important;align-items:stretch !important;}'
+      +   '.pv-acoes select, .pv-acoes button{width:100% !important;min-width:0 !important;}'
+      + '}';
     document.head.appendChild(st);
   }
 
@@ -1212,6 +1234,14 @@ function _renderCuboUI(c){
   const idx = _buildCuboIdx(c);
   // Invalida cache de labels de dimensão (cubo pode ter mudado)
   _pvDimCache = {};
+
+  // Diagnóstico: lista filiais visíveis na dim Loja (ajuda a debugar problemas
+  // como "Inhambupe não aparece"). Aparece no console do navegador.
+  try {
+    const lojaItems = ((dims.loja||{}).items || []);
+    console.info('[Análise Dinâmica] base =', meta.base || '?',
+                 '· filiais na dim Loja:', lojaItems.map(function(it){return it.cod+' ('+it.nome+')';}));
+  } catch(e){}
 
   // Inicializa estado (ou recupera do localStorage)
   let saved = null;
@@ -1767,7 +1797,8 @@ function _pvAbrirFiltro(field){
   // Modal simples
   let html = '<div id="pv-flt-modal" style="position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9999;display:flex;align-items:center;justify-content:center;">'
     +    '<div style="background:var(--surface);border-radius:8px;padding:18px;max-width:480px;width:90%;max-height:80vh;display:flex;flex-direction:column;">'
-    +      '<div style="font-weight:700;font-size:13px;margin-bottom:10px;">'+dimInfo.icone+' Filtrar por '+esc(dimInfo.label)+'</div>'
+    +      '<div style="font-weight:700;font-size:13px;margin-bottom:4px;">'+dimInfo.icone+' Filtrar por '+esc(dimInfo.label)+'</div>'
+    +      '<div style="font-size:10.5px;color:var(--text-muted);margin-bottom:10px;">'+items.length+' item'+(items.length!==1?'s':'')+' disponíve'+(items.length!==1?'is':'l')+'</div>'
     +      '<div style="display:flex;gap:6px;margin-bottom:8px;">'
     +        '<input type="text" id="pv-flt-search" placeholder="Buscar…" style="flex:1;padding:5px 8px;border:1px solid var(--border);border-radius:4px;font-size:12px;background:var(--surface);color:var(--text);">'
     +        '<button id="pv-flt-all" class="ebtn" style="font-size:11px;padding:4px 8px;">Todos</button>'
