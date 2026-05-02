@@ -4,6 +4,34 @@ Lista das melhorias do sistema de BI da R2 Soluções para o Grupo Pinto Cerquei
 
 ---
 
+## v4.40 · 02/mai/2026
+
+**Análise Dinâmica · GRUPO agora carrega CP + ATP juntos**
+
+Antes: na visão GRUPO, a Análise Dinâmica fazia fallback pro cubo CP e mostrava só CP1, CP3, CP5, CP40. ATP ficava de fora.
+
+Agora: em GRUPO, o sistema carrega os dois cubos em paralelo (CP e ATP) e mescla automaticamente. A dimensão Loja passa a ter as 5 filiais: ATP, CP1, CP3, CP5, CP40.
+
+Como funciona o merge: união de dimensões por código, concatenação de linhas dos fatos com normalização de campos. Se um fato existe num cubo e não no outro, prevalece o que tem.
+
+Custo: o carregamento em GRUPO leva mais tempo (~33MB combinados em vez de ~23MB do CP sozinho). O timeout foi aumentado pra 60s. Em redes lentas pode ficar pesado. Se preferir uma experiência mais rápida, troca pra base CP ou ATP no seletor do topo — assim carrega só o cubo necessário.
+
+Caso só um dos dois cubos esteja disponível, o sistema avisa em banner amarelo qual está faltando e mostra os dados do que tem.
+
+**Configuração de supervisores ignorados · todas as páginas listadas**
+
+O seletor de página em Administração agora mostra todas as 29 páginas do sistema, agrupadas por área (Vendas, Vendas/Loja, Executivo, Compras, Diagnóstico, Financeiro, Análise).
+
+Cada página tem um marcador antes do nome:
+- ✓ páginas que **aplicam** o filtro hoje (Drill-Down, Benchmarking, Alertas, Recebimentos)
+- ○ páginas onde a configuração fica salva mas **não tem efeito ainda**
+
+Quando você seleciona uma página com marca ○, aparece um banner amarelo avisando que a configuração será salva mas não muda nada visualmente na página. Isso permite pré-configurar com antecedência: quando o filtro for adicionado àquela página em uma versão futura, a configuração já está valendo.
+
+Pra adicionar o filtro de supervisor a uma página específica precisa ser feito no código — me avisa qual página é prioridade que eu adiciono.
+
+---
+
 ## v4.39 · 02/mai/2026
 
 **Curva ABC com toggle de modo e filtro de meses**

@@ -1807,13 +1807,18 @@ function _renderSupIgnUI(){
       porGrupo[g].forEach(function(p){
         const cfgEsta = (cfg.paginas && cfg.paginas[p.id]) || {};
         const totIgn = Object.keys(cfgEsta).reduce(function(s,l){return s + (cfgEsta[l]||[]).length;}, 0);
+        const marca = p.aplicaFiltro ? '✓ ' : '○ ';
         html += '<option value="'+escAttr(p.id)+'"'+(p.id===paginaSel?' selected':'')+'>'
-          + esc(p.label) + (totIgn>0 ? ' · '+totIgn+' ignorado(s)' : '')
+          + marca + esc(p.label) + (totIgn>0 ? ' · '+totIgn+' ignorado(s)' : '')
           + '</option>';
       });
       html += '</optgroup>';
     });
     html += '</select>';
+    html += '<div style="font-size:10px;color:var(--text-muted);margin-top:4px;">'
+      +    '<strong>✓</strong> aplica o filtro · '
+      +    '<strong>○</strong> não aplica ainda (config salva mas sem efeito)'
+      +    '</div>';
     html += '</div>';
     // Atalhos
     html += '<div style="display:flex;gap:6px;flex-wrap:wrap;">';
@@ -1823,11 +1828,18 @@ function _renderSupIgnUI(){
     html += '</div>';
 
     // Indicador da página selecionada
-    html += '<div style="margin-bottom:12px;padding:10px 12px;background:var(--accent-bg);border-left:3px solid var(--accent);border-radius:5px;font-size:12px;">';
-    html += '<strong style="color:var(--text);">'+esc(paginaInfo.label)+'</strong>';
-    html += ' <span style="color:var(--text-muted);">·</span> ';
-    html += '<span style="color:var(--text-dim);">Marque os supervisores que devem ser ignorados ao calcular esta página específica. Outras páginas continuam considerando todos.</span>';
-    html += '</div>';
+    if(paginaInfo.aplicaFiltro){
+      html += '<div style="margin-bottom:12px;padding:10px 12px;background:var(--accent-bg);border-left:3px solid var(--accent);border-radius:5px;font-size:12px;">';
+      html += '<strong style="color:var(--text);">✓ '+esc(paginaInfo.label)+'</strong>';
+      html += ' <span style="color:var(--text-muted);">·</span> ';
+      html += '<span style="color:var(--text-dim);">Esta página aplica o filtro de supervisores ignorados. Marque os supervisores que devem ser excluídos do cálculo.</span>';
+      html += '</div>';
+    } else {
+      html += '<div style="margin-bottom:12px;padding:10px 12px;background:#fef3c7;border-left:3px solid #d97706;border-radius:5px;font-size:12px;color:#92400e;">';
+      html += '<strong>○ '+esc(paginaInfo.label)+'</strong> ';
+      html += '<span>· Esta página ainda <strong>não aplica</strong> o filtro de supervisores ignorados. A configuração será salva, mas hoje não tem efeito visível na página. Quando o filtro for adicionado a essa tela, a configuração já estará valendo.</span>';
+      html += '</div>';
+    }
 
     // Cards por loja
     html += '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:10px;">';

@@ -216,7 +216,7 @@ const AUTH_MODE = 'firebase'; // 'mock' | 'firebase'
 // Convenção:
 //   X.x → alteração grande (quebra de compatibilidade, nova feature grande)
 //   x.X → alteração suave (fix, ajuste visual, pequeno refinamento)
-const APP_VERSION = '4.39-comercial';
+const APP_VERSION = '4.40-comercial';
 
 // ================================================================
 // HELPERS DE CHART.JS — compatíveis com Safari/iOS (sem spread ops)
@@ -305,17 +305,48 @@ function _auditLog(tipo, detalhes, identidadeOverride){
 // IMPORTANTE: o `id` deve bater com o id usado nas chamadas de _isSupervisorIgnorado
 // e Filtros.vendedoresAtivos dentro de cada página.
 //
-// Páginas listadas aqui SÃO as que efetivamente respeitam o filtro hoje.
-// Se quiser estender pra outras páginas, é necessário (1) adicionar aqui e
-// (2) chamar _isSupervisorIgnorado(id_pagina, loja, cod) ou
-// Filtros.vendedoresAtivos(cad, id_pagina) na função render daquela página.
+// Campo `aplicaFiltro`:
+//   - true: a página já consulta a configuração e respeita os supervisores ignorados
+//   - false: a configuração é salva mas não tem efeito ainda (página não chama o filtro)
+//
+// Páginas com `aplicaFiltro: false` aparecem no admin pra você poder pré-configurar
+// caso o comportamento da página mude no futuro. Hoje, marcar supervisor ali não muda nada.
 const _SUP_IGN_PAGINAS_CATALOGO = [
-  // Vendas — drill por vendedor/supervisor
-  {id:'v-drilldown',    label:'Drill-Down por Vendedor',grupo:'Vendas'},
-  {id:'v-benchmarking', label:'Benchmarking',           grupo:'Vendas'},
-  {id:'v-alertas',      label:'Alertas',                grupo:'Vendas'},
-  // Outros
-  {id:'recebimentos',   label:'Recebimentos',           grupo:'Financeiro'},
+  // Vendas
+  {id:'v-visao-grupo',  label:'Visão Grupo',            grupo:'Vendas',       aplicaFiltro:false},
+  {id:'v-evolucao',     label:'Evolução',               grupo:'Vendas',       aplicaFiltro:false},
+  {id:'v-ano2026',      label:'Ano 2026',               grupo:'Vendas',       aplicaFiltro:false},
+  {id:'v-drilldown',    label:'Drill-Down por Vendedor',grupo:'Vendas',       aplicaFiltro:true},
+  {id:'v-benchmarking', label:'Benchmarking',           grupo:'Vendas',       aplicaFiltro:true},
+  {id:'v-itens',        label:'Itens vendidos',         grupo:'Vendas',       aplicaFiltro:false},
+  {id:'v-vendas-diarias',label:'Vendas Diárias',        grupo:'Vendas',       aplicaFiltro:false},
+  {id:'v-dias-cp',      label:'Dias C&P',               grupo:'Vendas',       aplicaFiltro:false},
+  {id:'v-metas',        label:'Metas',                  grupo:'Vendas',       aplicaFiltro:false},
+  {id:'v-alertas',      label:'Alertas',                grupo:'Vendas',       aplicaFiltro:true},
+  {id:'v-atp-varejo',   label:'ATP Varejo',             grupo:'Vendas/Loja',  aplicaFiltro:false},
+  {id:'v-atp-atacado',  label:'ATP Atacado',            grupo:'Vendas/Loja',  aplicaFiltro:false},
+  {id:'v-cestao',       label:'Cestão Loja 1',          grupo:'Vendas/Loja',  aplicaFiltro:false},
+  {id:'v-inhambupe',    label:'Cestão Inhambupe',       grupo:'Vendas/Loja',  aplicaFiltro:false},
+  // Executivo
+  {id:'executivo',      label:'Visão Executiva',        grupo:'Executivo',    aplicaFiltro:false},
+  // Compras
+  {id:'estoque',        label:'Estoque',                grupo:'Compras',      aplicaFiltro:false},
+  {id:'excesso',        label:'Excesso de estoque',     grupo:'Compras',      aplicaFiltro:false},
+  {id:'abc',            label:'Curva ABC',              grupo:'Compras',      aplicaFiltro:false},
+  {id:'fornecedores',   label:'Fornecedores',           grupo:'Compras',      aplicaFiltro:false},
+  {id:'deptos',         label:'Departamentos',          grupo:'Compras',      aplicaFiltro:false},
+  {id:'forn-gpc',       label:'Fornecedores GPC',       grupo:'Compras',      aplicaFiltro:false},
+  {id:'cv',             label:'Compras × Vendas',       grupo:'Compras',      aplicaFiltro:false},
+  // Diagnósticos
+  {id:'diagnostico',    label:'Diagnóstico produto',    grupo:'Diagnóstico',  aplicaFiltro:false},
+  {id:'diag-forn',      label:'Diagnóstico fornecedor', grupo:'Diagnóstico',  aplicaFiltro:false},
+  // Financeiro
+  {id:'financeiro',     label:'Financeiro',             grupo:'Financeiro',   aplicaFiltro:false},
+  {id:'vencidos',       label:'Vencidos',               grupo:'Financeiro',   aplicaFiltro:false},
+  {id:'recebimentos',   label:'Recebimentos',           grupo:'Financeiro',   aplicaFiltro:true},
+  {id:'verbas',         label:'Verbas',                 grupo:'Financeiro',   aplicaFiltro:false},
+  // Análise
+  {id:'cubo',           label:'Análise Dinâmica',       grupo:'Análise',      aplicaFiltro:false},
 ];
 
 let _supIgnoradosCache = null;     // {paginas: {pagina: {loja: [cod, ...]}}}
@@ -1402,22 +1433,159 @@ function _normalizarCubo(c){
   return c;
 }
 
+/** Mescla dois cubos normalizados num só. Útil pra GRUPO que precisa
+ *  ver CP + ATP juntos na Análise Dinâmica.
+ *  - Concatena linhas de cada fato (vendas, compras, financeiro)
+ *  - União de items por dimensão (deduplicado por cod)
+ *  - Meta combinada com info dos dois.
+ */
+function _mesclarCubos(c1, c2){
+  if(!c1) return c2;
+  if(!c2) return c1;
+
+  // Mescla dimensões (união por cod)
+  const dimsOut = {};
+  const todasDims = new Set([
+    ...Object.keys((c1.dimensoes||{})),
+    ...Object.keys((c2.dimensoes||{}))
+  ]);
+  todasDims.forEach(function(dimKey){
+    const items1 = ((c1.dimensoes||{})[dimKey]||{}).items || [];
+    const items2 = ((c2.dimensoes||{})[dimKey]||{}).items || [];
+    const seen = new Set();
+    const merged = [];
+    items1.concat(items2).forEach(function(it){
+      const k = String(it.cod);
+      if(seen.has(k)) return;
+      seen.add(k);
+      merged.push(it);
+    });
+    dimsOut[dimKey] = { items: merged };
+  });
+
+  // Mescla fatos (concatena linhas se os campos são compatíveis)
+  const fatosOut = {};
+  const todosFatos = new Set([
+    ...Object.keys((c1.fatos||{})),
+    ...Object.keys((c2.fatos||{}))
+  ]);
+  todosFatos.forEach(function(fatoKey){
+    const f1 = (c1.fatos||{})[fatoKey];
+    const f2 = (c2.fatos||{})[fatoKey];
+    if(!f1 && !f2) return;
+    if(!f1){ fatosOut[fatoKey] = f2; return; }
+    if(!f2){ fatosOut[fatoKey] = f1; return; }
+    // Os dois existem — checa compatibilidade dos campos
+    const campos1 = f1.campos || [];
+    const campos2 = f2.campos || [];
+    const camposOut = Array.from(new Set(campos1.concat(campos2)));
+    // Reposiciona linhas pra ordem padrão de camposOut
+    function reposLinhas(linhas, camposOrig){
+      const idxMap = camposOut.map(function(c){
+        const i = camposOrig.indexOf(c);
+        return i;
+      });
+      return linhas.map(function(lin){
+        return idxMap.map(function(i){ return i >= 0 ? lin[i] : null; });
+      });
+    }
+    fatosOut[fatoKey] = {
+      campos: camposOut,
+      linhas: reposLinhas(f1.linhas||[], campos1).concat(reposLinhas(f2.linhas||[], campos2))
+    };
+  });
+
+  // Meta combinada
+  const meta1 = c1.meta || {};
+  const meta2 = c2.meta || {};
+  const filiais1 = meta1.filiais || (meta1.lojas ? meta1.lojas.map(function(l){return {slug:l, nome:l, cod:l};}) : []);
+  const filiais2 = meta2.filiais || (meta2.lojas ? meta2.lojas.map(function(l){return {slug:l, nome:l, cod:l};}) : []);
+  const filiaisCombinadas = [];
+  const filSeen = new Set();
+  filiais1.concat(filiais2).forEach(function(f){
+    const k = String(f.slug || f.cod);
+    if(filSeen.has(k)) return;
+    filSeen.add(k);
+    filiaisCombinadas.push(f);
+  });
+  const metaOut = Object.assign({}, meta1, meta2, {
+    base: 'GRUPO (CP + ATP)',
+    filiais: filiaisCombinadas,
+    _mesclado_de: [meta1.base, meta2.base].filter(Boolean)
+  });
+
+  return {
+    meta: metaOut,
+    dimensoes: dimsOut,
+    fatos: fatosOut,
+    _formato_origem: 'merged'
+  };
+}
+
 /** Carrega o cubo OLAP sob demanda. Idempotente: se já carregou ou está carregando,
  *  retorna a promessa em andamento.
- *  Note: GRUPO consolidado não tem cubo próprio — fallback pra CP (cobre 4/5 lojas).
- *  Tem timeout de 45s pra evitar tela travada. */
+ *  Em GRUPO consolidado, carrega CP e ATP em paralelo e mescla os dois.
+ *  Tem timeout de 60s pra evitar tela travada. */
 function _carregarCuboLazy(){
   if(Cu) return Promise.resolve(Cu);
   if(_cuLoading) return _cuLoading;
-  let slug = _getBaseSlug();
-  // Fallback: GRUPO → CP (cubo do grupo não existe, CP é a base maior)
-  let _cuboFallback = null;
+  const slug = _getBaseSlug();
+
+  // Em GRUPO: carrega CP + ATP em paralelo e mescla
   if(slug === 'grupo'){
-    slug = 'cp';
-    _cuboFallback = 'cp';
+    const timeoutPromise = new Promise(function(_, reject){
+      setTimeout(function(){
+        reject(new Error('Timeout (60s) ao carregar cubos CP + ATP'));
+      }, 60000);
+    });
+    _cuLoading = Promise.race([
+      Promise.all([
+        _fetchJsonComGz('cubo_cp.json').catch(function(e){
+          console.warn('[_carregarCuboLazy] cubo_cp falhou:', e.message);
+          return null;
+        }),
+        _fetchJsonComGz('cubo_atp.json').catch(function(e){
+          console.warn('[_carregarCuboLazy] cubo_atp falhou:', e.message);
+          return null;
+        })
+      ]),
+      timeoutPromise
+    ])
+      .then(function(arr){
+        const cpRaw = arr[0], atpRaw = arr[1];
+        const cpNorm = cpRaw ? _normalizarCubo(cpRaw) : null;
+        const atpNorm = atpRaw ? _normalizarCubo(atpRaw) : null;
+        if(!cpNorm && !atpNorm){
+          console.warn('[_carregarCuboLazy] nenhum dos cubos disponível em GRUPO');
+          return Cu;
+        }
+        if(cpNorm && !atpNorm){
+          Cu = cpNorm;
+          Cu._slug_efetivo = 'cp';
+          Cu._fallback_de = 'cp';
+          console.warn('[_carregarCuboLazy] em GRUPO, só cubo_cp disponível — ATP não vai aparecer');
+        } else if(atpNorm && !cpNorm){
+          Cu = atpNorm;
+          Cu._slug_efetivo = 'atp';
+          Cu._fallback_de = 'atp';
+          console.warn('[_carregarCuboLazy] em GRUPO, só cubo_atp disponível — CP não vai aparecer');
+        } else {
+          Cu = _mesclarCubos(cpNorm, atpNorm);
+          Cu._slug_efetivo = 'merged';
+          Cu._fallback_de = null;
+          console.info('[_carregarCuboLazy] cubos CP + ATP mesclados pra GRUPO');
+        }
+        return Cu;
+      })
+      .catch(function(e){
+        console.error('[_carregarCuboLazy] erro:', e.message);
+        _cuLoading = null;
+        throw e;
+      });
+    return _cuLoading;
   }
 
-  // Timeout de 45s
+  // Caso normal: carrega só o cubo da base atual
   const timeoutPromise = new Promise(function(_, reject){
     setTimeout(function(){
       reject(new Error('Timeout (45s) ao carregar cubo_'+slug+'.json — arquivo pode ser muito grande'));
@@ -1430,10 +1598,9 @@ function _carregarCuboLazy(){
   ])
     .then(function(j){
       if(j){
-        // Normaliza a estrutura (CP usa formato antigo)
         Cu = _normalizarCubo(j);
         Cu._slug_efetivo = slug;
-        Cu._fallback_de = _cuboFallback;
+        Cu._fallback_de = null;
       } else {
         console.warn('[_carregarCuboLazy] cubo_'+slug+'.json indisponível.');
       }
@@ -1441,7 +1608,7 @@ function _carregarCuboLazy(){
     })
     .catch(function(e){
       console.error('[_carregarCuboLazy] erro:', e.message);
-      _cuLoading = null; // permite retry
+      _cuLoading = null;
       throw e;
     });
   return _cuLoading;

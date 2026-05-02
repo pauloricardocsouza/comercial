@@ -1054,11 +1054,15 @@ function renderCubo(){
   if(!cont) return;
 
   const slug = _getBaseSlug();
-  const slugEfetivo = slug === 'grupo' ? 'cp' : slug;
   // Tamanho aproximado por base (pra mostrar algo realista no loader)
-  const tamInfo = slugEfetivo === 'cp'
-    ? '~23 MB gzip · 1,4 milhão de linhas'
-    : '~10 MB gzip · 612 mil linhas';
+  let tamInfo;
+  if(slug === 'grupo'){
+    tamInfo = 'CP + ATP combinados · ~33 MB gzip · 2 milhões de linhas';
+  } else if(slug === 'cp'){
+    tamInfo = '~23 MB gzip · 1,4 milhão de linhas';
+  } else {
+    tamInfo = '~10 MB gzip · 612 mil linhas';
+  }
 
   cont.innerHTML = '<div class="ph"><div class="pk">Análise Dinâmica</div><h2>Pivot interativo · <em>cubo OLAP</em></h2></div>'
                  + '<div class="ph-sep"></div>'
@@ -1267,11 +1271,18 @@ function _renderCuboUI(c){
     painelOculto = localStorage.getItem('pivot_painel_oculto_v1') === '1';
   } catch(e){}
 
-  // Banner de fallback CP→GRUPO
+  // Banner de status do cubo (especial pra GRUPO mesclado)
   let html = '';
-  if(c._fallback_de){
+  if(c._formato_origem === 'merged'){
+    const filiaisCount = (((c.dimensoes||{}).loja||{}).items || []).length;
+    html += '<div style="background:#dcfce7;border:1px solid #15803d;border-radius:8px;padding:10px 14px;margin-bottom:10px;font-size:12px;color:#15803d;">'
+         +   '<strong>Visão GRUPO:</strong> dados de Comercial Pinto (CP1, CP3, CP5, CP40) e ATP combinados. '+filiaisCount+' filiais disponíveis na dimensão Loja.'
+         + '</div>';
+  } else if(c._fallback_de){
+    const labels = {cp:'Comercial Pinto (CP1, CP3, CP5, CP40)', atp:'ATP'};
+    const ausente = c._fallback_de === 'cp' ? 'ATP' : 'CP';
     html += '<div style="background:#fef3c7;border:1px solid #d97706;border-radius:8px;padding:10px 14px;margin-bottom:10px;font-size:12px;color:#92400e;">'
-         +   '<strong>Atenção:</strong> a visão GRUPO não tem cubo próprio. Mostrando dados de Comercial Pinto (CP1, CP3, CP5, CP40). ATP não está incluído.'
+         +   '<strong>Atenção:</strong> em GRUPO, só foi possível carregar o cubo de '+esc(labels[c._fallback_de] || c._fallback_de)+'. Os dados de '+ausente+' não estão incluídos. Verifique se o arquivo cubo_'+(c._fallback_de === 'cp' ? 'atp' : 'cp')+'.json existe no servidor.'
          + '</div>';
   }
 
