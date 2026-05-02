@@ -4,6 +4,43 @@ Lista das melhorias do sistema de BI da R2 Soluções para o Grupo Pinto Cerquei
 
 ---
 
+## v4.24 · 02/mai/2026
+
+**Análise Dinâmica · novo layout de configuração**
+
+Reformulei a interface da Análise Dinâmica conforme feedback. O layout antigo (painel lateral fixo + tabela à direita) foi substituído por um fluxo vertical mais limpo.
+
+**Novo layout**
+
+- **Topbar:** botão "Ocultar painel", info do período/contagens, e ações XLSX/Gráfico à direita.
+- **Painel de configuração** (acima do resultado):
+  - Coluna esquerda: lista de campos (dimensões e métricas)
+  - Coluna direita: zonas de drop em grid 2×2 (Filtros / Linhas / Colunas / Valores)
+  - Linha de ações: Comparativo, Limpar, Carregar análise, Salvar, Excluir
+- **Área de resultado** (sempre visível abaixo): tabela e/ou gráfico
+
+**Botão "Ocultar painel"**
+
+O painel de configuração inteiro pode ser ocultado com um clique. Útil quando você já configurou a análise e quer ver só o resultado em tela cheia. O estado é persistido — se você ocultou e recarregar, continua oculto.
+
+**Página inicial em branco**
+
+Ao abrir a Análise Dinâmica pela primeira vez, todas as zonas começam vazias. Antes vinha pré-configurado com Mês × Faturamento líquido. Agora o estado inicial é uma tela vazia com instruções claras: "Comece configurando sua análise". Análises salvas anteriormente continuam disponíveis no dropdown "Carregar análise".
+
+**Botão Limpar pede confirmação**
+
+Antes limpava direto. Agora pergunta antes — evita perda acidental.
+
+**Mensagem de boas-vindas redesenhada**
+
+A mensagem inicial ficou mais convidativa: ícone grande, título "Comece configurando sua análise", e instruções em duas linhas claras.
+
+**Mobile**
+
+Em telas estreitas (<900px), painel vira coluna única, zonas viram 1×4, ações se ajustam.
+
+---
+
 ## v4.23 · 02/mai/2026
 
 **Análise Dinâmica · revisão estática profunda**

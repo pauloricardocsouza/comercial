@@ -759,7 +759,7 @@ table.t tr:hover td { background:var(--surface-2); cursor:pointer; }
 .bari .bi { width:60px; height:5px; background:var(--surface-3); border-radius:2px; overflow:hidden; flex-shrink:0; }
 .bari .bf { height:100%; background:var(--accent); border-radius:2px; }
 
-/* Análise Dinâmica · pivot table */
+/* Análise Dinâmica · pivot table v2 (mai/2026) */
 .pv-field, .pv-pill {
   transition: transform .12s, box-shadow .12s, background .12s;
 }
@@ -768,23 +768,26 @@ table.t tr:hover td { background:var(--surface-2); cursor:pointer; }
   box-shadow: 0 2px 6px rgba(0,0,0,.08);
 }
 .pv-field:active, .pv-pill:active { cursor: grabbing; }
-.pv-pill:hover {
-  filter: brightness(0.97);
-}
-.pv-zone {
-  transition: background .15s, border-color .15s;
-}
-.pv-zone:hover {
-  border-color: var(--accent);
-}
+.pv-pill:hover { filter: brightness(0.97); }
+.pv-zone { transition: background .15s, border-color .15s; }
+.pv-zone:hover { border-color: var(--accent); }
 .pv-pill-x:hover {
   background: rgba(0,0,0,.08) !important;
   border-radius: 50%;
 }
+.pv-fields-pane {
+  position: sticky;
+  top: 64px;
+  max-height: calc(100vh - 120px);
+  overflow-y: auto;
+}
 @media(max-width:900px){
-  /* Painel de drag em mobile vira full-width abaixo da pivot */
-  .pv-layout { grid-template-columns: 1fr !important; }
-  .pv-panel { position: relative !important; max-height: none !important; top: 0 !important; }
+  /* Painel de configuração vira coluna única em mobile */
+  .pv-painel { grid-template-columns: 1fr !important; }
+  .pv-fields-pane { position: relative !important; max-height: none !important; top: 0 !important; }
+  .pv-zones-grid { grid-template-columns: 1fr !important; }
+  .pv-acoes { flex-wrap: wrap; }
+  .pv-acoes select, .pv-acoes button { flex: 1 1 auto; }
 }
 
 /* Acessibilidade · foco de teclado consistente */
@@ -1840,10 +1843,10 @@ textarea.proc-inp{resize:vertical;min-height:44px}
      JS principal · dividido em 5 arquivos pela auditoria v4.6
      Ordem importa: core declara as globais; render-* dependem de core.
      ════════════════════════════════════════════════════════════════════════════ -->
-<script src="js/core.js?v=4.23"></script>
-<script src="js/render-compras.js?v=4.23"></script>
-<script src="js/render-vendas.js?v=4.23"></script>
-<script src="js/render-outros.js?v=4.23"></script>
-<script src="js/admin.js?v=4.23"></script>
+<script src="js/core.js?v=4.24"></script>
+<script src="js/render-compras.js?v=4.24"></script>
+<script src="js/render-vendas.js?v=4.24"></script>
+<script src="js/render-outros.js?v=4.24"></script>
+<script src="js/admin.js?v=4.24"></script>
 </body>
 </html>

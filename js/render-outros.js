@@ -999,21 +999,28 @@ function _renderCuboUI(c){
   // Inicializa estado (ou recupera do localStorage)
   let saved = null;
   try {
-    const raw = localStorage.getItem('pivot_state_v1');
+    const raw = localStorage.getItem('pivot_state_v2');
     if(raw){ saved = JSON.parse(raw); }
   } catch(e){}
 
   _pivotState = saved || {
-    rows: ['ym'],
+    rows: [],
     cols: [],
-    vals: ['v_liq'],
+    vals: [],
     filters: {},
-    comp: {tipo:null, base:null}, // null | 'vert' | 'horiz'
+    comp: {tipo:null, base:null},
     sort: {col:null, dir:'asc'}
   };
   _pivotState.cubo = c;
   _pivotState.idx = idx;
 
+  // Estado de visibilidade do painel (persistido)
+  let painelOculto = false;
+  try {
+    painelOculto = localStorage.getItem('pivot_painel_oculto_v1') === '1';
+  } catch(e){}
+
+  // Banner de fallback CP→GRUPO
   let html = '';
   if(c._fallback_de){
     html += '<div style="background:#fef3c7;border:1px solid #d97706;border-radius:8px;padding:10px 14px;margin-bottom:10px;font-size:12px;color:#92400e;">'
@@ -1029,25 +1036,35 @@ function _renderCuboUI(c){
   const fv = fatos.vendas || {};
   const fc = fatos.compras || {};
   const ff = fatos.financeiro || {};
-  html += '<div style="background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:10px 14px;margin-bottom:14px;font-size:12px;color:var(--text-dim);">'
-       +   '<strong>Período:</strong> '+_perTxt+' · '
-       +   '<strong>'+fI((fv.linhas||[]).length)+'</strong> linhas vendas · '
-       +   '<strong>'+fI((fc.linhas||[]).length)+'</strong> compras · '
-       +   '<strong>'+fI((ff.linhas||[]).length)+'</strong> financeiro'
-       + '</div>';
 
-  // ─── Layout 2 colunas: painel de campos (esquerda) + pivot (direita) ───
-  html += '<div class="pv-layout" style="display:grid;grid-template-columns:260px 1fr;gap:14px;align-items:start;">';
+  // ─── Topbar com controles ───
+  html += '<div class="pv-topbar" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px;padding:10px 14px;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;">';
+  html += '<button id="pv-toggle-painel" class="ebtn" style="background:var(--surface);color:var(--text);border:1px solid var(--border);padding:6px 10px;font-size:12px;display:inline-flex;align-items:center;gap:6px;">'
+       +    '<span id="pv-toggle-icon">'+(painelOculto?'☰':'✕')+'</span>'
+       +    '<span id="pv-toggle-txt">'+(painelOculto?'Mostrar painel':'Ocultar painel')+'</span>'
+       + '</button>';
+  html += '<div style="font-size:11px;color:var(--text-dim);flex:1;">';
+  html += '<strong>Período:</strong> '+_perTxt+' · ';
+  html += '<strong>'+fI((fv.linhas||[]).length)+'</strong> vendas · ';
+  html += '<strong>'+fI((fc.linhas||[]).length)+'</strong> compras · ';
+  html += '<strong>'+fI((ff.linhas||[]).length)+'</strong> financeiro';
+  html += '</div>';
+  html += '<button id="pv-export-xlsx" class="ebtn" style="background:var(--surface);color:var(--text);border:1px solid var(--border);padding:6px 10px;font-size:11px;">📥 XLSX</button>';
+  html += '<button id="pv-chart" class="ebtn" style="background:var(--surface);color:var(--text);border:1px solid var(--border);padding:6px 10px;font-size:11px;">📊 Gráfico</button>';
+  html += '</div>';
 
-  // ── Painel esquerdo: lista de campos (drag source) + zonas de drop ──
-  html += '<div class="pv-panel cc" style="position:sticky;top:64px;max-height:calc(100vh - 100px);overflow-y:auto;padding:12px;">';
-  html += '<div class="cct" style="font-size:12px;margin-bottom:8px;">Campos disponíveis</div>';
-  html += '<div class="ccs" style="font-size:10px;margin-bottom:10px;">Arraste para as zonas abaixo</div>';
+  // ─── Painel de configuração (área superior) ───
+  html += '<div id="pv-painel" class="pv-painel" style="display:'+(painelOculto?'none':'grid')+';grid-template-columns:240px 1fr;gap:14px;align-items:start;margin-bottom:14px;">';
 
-  // Lista de dimensões disponíveis (drag source)
+  // ── Coluna esquerda: lista de campos ──
+  html += '<div class="pv-fields-pane cc" style="padding:12px;">';
+  html += '<div class="cct" style="font-size:11px;margin-bottom:4px;">Campos disponíveis</div>';
+  html += '<div class="ccs" style="font-size:10px;margin-bottom:10px;">Arraste para as zonas →</div>';
+
+  // Dimensões
+  html += '<div style="font-size:9px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;font-weight:700;margin-bottom:4px;">Dimensões</div>';
   html += '<div id="pv-fields" style="display:flex;flex-direction:column;gap:4px;margin-bottom:14px;">';
   Object.keys(_CUBO_DIMS_INFO).forEach(function(dCod){
-    // Só mostra se há pelo menos 1 fato com essa dimensão
     const usadoEm = Object.keys(_CUBO_FATO_DIMS).filter(function(f){
       return _CUBO_FATO_DIMS[f].indexOf(dCod) >= 0;
     });
@@ -1061,10 +1078,8 @@ function _renderCuboUI(c){
   });
   html += '</div>';
 
-  // Lista de métricas
-  html += '<div class="cct" style="font-size:12px;margin-bottom:8px;border-top:1px solid var(--border);padding-top:10px;">Métricas (valores)</div>';
+  // Métricas agrupadas
   html += '<div id="pv-metrics" style="display:flex;flex-direction:column;gap:4px;">';
-  // Agrupar por fato pra organizar visualmente
   ['vendas','compras','financeiro'].forEach(function(grupoFato){
     const titulos = {vendas:'Vendas', compras:'Compras', financeiro:'Financeiro'};
     html += '<div style="font-size:9px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;font-weight:700;margin-top:6px;">'+titulos[grupoFato]+'</div>';
@@ -1077,46 +1092,55 @@ function _renderCuboUI(c){
            + '</div>';
     });
   });
-  html += '</div>'; // pv-metrics
+  html += '</div>';
+  html += '</div>'; // pv-fields-pane
 
-  // Zonas de drop · 4 áreas
-  html += '<div style="margin-top:14px;border-top:1px solid var(--border);padding-top:10px;">';
+  // ── Coluna direita: zonas + ações ──
+  html += '<div class="pv-zones-pane cc" style="padding:12px;">';
+
+  // Zonas em layout 2x2 ou 1x4
+  html += '<div class="pv-zones-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">';
+  const zonasLabels = {
+    filters:{titulo:'🔍 Filtros',  desc:'restringe os dados'},
+    rows:   {titulo:'📋 Linhas',   desc:'agrupa em linhas'},
+    cols:   {titulo:'📊 Colunas',  desc:'distribui em colunas'},
+    vals:   {titulo:'∑ Valores',   desc:'métricas a calcular'}
+  };
   ['filters','rows','cols','vals'].forEach(function(zona){
-    const labels = {filters:'🔍 Filtros', rows:'📋 Linhas', cols:'📊 Colunas', vals:'∑ Valores'};
-    html += '<div class="pv-zone-label" style="font-size:9px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;font-weight:700;margin-top:6px;margin-bottom:4px;">'+labels[zona]+'</div>';
+    const info = zonasLabels[zona];
+    html += '<div class="pv-zone-wrap">';
+    html += '<div style="display:flex;align-items:baseline;gap:6px;margin-bottom:4px;">';
+    html += '<span style="font-size:11px;font-weight:700;color:var(--text);">'+info.titulo+'</span>';
+    html += '<span style="font-size:9.5px;color:var(--text-muted);">'+info.desc+'</span>';
+    html += '</div>';
     html += '<div class="pv-zone" data-zone="'+zona+'" '
-         +  'style="min-height:34px;background:var(--surface-2);border:2px dashed var(--border);border-radius:5px;padding:4px;display:flex;flex-direction:column;gap:3px;">'
-         + '</div>';
+         +  'style="min-height:50px;background:var(--surface-2);border:2px dashed var(--border);border-radius:5px;padding:5px;display:flex;flex-direction:column;gap:3px;"></div>';
+    html += '</div>';
   });
-  html += '</div>'; // zones wrap
+  html += '</div>'; // pv-zones-grid
 
-  // Botões ação
-  html += '<div style="margin-top:14px;display:flex;flex-direction:column;gap:6px;border-top:1px solid var(--border);padding-top:10px;">';
-  html += '<button id="pv-clear" class="ebtn" style="background:var(--surface);color:var(--text);border:1px solid var(--border);padding:6px;font-size:11px;">🗑 Limpar tudo</button>';
-  html += '<select id="pv-comp" style="padding:6px;border:1px solid var(--border);border-radius:5px;font-size:11px;background:var(--surface);color:var(--text);">'
+  // Linha de ações abaixo das zonas
+  html += '<div class="pv-acoes" style="display:flex;gap:8px;margin-top:12px;align-items:center;flex-wrap:wrap;border-top:1px solid var(--border);padding-top:10px;">';
+  html += '<select id="pv-comp" style="padding:6px 8px;border:1px solid var(--border);border-radius:5px;font-size:11px;background:var(--surface);color:var(--text);min-width:200px;">'
        +    '<option value="">Sem cálculo comparativo</option>'
        +    '<option value="vert">% vertical (% da coluna)</option>'
-       +    '<option value="horiz">% horizontal (crescimento vs anterior)</option>'
+       +    '<option value="horiz">% horizontal (cresc. vs anterior)</option>'
        + '</select>';
+  html += '<button id="pv-clear" class="ebtn" style="background:var(--surface);color:var(--text);border:1px solid var(--border);padding:6px 10px;font-size:11px;">🗑 Limpar</button>';
+  html += '<div style="flex:1;"></div>';
+  // Salvar/carregar análise
+  html += '<select id="pv-load-sel" style="padding:6px 8px;border:1px solid var(--border);border-radius:5px;font-size:11px;background:var(--surface);color:var(--text);min-width:200px;">'
+       +    '<option value="">— Carregar análise —</option>'
+       +  '</select>';
+  html += '<button id="pv-save" class="ebtn" style="font-size:11px;padding:6px 10px;background:var(--accent);color:white;border:none;">💾 Salvar</button>';
+  html += '<button id="pv-delete" class="ebtn" style="font-size:11px;padding:6px 10px;background:var(--surface);color:#dc2626;border:1px solid var(--border);" disabled title="Selecione uma análise salva">🗑</button>';
   html += '</div>';
 
-  html += '</div>'; // pv-panel
+  html += '</div>'; // pv-zones-pane
+  html += '</div>'; // pv-painel
 
-  // ── Painel direito: a pivot ──
-  html += '<div class="pv-pivot cc" style="padding:12px;min-height:300px;">';
-  // Barra de ações topo
-  html += '<div class="pv-toolbar" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:10px;padding-bottom:10px;border-bottom:1px solid var(--border);">'
-       +    '<select id="pv-load-sel" style="padding:5px 8px;border:1px solid var(--border);border-radius:5px;font-size:12px;background:var(--surface);color:var(--text);min-width:200px;">'
-       +      '<option value="">— Carregar análise salva —</option>'
-       +    '</select>'
-       +    '<button id="pv-save" class="ebtn" style="font-size:11px;padding:5px 10px;background:var(--accent);color:white;border:none;">💾 Salvar</button>'
-       +    '<button id="pv-delete" class="ebtn" style="font-size:11px;padding:5px 10px;background:var(--surface);color:#dc2626;border:1px solid var(--border);" disabled title="Selecione uma análise salva">🗑 Excluir</button>'
-       +    '<div style="flex:1;"></div>'
-       +    '<button id="pv-chart" class="ebtn" style="font-size:11px;padding:5px 10px;background:var(--surface);color:var(--text);border:1px solid var(--border);">📊 Gráfico</button>'
-       +    '<button id="pv-export-xlsx" class="ebtn" style="font-size:11px;padding:5px 10px;background:var(--surface);color:var(--text);border:1px solid var(--border);">📥 XLSX</button>'
-       + '</div>';
-  // Container do gráfico (escondido por padrão)
-  html += '<div id="pv-chart-wrap" style="display:none;margin-bottom:14px;background:var(--surface-2);border:1px solid var(--border);border-radius:6px;padding:10px;">'
+  // ─── Container do gráfico (escondido por padrão) ───
+  html += '<div id="pv-chart-wrap" style="display:none;margin-bottom:14px;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:10px;">'
        +    '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">'
        +      '<label style="font-size:11px;color:var(--text-muted);">Tipo:</label>'
        +      '<select id="pv-chart-type" style="padding:4px 8px;border:1px solid var(--border);border-radius:4px;font-size:11px;background:var(--surface);color:var(--text);">'
@@ -1128,13 +1152,14 @@ function _renderCuboUI(c){
        +      '<select id="pv-chart-metric" style="padding:4px 8px;border:1px solid var(--border);border-radius:4px;font-size:11px;background:var(--surface);color:var(--text);"></select>'
        +      '<button id="pv-chart-close" style="margin-left:auto;background:transparent;border:none;color:var(--text-muted);cursor:pointer;font-size:14px;">✕</button>'
        +    '</div>'
-       +    '<div style="height:320px;"><canvas id="pv-chart-canvas"></canvas></div>'
+       +    '<div style="height:340px;"><canvas id="pv-chart-canvas"></canvas></div>'
        + '</div>';
+
+  // ─── Área de resultado (sempre visível) ───
+  html += '<div class="cc" style="padding:12px;">';
   html += '<div id="pv-status" style="font-size:11px;color:var(--text-muted);margin-bottom:8px;"></div>';
   html += '<div id="pv-result" style="overflow:auto;"></div>';
   html += '</div>';
-
-  html += '</div>'; // pv-layout
 
   document.getElementById('cubo-body').innerHTML = html;
 
@@ -1142,17 +1167,39 @@ function _renderCuboUI(c){
   _pvSyncZonas();
   // Bind drag-and-drop
   _pvBindDnD();
-  // Bind ações
+
+  // ─── Ações ───
+  // Toggle painel
+  document.getElementById('pv-toggle-painel').addEventListener('click', function(){
+    const painel = document.getElementById('pv-painel');
+    const ic = document.getElementById('pv-toggle-icon');
+    const tx = document.getElementById('pv-toggle-txt');
+    const oculto = painel.style.display === 'none';
+    painel.style.display = oculto ? 'grid' : 'none';
+    ic.textContent = oculto ? '✕' : '☰';
+    tx.textContent = oculto ? 'Ocultar painel' : 'Mostrar painel';
+    try { localStorage.setItem('pivot_painel_oculto_v1', oculto ? '0' : '1'); } catch(e){}
+  });
+
+  // Limpar
   document.getElementById('pv-clear').addEventListener('click', function(){
+    if(!confirm('Limpar toda a configuração da pivot?')) return;
     _pivotState.rows = [];
     _pivotState.cols = [];
     _pivotState.vals = [];
     _pivotState.filters = {};
     _pivotState.comp = {tipo:null, base:null};
+    _pivotState._idAtual = null;
+    _pivotState._nomeAtual = null;
     _pvPersistir();
     _pvSyncZonas();
+    const cs = document.getElementById('pv-comp'); if(cs) cs.value = '';
+    const ls = document.getElementById('pv-load-sel'); if(ls) ls.value = '';
+    document.getElementById('pv-delete').disabled = true;
     _pvAtualizar();
   });
+
+  // Comparativo
   const compSel = document.getElementById('pv-comp');
   if(compSel){
     compSel.value = _pivotState.comp.tipo || '';
@@ -1163,20 +1210,17 @@ function _renderCuboUI(c){
     });
   }
 
-  // ─── Salvar análise ───
+  // Salvar / carregar / excluir
   document.getElementById('pv-save').addEventListener('click', _pvSalvarAnaliseUI);
-  // ─── Excluir análise ───
   document.getElementById('pv-delete').addEventListener('click', _pvExcluirAnaliseUI);
-  // ─── Carregar análise ───
   const loadSel = document.getElementById('pv-load-sel');
   loadSel.addEventListener('change', function(){
     if(loadSel.value){ _pvCarregarAnalise(loadSel.value); }
     document.getElementById('pv-delete').disabled = !loadSel.value;
   });
-  // Popular lista de análises salvas
   _pvAtualizarListaSalvas();
 
-  // ─── Gráfico ───
+  // Gráfico
   document.getElementById('pv-chart').addEventListener('click', function(){
     const wrap = document.getElementById('pv-chart-wrap');
     if(wrap.style.display === 'none'){
@@ -1192,12 +1236,13 @@ function _renderCuboUI(c){
   document.getElementById('pv-chart-type').addEventListener('change', _pvRenderGrafico);
   document.getElementById('pv-chart-metric').addEventListener('change', _pvRenderGrafico);
 
-  // ─── Export XLSX ───
+  // Export XLSX
   document.getElementById('pv-export-xlsx').addEventListener('click', _pvExportarXLSX);
 
-  // Renderiza a pivot inicial
+  // Renderiza pivot inicial
   _pvAtualizar();
 }
+
 
 // ── Persistência local ──
 function _pvPersistir(){
@@ -1210,7 +1255,7 @@ function _pvPersistir(){
       comp: _pivotState.comp,
       sort: _pivotState.sort
     };
-    localStorage.setItem('pivot_state_v1', JSON.stringify(snap));
+    localStorage.setItem('pivot_state_v2', JSON.stringify(snap));
   } catch(e){}
 }
 
@@ -1760,7 +1805,12 @@ function _pvAtualizarReal(){
   _pvAtualizarDisponibilidade();
 
   if(!result){
-    cont.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:40px;font-size:13px;">Arraste pelo menos uma métrica em <strong>∑ Valores</strong> e uma dimensão em <strong>📋 Linhas</strong> ou <strong>📊 Colunas</strong> para começar.</div>';
+    cont.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:60px 20px;font-size:13px;">'
+      + '<div style="font-size:42px;margin-bottom:14px;opacity:0.4;">📊</div>'
+      + '<div style="font-size:14px;font-weight:600;color:var(--text);margin-bottom:6px;">Comece configurando sua análise</div>'
+      + '<div style="margin-bottom:4px;">Arraste pelo menos uma <strong>métrica</strong> em <strong>∑ Valores</strong></div>'
+      + '<div>e uma <strong>dimensão</strong> em <strong>📋 Linhas</strong> ou <strong>📊 Colunas</strong>.</div>'
+      + '</div>';
     status.textContent = '';
     return;
   }
