@@ -1342,20 +1342,21 @@ function setEstoqueIdeal(n, base){
   try{ localStorage.setItem('estoqueIdeal:'+base, String(n)); }catch(e){}
 }
 
-const GPC_DEFAULTS = [
-  'COMERCIAL PINTO DE CERQUEIRA LTDA',
-  'A P CERQUEIRA',
-  'MARIA DAS GRACAS PINTO CERQUEIRA',
-  'JOAO DANIEL PINTO CERQUEIRA'
-];
+// Sem defaults globais; cada base configura seus fornecedores internos
+const GPC_DEFAULTS = [];
 
 function getGpcSuppliers(base){
-  base = base || _getBaseAtivaParaConfig();
+  // Se base for explicitamente passado, usa ele.
+  // Se for undefined, usa a base ativa.
+  // Se for null, faz união de todas (visão consolidada).
+  if(typeof base === 'undefined') base = _getBaseAtivaParaConfig();
   try{
     if(base){
       // Chave por base
       const s = localStorage.getItem('gpcSuppliers:'+base);
       if(s) return JSON.parse(s);
+      // Sem cadastro pra esta base: vazio (não usa default global)
+      return [];
     } else {
       // Consolidado: união de todas as bases
       const uniao = new Set();
@@ -1365,13 +1366,10 @@ function getGpcSuppliers(base){
           if(s) JSON.parse(s).forEach(n => uniao.add(n));
         }catch(e){}
       });
-      if(uniao.size > 0) return [...uniao];
+      return [...uniao];
     }
-    // Legado: chave antiga sem base
-    const s = localStorage.getItem('gpcSuppliers');
-    if(s) return JSON.parse(s);
   }catch(e){}
-  return [...GPC_DEFAULTS];
+  return [];
 }
 function saveGpcSuppliers(list, base){
   base = base || _getBaseAtivaParaConfig() || 'default';
@@ -1385,6 +1383,56 @@ function isGpcSupplier(nome){
 // ADMINISTRAÇÃO — gerenciar fornecedores internos do grupo
 // ================================================================
 function renderAdmin(){
+  // Bloqueio: Administração não funciona em visão consolidada
+  // Cada base tem suas próprias configurações (SKUs ocultos, fornecedores internos, etc).
+  // Editar em consolidado é confuso e arriscado. Força o usuário a escolher uma loja.
+  const _filAtual = (typeof _filialAtual !== 'undefined') ? _filialAtual : null;
+  if(!_filAtual || !_filAtual.base_sigla){
+    const filiaisDispon = _filiaisDisponiveis || [];
+    let html = '<div class="ph"><div class="pk">Administração</div><h2>Escolha uma <em>loja</em> para configurar</h2></div>'
+      + '<div class="ph-sep"></div>'
+      + '<div class="page-body" style="padding:40px 20px;">'
+      + '<div style="max-width:560px;margin:20px auto;text-align:center;">'
+      + '<div style="width:64px;height:64px;background:var(--accent-bg);border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto 18px;">'
+      + '<svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>'
+      + '</div>'
+      + '<h3 style="font-size:18px;font-weight:800;margin-bottom:10px;color:var(--text);">Configurações são por loja</h3>'
+      + '<p style="font-size:13px;color:var(--text-muted);line-height:1.6;margin-bottom:24px;">'
+      +   'A página de Administração gerencia SKUs ocultos, fornecedores internos, estoque ideal e outras configurações específicas de cada base. '
+      +   'Para evitar confusão, ela só funciona dentro de uma loja específica.'
+      + '</p>'
+      + '<div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.1em;font-weight:700;margin-bottom:10px;">Selecione a loja para configurar:</div>'
+      + '<div style="display:flex;flex-wrap:wrap;gap:8px;justify-content:center;">';
+    filiaisDispon.forEach(function(f){
+      if(f.placeholder) return;
+      html += '<button class="adm-pick-loja" data-sigla="'+escAttr(f.sigla)+'" '
+        + 'style="padding:9px 16px;background:var(--surface);border:1px solid var(--border-strong);border-radius:6px;cursor:pointer;font-size:12.5px;font-weight:700;color:var(--text);transition:background .12s;">'
+        + esc(f.nome)
+        + '</button>';
+    });
+    html += '</div></div></div>';
+    document.getElementById('page-admin').innerHTML = html;
+
+    // Hover effect inline (sem CSS extra)
+    document.querySelectorAll('.adm-pick-loja').forEach(function(btn){
+      btn.addEventListener('mouseenter', function(){ btn.style.background = 'var(--accent-bg)'; });
+      btn.addEventListener('mouseleave', function(){ btn.style.background = 'var(--surface)'; });
+      btn.addEventListener('click', function(){
+        const sigla = btn.getAttribute('data-sigla');
+        // Troca de filial via URL (mesmo mecanismo do seletor da sidebar)
+        const url = new URL(window.location);
+        if(sigla && sigla !== 'grupo') url.searchParams.set('filial', sigla);
+        else url.searchParams.delete('filial');
+        url.searchParams.delete('snapshot');
+        if(typeof _auditLog === 'function'){
+          _auditLog('filial_change', {de: 'consolidado', para: sigla, origem: 'admin'});
+        }
+        window.location = url.toString();
+      });
+    });
+    return;
+  }
+
   const list=getGpcSuppliers();
   const allForn=D.fornecedores.map(f=>f.n).sort();
 

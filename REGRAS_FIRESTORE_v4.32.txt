@@ -1,0 +1,101 @@
+// REGRAS FIRESTORE · v4.32 · adicionar dias_cp e users/{uid}/pins/{uid}/pins
+// Cole essas regras no Firebase Console substituindo as atuais.
+
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function authed() {
+      return request.auth != null;
+    }
+
+    function userDoc() {
+      return get(/databases/$(database)/documents/usuarios/$(request.auth.uid)).data;
+    }
+
+    function isAdmin() {
+      return authed() && userDoc().perfil == 'admin' && userDoc().ativo == true;
+    }
+
+    match /usuarios/{uid} {
+      allow read: if authed() && (request.auth.uid == uid || isAdmin());
+      allow list: if isAdmin();
+      allow create: if isAdmin();
+      allow update: if isAdmin()
+        || (authed() && request.auth.uid == uid
+            && request.resource.data.diff(resource.data).changedKeys()
+                .hasOnly(['senha_temp', 'ultimo_acesso']));
+      allow delete: if isAdmin();
+    }
+
+    match /perfisTemplate/{key} {
+      allow read: if authed();
+      allow write: if isAdmin();
+    }
+
+    match /config/{doc} {
+      allow read: if authed();
+      allow write: if isAdmin();
+    }
+
+    match /auditLog/{id} {
+      allow create: if authed();
+      allow read, list: if isAdmin();
+      allow update, delete: if false;
+    }
+
+    match /supervisoresIgnorados/{base} {
+      allow read, list: if authed();
+      allow write: if isAdmin();
+    }
+
+    match /uploads/{uploadId} {
+      allow read, list: if isAdmin();
+      allow create: if authed();
+      allow update, delete: if isAdmin();
+    }
+
+    // ── ADICIONADO em mai/2026 ──
+    // Análises de pivot salvas pelos usuários
+    match /analises_pivot/{id} {
+      allow read: if authed() && (
+        resource.data.escopo == 'time'
+        || resource.data.owner_uid == request.auth.uid
+        || isAdmin()
+      );
+      allow list: if authed();
+      allow create: if authed()
+        && request.resource.data.owner_uid == request.auth.uid
+        && request.resource.data.nome is string
+        && request.resource.data.nome.size() > 0;
+      allow update: if authed() && (
+        resource.data.owner_uid == request.auth.uid || isAdmin()
+      );
+      allow delete: if authed() && (
+        resource.data.owner_uid == request.auth.uid || isAdmin()
+      );
+    }
+
+    // ── ADICIONADO em v4.31 ──
+    // Pins fixados na home (cada usuário gerencia os seus)
+    // Documentos em users/{uid}/pins/{pinId}
+    match /users/{uid}/pins/{pinId} {
+      allow read, list: if authed() && request.auth.uid == uid;
+      allow create, update, delete: if authed() && request.auth.uid == uid;
+    }
+
+    // ── ADICIONADO em v4.32 ──
+    // Dias de oferta (C&P) cadastrados por loja e mês
+    // Documento ID: 'LOJA_YYYY-MM' (ex: 'ATP-V_2026-04')
+    // Qualquer usuário autenticado pode ler; só admin pode escrever
+    // (pra evitar que cada um cadastre dias diferentes)
+    match /dias_cp/{docId} {
+      allow read, list: if authed();
+      allow create, update, delete: if isAdmin();
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

@@ -1917,6 +1917,57 @@ function renderExecutivo(){
     {l:'NFs de entrada',      v:fI(totalNfs),     s:fI(totalForns)+' fornecedores'},
   ]);
 
+  // Adiciona botões de pin nos KPIs principais (após render)
+  if(typeof _pinRegistrar === 'function'){
+    // Captura valores no fechamento pra render standalone
+    const _capt = {totalFat:totalFat, totalLucro:totalLucro, margem:margem, totalCompras:totalCompras, cobPct:cobPct, valorVencidos:valorVencidos, nVencidos:nVencidos, totalAberto:totalAberto, estoqueValorPV:estoqueValorPV, dataEstoque:dataEstoque, labelPeriodo:labelPeriodo};
+
+    _pinRegistrar('kpi-faturamento-liquido', 'Faturamento líquido', 'executivo', function(c){
+      c.innerHTML = '<div style="font-size:24px;font-weight:800;color:var(--text);">'+fK(_capt.totalFat)+'</div>'
+        + '<div style="font-size:11px;color:var(--text-muted);margin-top:4px;">'+esc(_capt.labelPeriodo)+'</div>';
+    });
+    _pinRegistrar('kpi-lucro-bruto', 'Lucro bruto · margem', 'executivo', function(c){
+      c.innerHTML = '<div style="font-size:24px;font-weight:800;color:var(--text);">'+fK(_capt.totalLucro)+'</div>'
+        + '<div style="font-size:11px;color:var(--text-muted);margin-top:4px;">Margem '+fP(_capt.margem)+'</div>';
+    });
+    _pinRegistrar('kpi-vencidos', 'Vencidos · total', 'executivo', function(c){
+      c.innerHTML = '<div style="font-size:24px;font-weight:800;color:#dc2626;">'+fK(_capt.valorVencidos)+'</div>'
+        + '<div style="font-size:11px;color:var(--text-muted);margin-top:4px;">'+fI(_capt.nVencidos)+' títulos vencidos</div>';
+    });
+    _pinRegistrar('kpi-aberto', 'Total a pagar', 'executivo', function(c){
+      c.innerHTML = '<div style="font-size:24px;font-weight:800;color:#b45309;">'+fK(_capt.totalAberto)+'</div>'
+        + '<div style="font-size:11px;color:var(--text-muted);margin-top:4px;">Em aberto</div>';
+    });
+    _pinRegistrar('kpi-estoque-pv', 'Estoque (preço de venda)', 'executivo', function(c){
+      c.innerHTML = '<div style="font-size:24px;font-weight:800;color:var(--text);">'+(_capt.estoqueValorPV>0?fK(_capt.estoqueValorPV):'—')+'</div>'
+        + '<div style="font-size:11px;color:var(--text-muted);margin-top:4px;">'+(_capt.estoqueValorPV>0?'Retrato '+esc(_capt.dataEstoque):'sem dados')+'</div>';
+    });
+
+    // Adiciona botões de pin sobrepostos em cada KPI do grid
+    setTimeout(function(){
+      const kg = document.getElementById('kg-exec');
+      if(!kg) return;
+      const mapeamento = [
+        {sel: 0, id: 'kpi-faturamento-liquido'},
+        {sel: 1, id: 'kpi-lucro-bruto'},
+        {sel: 3, id: 'kpi-vencidos'},
+        {sel: 4, id: 'kpi-aberto'},
+        {sel: 5, id: 'kpi-estoque-pv'}
+      ];
+      const cards = kg.querySelectorAll('.kc');
+      mapeamento.forEach(function(m){
+        const card = cards[m.sel];
+        if(!card || card.querySelector('.pin-btn')) return;
+        card.style.position = 'relative';
+        const btn = document.createElement('div');
+        btn.style.cssText = 'position:absolute;top:6px;right:6px;';
+        btn.innerHTML = _pinBotao(m.id);
+        card.appendChild(btn);
+      });
+      _pinAtualizarBotoes();
+    }, 50);
+  }
+
   // ─── Charts ───────────────────────────────────────────────────────
   const lbl = ymsExibicao.map(_ymToLabel);
 
@@ -3013,288 +3064,645 @@ function renderVDiarias(){
 // como aqueles com fat > 1.5× a média do mesmo dia da semana.
 // Quando o cliente fornecer calendário oficial, substituir essa lógica.
 // ────────────────────────────────────────────────────────────────────
+// ════════════════════════════════════════════════════════════════════════
+// DIAS C&P · v4.32 · análise de eventos de oferta
+// Reescrita conforme dash.solucoesr2.com.br/gpc.html (escopo etapa 8)
+// O usuário cadastra os dias C&P de cada mês e loja.
+// O sistema calcula premium (% acima dos dias normais), influência mensal etc.
+// ════════════════════════════════════════════════════════════════════════
+
+// Estado global da página Dias C&P
+let _dcpFiltroLoja = 'GRUPO';      // 'GRUPO', 'ATP-V', 'ATP-A', 'CP1', 'CP3', 'CP5', 'CP40'
+let _dcpDiasCadastrados = {};      // {loja: {ym: ['YYYY-MM-DD', ...]}}
+let _dcpFirestoreCarregado = false;
+
+// Carrega dias cadastrados do Firestore
+async function _dcpCarregarFirestore(){
+  if(_dcpFirestoreCarregado) return;
+  try {
+    const auth = (typeof firebase !== 'undefined' && firebase.auth) ? firebase.auth() : null;
+    if(!auth || !auth.currentUser){ _dcpFirestoreCarregado = true; return; }
+    const db = firebase.firestore();
+    const snap = await db.collection('dias_cp').get();
+    _dcpDiasCadastrados = {};
+    snap.forEach(function(doc){
+      const d = doc.data();
+      const id = doc.id; // formato: 'LOJA_YYYY-MM' ex: 'ATP-V_2026-04'
+      const partes = id.split('_');
+      if(partes.length < 2) return;
+      const ym = partes[partes.length-1];
+      const loja = partes.slice(0, -1).join('_');
+      if(!_dcpDiasCadastrados[loja]) _dcpDiasCadastrados[loja] = {};
+      _dcpDiasCadastrados[loja][ym] = d.dias || [];
+    });
+    _dcpFirestoreCarregado = true;
+  } catch(e){
+    console.warn('[dcp] erro carregando:', e);
+    _dcpFirestoreCarregado = true;
+  }
+}
+
+// Salva dias para uma loja+mês no Firestore
+async function _dcpSalvar(loja, ym, dias){
+  try {
+    const auth = (typeof firebase !== 'undefined' && firebase.auth) ? firebase.auth() : null;
+    if(!auth || !auth.currentUser){ alert('Faça login para salvar.'); return false; }
+    const db = firebase.firestore();
+    const id = loja+'_'+ym;
+    if(dias && dias.length){
+      await db.collection('dias_cp').doc(id).set({
+        loja: loja, ym: ym, dias: dias,
+        atualizadoEm: firebase.firestore.FieldValue.serverTimestamp(),
+        atualizadoPor: auth.currentUser.email || auth.currentUser.uid
+      });
+    } else {
+      await db.collection('dias_cp').doc(id).delete();
+    }
+    if(!_dcpDiasCadastrados[loja]) _dcpDiasCadastrados[loja] = {};
+    _dcpDiasCadastrados[loja][ym] = dias;
+    return true;
+  } catch(e){
+    console.warn('[dcp] erro salvando:', e);
+    alert('Erro ao salvar: '+(e.message || e.code || 'desconhecido'));
+    return false;
+  }
+}
+
+// Mapeamento de label de loja
+const _DCP_LOJAS = [
+  {cod:'GRUPO', label:'GPC Consolidado'},
+  {cod:'ATP-V', label:'ATP - Varejo'},
+  {cod:'ATP-A', label:'ATP - Atacado'},
+  {cod:'CP1',   label:'Comercial Pinto'},
+  {cod:'CP3',   label:'Cestão L1'},
+  {cod:'CP5',   label:'Inhambupe'},
+  {cod:'CP40',  label:'Barros 40'}
+];
+
+// Calcula métricas por loja a partir de V.diario + dias cadastrados
+// Retorna: {meses: [{ym, dias_cp, fat_dias_cp, fat_dias_normais, num_dias_normais,
+//                     premium_pct, repres_pct, melhor_dia: {data, fat}}],
+//           total: {fat_dias_cp, num_eventos, num_dias, premium_medio,
+//                   media_dia_cp, media_dia_normal, repres_media, melhor_evento}}
+function _dcpCalcular(lojaCod){
+  const diario = (V && V.diario) || [];
+  // Filtra por loja (se GRUPO, agrega tudo por dia)
+  let porData;
+  if(lojaCod === 'GRUPO'){
+    porData = new Map();
+    diario.forEach(function(r){
+      if(!r.data) return;
+      if(!porData.has(r.data)) porData.set(r.data, {data:r.data, fat:0});
+      porData.get(r.data).fat += r.fat_liq || 0;
+    });
+  } else {
+    porData = new Map();
+    diario.filter(function(r){return r.loja === lojaCod;}).forEach(function(r){
+      if(!r.data) return;
+      if(!porData.has(r.data)) porData.set(r.data, {data:r.data, fat:r.fat_liq || 0});
+    });
+  }
+
+  // Pega dias cadastrados para esta loja (se GRUPO, usa união de todas as lojas)
+  let diasCpSet = new Set();
+  if(lojaCod === 'GRUPO'){
+    Object.keys(_dcpDiasCadastrados).forEach(function(lj){
+      Object.keys(_dcpDiasCadastrados[lj] || {}).forEach(function(ym){
+        (_dcpDiasCadastrados[lj][ym] || []).forEach(function(d){ diasCpSet.add(d); });
+      });
+    });
+  } else {
+    const dl = _dcpDiasCadastrados[lojaCod] || {};
+    Object.keys(dl).forEach(function(ym){
+      (dl[ym] || []).forEach(function(d){ diasCpSet.add(d); });
+    });
+  }
+
+  // Agrupa por mês
+  const porMes = new Map();
+  porData.forEach(function(r){
+    const ym = r.data.substring(0,7);
+    if(!porMes.has(ym)) porMes.set(ym, {ym:ym, dias_cp_lista:[], dias_normais_lista:[]});
+    const m = porMes.get(ym);
+    if(diasCpSet.has(r.data)) m.dias_cp_lista.push(r);
+    else m.dias_normais_lista.push(r);
+  });
+
+  // Calcula métricas por mês
+  const meses = [];
+  let totFatCp = 0, totDiasCp = 0, totEventos = 0, totRepres = 0, totMesesComCp = 0;
+  let melhorEvento = {fat:0, ym:'', dias:[]};
+  let premiumSum = 0, premiumCount = 0;
+  let mediaDiaCpSum = 0, mediaDiaCpCount = 0;
+  let mediaDiaNormalSum = 0, mediaDiaNormalCount = 0;
+
+  Array.from(porMes.values()).sort(function(a,b){return a.ym.localeCompare(b.ym);}).forEach(function(m){
+    const fatCp = m.dias_cp_lista.reduce(function(s,r){return s+r.fat;}, 0);
+    const fatNm = m.dias_normais_lista.reduce(function(s,r){return s+r.fat;}, 0);
+    const fatTot = fatCp + fatNm;
+    const mediaCp = m.dias_cp_lista.length > 0 ? fatCp / m.dias_cp_lista.length : 0;
+    const mediaNm = m.dias_normais_lista.length > 0 ? fatNm / m.dias_normais_lista.length : 0;
+    const premium = mediaNm > 0 ? ((mediaCp / mediaNm - 1) * 100) : null;
+    const repres = fatTot > 0 ? (fatCp / fatTot * 100) : 0;
+    const melhorDia = m.dias_cp_lista.slice().sort(function(a,b){return b.fat - a.fat;})[0] || null;
+
+    meses.push({
+      ym: m.ym,
+      num_dias_cp: m.dias_cp_lista.length,
+      datas_cp: m.dias_cp_lista.map(function(r){return r.data;}).sort(),
+      num_dias_normais: m.dias_normais_lista.length,
+      fat_dias_cp: fatCp,
+      fat_dias_normais: fatNm,
+      fat_total: fatTot,
+      media_dia_cp: mediaCp,
+      media_dia_normal: mediaNm,
+      premium_pct: premium,
+      repres_pct: repres,
+      melhor_dia: melhorDia
+    });
+
+    if(m.dias_cp_lista.length > 0){
+      totFatCp += fatCp;
+      totDiasCp += m.dias_cp_lista.length;
+      totEventos += 1;
+      totRepres += repres;
+      totMesesComCp += 1;
+      if(premium != null){ premiumSum += premium; premiumCount += 1; }
+      mediaDiaCpSum += fatCp; mediaDiaCpCount += m.dias_cp_lista.length;
+      mediaDiaNormalSum += fatNm; mediaDiaNormalCount += m.dias_normais_lista.length;
+      if(fatCp > melhorEvento.fat){
+        melhorEvento = {fat:fatCp, ym:m.ym, dias:m.dias_cp_lista.map(function(r){return r.data;}).sort(), premium:premium};
+      }
+    }
+  });
+
+  return {
+    meses: meses,
+    total: {
+      fat_dias_cp: totFatCp,
+      num_eventos: totEventos,
+      num_dias: totDiasCp,
+      premium_medio: premiumCount > 0 ? premiumSum / premiumCount : 0,
+      media_dia_cp: mediaDiaCpCount > 0 ? mediaDiaCpSum / mediaDiaCpCount : 0,
+      media_dia_normal: mediaDiaNormalCount > 0 ? mediaDiaNormalSum / mediaDiaNormalCount : 0,
+      repres_media: totMesesComCp > 0 ? totRepres / totMesesComCp : 0,
+      melhor_evento: melhorEvento
+    }
+  };
+}
+
+// Top N melhores dias individuais (entre os dias C&P)
+function _dcpTopDias(lojaCod, n){
+  const diario = (V && V.diario) || [];
+  let dadosDia;
+  if(lojaCod === 'GRUPO'){
+    dadosDia = new Map();
+    diario.forEach(function(r){
+      if(!dadosDia.has(r.data)) dadosDia.set(r.data, {data:r.data, fat:0});
+      dadosDia.get(r.data).fat += r.fat_liq || 0;
+    });
+    dadosDia = Array.from(dadosDia.values());
+  } else {
+    dadosDia = diario.filter(function(r){return r.loja === lojaCod;}).map(function(r){return {data:r.data, fat:r.fat_liq||0};});
+  }
+
+  let diasCpSet = new Set();
+  if(lojaCod === 'GRUPO'){
+    Object.keys(_dcpDiasCadastrados).forEach(function(lj){
+      Object.keys(_dcpDiasCadastrados[lj] || {}).forEach(function(ym){
+        (_dcpDiasCadastrados[lj][ym] || []).forEach(function(d){ diasCpSet.add(d); });
+      });
+    });
+  } else {
+    const dl = _dcpDiasCadastrados[lojaCod] || {};
+    Object.keys(dl).forEach(function(ym){
+      (dl[ym] || []).forEach(function(d){ diasCpSet.add(d); });
+    });
+  }
+
+  return dadosDia.filter(function(r){return diasCpSet.has(r.data);})
+                 .sort(function(a,b){return b.fat - a.fat;})
+                 .slice(0, n);
+}
+
+// Top N melhores eventos (eventos = grupo de dias seguidos no mesmo mês)
+function _dcpTopEventos(lojaCod, n){
+  const calc = _dcpCalcular(lojaCod);
+  return calc.meses.filter(function(m){return m.num_dias_cp > 0;})
+                   .sort(function(a,b){return b.fat_dias_cp - a.fat_dias_cp;})
+                   .slice(0, n);
+}
+
 function renderVDiasCP(){
   const cont = document.getElementById('page-v-dias-cp');
   if(!cont) return;
 
-  const diario = V.diario || [];
+  const diario = (V && V.diario) || [];
   if(!diario.length){
-    cont.innerHTML = '<div class="ph"><div class="pk">Vendas · Análise</div><h2>Dias <em>C &amp; P</em></h2></div>'
+    cont.innerHTML = '<div class="ph"><div class="pk">Vendas · Análise</div><h2>Dias <em>C &amp; P</em> — Análise de oferta</h2></div>'
       + '<div class="ph-sep"></div><div class="page-body">'
-      + '<div class="cc" style="text-align:center;color:var(--text-muted);padding:30px;">Sem dados diários</div></div>';
+      + '<div class="cc" style="text-align:center;color:var(--text-muted);padding:30px;">Sem dados diários carregados</div></div>';
     return;
   }
 
-  const LIMIAR = 1.5; // fator do limiar para considerar "atípico"
+  // Carrega dias cadastrados do Firestore (assíncrono)
+  _dcpCarregarFirestore().then(function(){ _dcpRenderConteudo(); });
 
-  // Calcular média e desvio por (loja, dia da semana)
-  function calcMedias(lojaFiltro){
-    const linhas = lojaFiltro ? diario.filter(function(r){return r.loja === lojaFiltro;}) : diario;
-    const mediasPorDS = Array(7).fill(null).map(function(){return {fat:0, count:0};});
-    linhas.forEach(function(r){
-      const ds = new Date(r.data+'T12:00:00').getDay();
-      mediasPorDS[ds].fat += r.fat_liq||0;
-      mediasPorDS[ds].count++;
-    });
-    return mediasPorDS.map(function(x){return x.count>0 ? x.fat/x.count : 0;});
-  }
+  // Render inicial vazio enquanto carrega
+  cont.innerHTML = '<div class="ph"><div class="pk">Vendas · Análise</div><h2>Dias <em>C &amp; P</em> — Análise de oferta</h2></div>'
+    + '<div class="ph-sep"></div><div class="page-body" id="dcp-body">'
+    + '<div style="text-align:center;color:var(--text-muted);padding:30px;">Carregando dias cadastrados...</div>'
+    + '</div>';
+}
 
-  const mediasV = calcMedias('ATP-V');
-  const mediasA = calcMedias('ATP-A');
+function _dcpRenderConteudo(){
+  const body = document.getElementById('dcp-body');
+  if(!body) return;
 
-  // Marcar cada linha como "atípica" ou "normal" baseado na média do mesmo dia da semana da mesma loja
-  function classifica(r){
-    const ds = new Date(r.data+'T12:00:00').getDay();
-    const med = r.loja === 'ATP-V' ? mediasV[ds] : mediasA[ds];
-    if(med <= 0) return 'normal';
-    return r.fat_liq >= LIMIAR * med ? 'atipico' : 'normal';
-  }
-  const classificado = diario.map(function(r){
-    return Object.assign({}, r, {classe: classifica(r)});
+  // Detecta lojas disponíveis no diário
+  const lojasNoDiario = new Set();
+  (V.diario || []).forEach(function(r){ if(r.loja) lojasNoDiario.add(r.loja); });
+  const lojasDispon = _DCP_LOJAS.filter(function(l){
+    return l.cod === 'GRUPO' || lojasNoDiario.has(l.cod);
   });
 
-  const atipicos = classificado.filter(function(r){return r.classe === 'atipico';});
-  const normais  = classificado.filter(function(r){return r.classe === 'normal';});
+  let html = '';
 
-  // Agregar atípicos por data (consolidando lojas) — possíveis "eventos"
-  const atipicosByData = new Map();
-  atipicos.forEach(function(r){
-    if(!atipicosByData.has(r.data)) atipicosByData.set(r.data, {data:r.data, fat:0, lojas:[], lojas_atip:0});
-    const x = atipicosByData.get(r.data);
-    x.fat += r.fat_liq||0;
-    x.lojas.push({loja:r.loja, fat:r.fat_liq, dia_sem:new Date(r.data+'T12:00:00').getDay()});
-    x.lojas_atip++;
+  // ─── Seletor de loja ───
+  html += '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px;">';
+  lojasDispon.forEach(function(l){
+    const ativo = (l.cod === _dcpFiltroLoja);
+    html += '<button class="dcp-tab" data-loja="'+esc(l.cod)+'" '
+      + 'style="padding:7px 14px;border-radius:18px;border:1px solid '
+      + (ativo?'var(--accent)':'var(--border-strong)')+';background:'
+      + (ativo?'var(--accent)':'var(--surface)')+';color:'+(ativo?'#fff':'var(--text)')
+      + ';cursor:pointer;font-size:12px;font-weight:600;">'
+      + esc(l.label) + '</button>';
   });
-  // Para cada data atípica, verificar fat total daquele dia (todas lojas — incluso normais)
-  const totalDia = new Map();
-  diario.forEach(function(r){
-    if(!totalDia.has(r.data)) totalDia.set(r.data, 0);
-    totalDia.set(r.data, totalDia.get(r.data) + (r.fat_liq||0));
-  });
-  const eventos = Array.from(atipicosByData.values()).map(function(e){
-    return {
-      data: e.data, fat_atipico: e.fat, fat_total_dia: totalDia.get(e.data) || 0,
-      lojas_atip: e.lojas_atip, lojas: e.lojas,
-    };
-  }).sort(function(a,b){return b.fat_total_dia - a.fat_total_dia;});
-
-  // Identificar "blocos consecutivos" de 2-3 dias com atípicos (potenciais eventos)
-  const datasEventoSet = new Set(eventos.map(function(e){return e.data;}));
-  const datasOrdenadas = Array.from(datasEventoSet).sort();
-  const blocos = [];
-  let atual = [];
-  for(let i = 0; i < datasOrdenadas.length; i++){
-    const d = datasOrdenadas[i];
-    const dPrev = i>0 ? datasOrdenadas[i-1] : null;
-    if(!dPrev){ atual = [d]; continue; }
-    const diff = Math.round((new Date(d) - new Date(dPrev)) / 86400000);
-    if(diff <= 1){
-      atual.push(d);
-    } else {
-      if(atual.length >= 2) blocos.push(atual);
-      atual = [d];
-    }
-  }
-  if(atual.length >= 2) blocos.push(atual);
-
-  // Estatísticas comparativas
-  const fatAtip = atipicos.reduce(function(s,r){return s+r.fat_liq;}, 0);
-  const fatNormal = normais.reduce(function(s,r){return s+r.fat_liq;}, 0);
-  const mediaAtip = atipicos.length>0 ? fatAtip/atipicos.length : 0;
-  const mediaNormal = normais.length>0 ? fatNormal/normais.length : 0;
-  const premium = mediaNormal>0 ? (mediaAtip/mediaNormal - 1)*100 : 0;
-
-  let html = '<div class="ph"><div class="pk">Vendas · Análise</div><h2>Dias <em>C &amp; P</em></h2></div>';
-  html += '<div class="ph-sep"></div>';
-  html += '<div class="page-body">';
-
-  // Banner explicando heurística
-  html += '<div style="background:var(--warning-bg);border:1px solid var(--warning);border-radius:8px;padding:12px 14px;margin-bottom:14px;display:flex;align-items:start;gap:10px;">'
-       +   '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--warning)" stroke-width="2" style="flex-shrink:0;margin-top:2px;"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>'
-       +   '<div style="font-size:12px;color:var(--warning);line-height:1.5;">'
-       +     '<strong>Aviso · análise heurística:</strong> os dados não trazem identificação oficial de dias promocionais. '
-       +     'Esta página identifica <strong>dias atípicos</strong> como aqueles com faturamento ≥ <strong>'+LIMIAR+'×</strong> a média do mesmo dia da semana na mesma loja. '
-       +     'Quando o cliente fornecer o calendário oficial de eventos C&P, esta lógica deve ser substituída.'
-       +   '</div>'
-       + '</div>';
-
-  // KPIs
-  html += '<div class="kg" style="grid-template-columns:repeat(4,1fr);margin-bottom:14px;" id="kg-vcp"></div>';
-
-  // Linha 1: top 10 atípicos + comparativo médias
-  html += '<div class="row2eq" style="margin-bottom:14px;">'
-       +    '<div class="cc">'
-       +      '<div class="cct">🏆 Top 10 dias atípicos</div>'
-       +      '<div class="ccs">Faturamento total do dia (consolidado)</div>'
-       +      '<div style="height:280px;"><canvas id="c-vcp-top"></canvas></div>'
-       +    '</div>'
-       +    '<div class="cc">'
-       +      '<div class="cct">Premium dos atípicos vs normais</div>'
-       +      '<div class="ccs">Comparativo de média diária por loja</div>'
-       +      '<div style="height:280px;"><canvas id="c-vcp-comp"></canvas></div>'
-       +    '</div>'
-       + '</div>';
-
-  // Linha 2: distribuição mensal de atípicos
-  html += '<div class="cc" style="margin-bottom:14px;">'
-       +    '<div class="cct">Distribuição mensal de dias atípicos</div>'
-       +    '<div class="ccs">Quantidade de dias e fat total por mês</div>'
-       +    '<div style="height:240px;"><canvas id="c-vcp-mensal"></canvas></div>'
-       + '</div>';
-
-  // Tabela eventos
-  html += '<div class="cc" style="margin-bottom:12px;">'
-       +    '<div class="cct">Eventos detectados (top 30 dias atípicos)</div>'
-       +    '<div class="ccs">Dias com fat. ≥ '+LIMIAR+'× a média do mesmo dia da semana</div>'
-       +    '<div class="tscroll"><table class="t" id="t-vcp-eventos">'
-       +      '<thead><tr>'
-       +      '<th class="L" style="width:24px;">#</th>'
-       +      '<th class="L">Data</th><th class="L">Dia</th>'
-       +      '<th>Fat. total dia</th>'
-       +      '<th>Lojas atípicas</th>'
-       +      '<th class="L">Detalhe</th>'
-       +      '</tr></thead><tbody id="tb-vcp-eventos"></tbody></table></div>'
-       + '</div>';
-
-  // Blocos consecutivos
-  html += '<div class="cc">'
-       +    '<div class="cct">Possíveis eventos plurianuais (2+ dias consecutivos atípicos)</div>'
-       +    '<div class="ccs">Sequências contíguas de dias atípicos · '+blocos.length+' blocos identificados</div>'
-       +    '<div class="tscroll"><table class="t"><thead><tr>'
-       +      '<th class="L">Período</th>'
-       +      '<th>Duração</th>'
-       +      '<th>Fat. total bloco</th>'
-       +      '</tr></thead><tbody id="tb-vcp-blocos"></tbody></table></div>'
-       + '</div>';
-
   html += '</div>';
-  cont.innerHTML = html;
 
-  // ─── KPIs ───
-  document.getElementById('kg-vcp').innerHTML = kgHtml([
-    {l:'Dias atípicos detectados', v:fI(eventos.length), s:'em '+fI(diario.length)+' dia-loja', cls:'hl'},
-    {l:'Fat. total atípicos',      v:fK(fatAtip), s:(fatAtip+fatNormal)>0?fP(fatAtip/(fatAtip+fatNormal)*100)+' do total':'sem dados'},
-    {l:'Premium médio',            v:'+'+fP(premium), s:'média atípicos vs normais', cls:'up'},
-    {l:'Blocos contíguos',         v:fI(blocos.length), s:'2+ dias consecutivos'},
-  ]);
+  // ─── Cabeçalho do escopo + botão "Cadastrar dias" ───
+  const lojaInfo = _DCP_LOJAS.find(function(l){return l.cod === _dcpFiltroLoja;}) || {label:_dcpFiltroLoja};
+  const calc = _dcpCalcular(_dcpFiltroLoja);
+  const tot = calc.total;
 
-  // ─── Chart: top 10 atípicos ───
-  const top10ev = eventos.slice(0, 10);
-  mkC('c-vcp-top', {type:'bar',
-    data:{labels:top10ev.map(function(e){
-      const dt = new Date(e.data+'T12:00:00');
-      const ds = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
-      return e.data+' ('+ds[dt.getDay()]+')';
-    }), datasets:[{label:'Fat. dia', data:top10ev.map(function(e){return e.fat_total_dia;}),
-      backgroundColor:_PAL.hl+'CC', borderRadius:3}]},
-    options:{indexAxis:'y', responsive:true, maintainAspectRatio:false,
-      plugins:{legend:{display:false},
-               tooltip:{callbacks:{label:function(ctx){
-                 const e = top10ev[ctx.dataIndex];
-                 return [fB(ctx.raw), e.lojas_atip+' loja(s) atípica(s)'];
-               }}}},
-      scales:{x:{ticks:{callback:function(v){return fAbbr(v);}}},
-              y:{ticks:{font:{size:10}}}}}});
+  html += '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:8px;">';
+  html += '<div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;font-weight:700;">Resultado · '+esc(lojaInfo.label)+'</div>';
+  html += '<button id="dcp-cadastrar" style="padding:6px 12px;background:var(--accent);color:white;border:none;border-radius:5px;font-weight:700;cursor:pointer;font-size:11.5px;">📅 Cadastrar dias C&amp;P</button>';
+  html += '</div>';
 
-  // Chart: comparativo
-  // Médias atípicos vs normais por loja
-  const fatA_atip = atipicos.filter(function(r){return r.loja==='ATP-A';}).reduce(function(s,r){return s+r.fat_liq;}, 0);
-  const cntA_atip = atipicos.filter(function(r){return r.loja==='ATP-A';}).length;
-  const fatV_atip = atipicos.filter(function(r){return r.loja==='ATP-V';}).reduce(function(s,r){return s+r.fat_liq;}, 0);
-  const cntV_atip = atipicos.filter(function(r){return r.loja==='ATP-V';}).length;
-  const fatA_norm = normais.filter(function(r){return r.loja==='ATP-A';}).reduce(function(s,r){return s+r.fat_liq;}, 0);
-  const cntA_norm = normais.filter(function(r){return r.loja==='ATP-A';}).length;
-  const fatV_norm = normais.filter(function(r){return r.loja==='ATP-V';}).reduce(function(s,r){return s+r.fat_liq;}, 0);
-  const cntV_norm = normais.filter(function(r){return r.loja==='ATP-V';}).length;
-
-  mkC('c-vcp-comp', {type:'bar',
-    data:{labels:['ATP Varejo','ATP Atacado'],
-      datasets:[
-        {label:'Média dias normais', data:[
-          cntV_norm>0?fatV_norm/cntV_norm:0,
-          cntA_norm>0?fatA_norm/cntA_norm:0,
-        ], backgroundColor:_PAL.ac+'CC', borderRadius:4},
-        {label:'Média dias atípicos', data:[
-          cntV_atip>0?fatV_atip/cntV_atip:0,
-          cntA_atip>0?fatA_atip/cntA_atip:0,
-        ], backgroundColor:_PAL.ok+'CC', borderRadius:4},
-      ]},
-    options:{responsive:true, maintainAspectRatio:false,
-      plugins:{legend:{position:'bottom', labels:{padding:10, usePointStyle:true, boxWidth:8}},
-               tooltip:{callbacks:{label:function(ctx){return ctx.dataset.label+': '+fB(ctx.raw);}}}},
-      scales:{y:{beginAtZero:true, ticks:{callback:function(v){return fAbbr(v);}}},
-              x:{grid:{display:false}}}}});
-
-  // ─── Chart mensal ───
-  const mensalCP = new Map();
-  eventos.forEach(function(e){
-    const ym = e.data.substring(0, 7);
-    if(!mensalCP.has(ym)) mensalCP.set(ym, {ym:ym, count:0, fat:0});
-    const x = mensalCP.get(ym);
-    x.count++;
-    x.fat += e.fat_total_dia;
-  });
-  const mensalArr = Array.from(mensalCP.values()).sort(function(a,b){return a.ym<b.ym?-1:1;});
-  mkC('c-vcp-mensal', {data:{labels:mensalArr.map(function(m){return _ymToLabel(m.ym);}),
-    datasets:[
-      {type:'bar', label:'Qtd dias atípicos', data:mensalArr.map(function(m){return m.count;}),
-        backgroundColor:_PAL.hl+'CC', borderRadius:4, yAxisID:'y'},
-      {type:'line', label:'Fat. total atípicos', data:mensalArr.map(function(m){return m.fat;}),
-        borderColor:_PAL.ok, backgroundColor:'rgba(16,152,84,.1)', tension:.3, pointRadius:4, yAxisID:'y2'},
-    ]},
-    options:{responsive:true, maintainAspectRatio:false,
-      plugins:{legend:{position:'bottom', labels:{padding:10, usePointStyle:true, boxWidth:8}},
-               tooltip:{callbacks:{label:function(ctx){
-                 if(ctx.dataset.label.indexOf('Qtd') === 0) return 'Qtd: '+fI(ctx.raw)+' dias';
-                 return 'Fat: '+fB(ctx.raw);
-               }}}},
-      scales:{
-        y:{beginAtZero:true, position:'left', title:{display:true,text:'Qtd dias'}},
-        y2:{position:'right', grid:{display:false}, ticks:{callback:function(v){return fAbbr(v);}}, title:{display:true,text:'Fat (R$)'}},
-        x:{grid:{display:false}, ticks:{maxRotation:60, minRotation:45, font:{size:9}}}
-      }}});
-
-  // ─── Tabela eventos ───
-  const ds = ['Domingo','Segunda','Terça','Quarta','Quinta','Sexta','Sábado'];
-  document.getElementById('tb-vcp-eventos').innerHTML = eventos.slice(0, 30).map(function(e, i){
-    const dt = new Date(e.data+'T12:00:00');
-    const detalhe = e.lojas.map(function(l){return l.loja+': '+fK(l.fat);}).join(' · ');
-    return '<tr>'
-      + '<td class="L" style="color:var(--text-muted);font-weight:700;">'+(i+1)+'</td>'
-      + '<td class="L"><strong>'+esc(e.data)+'</strong></td>'
-      + '<td class="L">'+ds[dt.getDay()]+'</td>'
-      + '<td class="val-strong">'+fK(e.fat_total_dia)+'</td>'
-      + '<td>'+e.lojas_atip+'/2</td>'
-      + '<td class="L" style="font-size:10px;color:var(--text-muted);">'+esc(detalhe)+'</td>'
-      + '</tr>';
-  }).join('');
-
-  // ─── Tabela blocos ───
-  if(!blocos.length){
-    document.getElementById('tb-vcp-blocos').innerHTML = '<tr><td colspan="3" style="text-align:center;color:var(--text-muted);padding:18px;">Nenhum bloco contíguo de 2+ dias detectado</td></tr>';
+  // ─── KPIs (4) ───
+  html += '<div class="kg" style="grid-template-columns:repeat(4,1fr);margin-bottom:14px;">';
+  if(tot.num_eventos === 0){
+    html += '<div class="kc" style="grid-column:1/-1;text-align:center;padding:30px;color:var(--text-muted);">'
+      + '<div style="font-size:32px;margin-bottom:8px;opacity:.4;">📅</div>'
+      + '<div style="font-size:14px;font-weight:600;margin-bottom:4px;color:var(--text);">Nenhum dia C&amp;P cadastrado para esta loja</div>'
+      + '<div style="font-size:11.5px;line-height:1.5;">Clique em "Cadastrar dias C&amp;P" acima para informar quais foram as datas de oferta. O sistema vai calcular automaticamente o premium e a representatividade.</div>'
+      + '</div>';
   } else {
-    document.getElementById('tb-vcp-blocos').innerHTML = blocos.map(function(bl){
-      const fatBloco = bl.reduce(function(s, d){
-        const e = eventos.find(function(x){return x.data === d;});
-        return s + (e ? e.fat_total_dia : 0);
-      }, 0);
-      return '<tr>'
-        + '<td class="L"><strong>'+bl[0]+' a '+bl[bl.length-1]+'</strong></td>'
-        + '<td>'+bl.length+' dias</td>'
-        + '<td class="val-strong">'+fK(fatBloco)+'</td>'
-        + '</tr>';
-    }).sort(function(a,b){
-      // Sort por fat (extrair do html) — simplifica: deixa na ordem cronológica
-      return 0;
-    }).join('');
+    html += '<div class="kc"><div class="kl">Total faturado em Dias C&amp;P</div>'
+      + '<div class="kv">'+fK(tot.fat_dias_cp)+'</div>'
+      + '<div class="ku">'+fI(tot.num_dias)+' dias · '+fI(tot.num_eventos)+' eventos</div></div>';
+    html += '<div class="kc"><div class="kl">Premium médio</div>'
+      + '<div class="kv">'+(tot.premium_medio>=0?'+':'')+fP(tot.premium_medio)+'</div>'
+      + '<div class="ku">faturamento médio acima dos dias normais</div></div>';
+    const me = tot.melhor_evento;
+    html += '<div class="kc"><div class="kl">Melhor evento</div>'
+      + '<div class="kv">'+fK(me.fat)+'</div>'
+      + '<div class="ku">'+fI(me.dias.length)+' dias de '+_ymToLabel(me.ym)+'</div></div>';
+    html += '<div class="kc"><div class="kl">Média rep. no mês</div>'
+      + '<div class="kv">'+fP(tot.repres_media)+'</div>'
+      + '<div class="ku">do faturamento mensal</div></div>';
+  }
+  html += '</div>';
+
+  if(tot.num_eventos === 0){
+    body.innerHTML = html;
+    _dcpBindEventos();
+    return;
+  }
+
+  // ─── Box explicativo do Premium ───
+  html += '<div style="background:#f3f4f6;border-left:4px solid var(--accent);border-radius:8px;padding:12px 16px;margin-bottom:14px;font-size:12px;line-height:1.6;color:var(--text-dim);">'
+    + '<strong style="color:var(--text);">💡 O que é o "Premium"?</strong><br>'
+    + 'É a diferença percentual entre a venda média de cada Dia C&amp;P e a média dos dias normais do mesmo mês. '
+    + 'Exemplo: se o mês teve média de R$200k/dia e os dias de oferta venderam R$320k/dia em média, o premium é <strong>+60%</strong>. '
+    + 'Quanto maior o premium, maior o poder de atração dos dias de oferta.'
+    + '</div>';
+
+  // ─── Gráfico: Total faturado nos dias C&P por mês ───
+  html += '<div class="cc" style="margin-bottom:14px;">'
+    + '<div class="cct">Total faturado nos dias de oferta · '+esc(lojaInfo.label)+' por mês (R$k)</div>'
+    + '<div class="ccs">Soma do faturamento dos dias C&amp;P</div>'
+    + '<div style="height:280px;margin-top:8px;"><canvas id="dcp-chart-mensal"></canvas></div>'
+    + '</div>';
+
+  // ─── Gráfico: Premium % por mês ───
+  html += '<div class="cc" style="margin-bottom:14px;">'
+    + '<div class="cct">Premium dos dias de oferta (%) · evolução mensal</div>'
+    + '<div class="ccs">% acima da média dos dias normais do mesmo mês — ex: +100% = os dias de oferta faturaram o dobro dos dias comuns</div>'
+    + '<div style="height:260px;margin-top:8px;"><canvas id="dcp-chart-premium"></canvas></div>'
+    + '</div>';
+
+  // ─── Gráfico: Influência (% repres) por mês ───
+  html += '<div class="cc" style="margin-bottom:14px;">'
+    + '<div class="cct">Influência dos dias de oferta no faturamento mensal (%)</div>'
+    + '<div class="ccs">3 dias representando até 25% do mês — eficiência operacional</div>'
+    + '<div style="height:260px;margin-top:8px;"><canvas id="dcp-chart-repres"></canvas></div>'
+    + '</div>';
+
+  // ─── Top 3 melhores dias individuais ───
+  const top3Dias = _dcpTopDias(_dcpFiltroLoja, 3);
+  if(top3Dias.length){
+    html += '<div class="cc" style="margin-bottom:14px;">'
+      + '<div class="cct">🏆 Top 3 — Melhores dias individuais</div>'
+      + '<div style="display:flex;flex-direction:column;gap:8px;margin-top:10px;">';
+    const medalhas = ['🥇','🥈','🥉'];
+    top3Dias.forEach(function(d, i){
+      const dt = new Date(d.data+'T12:00:00');
+      const dn = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'][dt.getDay()];
+      const ymL = _ymToLabel(d.data.substring(0,7));
+      html += '<div style="display:flex;align-items:center;gap:14px;padding:10px;background:var(--surface-2);border-radius:6px;">'
+        + '<div style="font-size:24px;">'+medalhas[i]+'</div>'
+        + '<div style="flex:1;">'
+        +   '<div style="font-size:18px;font-weight:800;color:var(--text);">'+fK(d.fat)+'</div>'
+        +   '<div style="font-size:11.5px;color:var(--text-muted);">'+esc(d.data)+' · '+dn+' · '+esc(ymL)+'</div>'
+        + '</div>'
+        + '</div>';
+    });
+    html += '</div></div>';
+  }
+
+  // ─── Top 3 melhores eventos ───
+  const top3Eventos = _dcpTopEventos(_dcpFiltroLoja, 3);
+  if(top3Eventos.length){
+    html += '<div class="cc" style="margin-bottom:14px;">'
+      + '<div class="cct">🥇 Top 3 — Melhores eventos (3 dias)</div>'
+      + '<div style="display:flex;flex-direction:column;gap:8px;margin-top:10px;">';
+    const medalhas = ['🥇','🥈','🥉'];
+    top3Eventos.forEach(function(ev, i){
+      const datasCurta = ev.datas_cp.map(function(d){return d.substring(8,10)+'/'+d.substring(5,7);}).join(' / ');
+      const ymL = _ymToLabel(ev.ym);
+      const premiumStr = ev.premium_pct != null ? ' · Premium '+(ev.premium_pct>=0?'+':'')+fP(ev.premium_pct,0) : '';
+      html += '<div style="display:flex;align-items:center;gap:14px;padding:10px;background:var(--surface-2);border-radius:6px;">'
+        + '<div style="font-size:24px;">'+medalhas[i]+'</div>'
+        + '<div style="flex:1;">'
+        +   '<div style="font-size:18px;font-weight:800;color:var(--text);">'+fK(ev.fat_dias_cp)+' <span style="font-size:11px;color:var(--text-muted);font-weight:400;">'+ev.num_dias_cp+' dias</span></div>'
+        +   '<div style="font-size:11.5px;color:var(--text-muted);">'+esc(datasCurta)+' · '+esc(ymL)+esc(premiumStr)+'</div>'
+        + '</div>'
+        + '</div>';
+    });
+    html += '</div></div>';
+  }
+
+  // ─── Tabela histórico completo ───
+  html += '<div class="cc" style="margin-bottom:14px;">'
+    + '<div class="cct">Histórico completo — '+esc(lojaInfo.label)+'</div>'
+    + '<div class="tscroll" style="margin-top:8px;">'
+    + '<table class="t"><thead><tr>'
+    + '<th class="L">Mês</th>'
+    + '<th class="L">Dias</th>'
+    + '<th>Total dias C&amp;P</th>'
+    + '<th title="% acima da média dos dias normais do mesmo mês">Premium</th>'
+    + '<th>% do mês</th>'
+    + '<th class="L">Melhor dia</th>'
+    + '<th>Valor</th>'
+    + '</tr></thead><tbody>';
+  calc.meses.slice().reverse().forEach(function(m){
+    if(m.num_dias_cp === 0) return;
+    const datasCurta = m.datas_cp.map(function(d){return d.substring(8,10);}).join(' · ');
+    const premium = m.premium_pct;
+    const premCls = premium == null ? '' : (premium >= 100 ? 'ok' : premium >= 50 ? 'hl' : '');
+    const melhor = m.melhor_dia;
+    let melhorTxt = '—', melhorVal = '—';
+    if(melhor){
+      const dt = new Date(melhor.data+'T12:00:00');
+      const dn = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'][dt.getDay()];
+      melhorTxt = melhor.data.substring(8,10)+'/'+melhor.data.substring(5,7)+' · '+dn;
+      melhorVal = fK(melhor.fat);
+    }
+    html += '<tr>'
+      + '<td class="L"><strong>'+_ymToLabel(m.ym)+'</strong></td>'
+      + '<td class="L" style="color:var(--text-muted);font-size:11px;">'+esc(datasCurta)+'</td>'
+      + '<td class="val-strong">'+fK(m.fat_dias_cp)+'</td>'
+      + '<td><span class="kg-tag '+premCls+'">'+(premium == null ? '—' : (premium >= 0 ? '+' : '')+fP(premium,0))+'</span></td>'
+      + '<td>'+fP(m.repres_pct,1)+'</td>'
+      + '<td class="L">'+esc(melhorTxt)+'</td>'
+      + '<td>'+melhorVal+'</td>'
+      + '</tr>';
+  });
+  html += '</tbody></table></div></div>';
+
+  body.innerHTML = html;
+
+  // ─── Renderiza gráficos ───
+  _dcpRenderGraficos(calc);
+
+  // ─── Bind eventos ───
+  _dcpBindEventos();
+}
+
+function _dcpRenderGraficos(calc){
+  const meses = calc.meses.filter(function(m){return m.fat_total > 0;});
+  const labels = meses.map(function(m){return _ymToLabel(m.ym);});
+
+  // Gráfico 1: Total faturado nos dias C&P por mês
+  const cMensal = document.getElementById('dcp-chart-mensal');
+  if(cMensal){
+    mkC('dcp-chart-mensal', {
+      type: 'bar',
+      data: {labels: labels, datasets: [{
+        label: 'Faturamento Dias C&P',
+        data: meses.map(function(m){return m.fat_dias_cp;}),
+        backgroundColor: '#f58634CC',
+        borderRadius: 4
+      }]},
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: {
+          legend: {display: false},
+          tooltip: {callbacks: {label: function(ctx){
+            const m = meses[ctx.dataIndex];
+            return [fK(ctx.raw), fI(m.num_dias_cp)+' dias · '+fP(m.repres_pct,1)+' do mês'];
+          }}}
+        },
+        scales: {
+          x: {grid: {display: false}, ticks: {font: {size: 10}, maxRotation: 45}},
+          y: {ticks: {callback: function(v){return fAbbr(v);}}}
+        }
+      }
+    });
+  }
+
+  // Gráfico 2: Premium % por mês
+  const cPremium = document.getElementById('dcp-chart-premium');
+  if(cPremium){
+    mkC('dcp-chart-premium', {
+      type: 'line',
+      data: {labels: labels, datasets: [{
+        label: 'Premium (%)',
+        data: meses.map(function(m){return m.premium_pct == null ? 0 : m.premium_pct;}),
+        borderColor: '#1a2f5c',
+        backgroundColor: 'rgba(26,47,92,0.10)',
+        borderWidth: 2.5,
+        tension: 0.3,
+        fill: true,
+        pointRadius: 4,
+        pointBackgroundColor: '#1a2f5c'
+      }]},
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: {
+          legend: {display: false},
+          tooltip: {callbacks: {label: function(ctx){return (ctx.raw>=0?'+':'')+fP(ctx.raw,1);}}}
+        },
+        scales: {
+          x: {grid: {display: false}, ticks: {font: {size: 10}, maxRotation: 45}},
+          y: {ticks: {callback: function(v){return (v>=0?'+':'')+fP(v,0);}}}
+        }
+      }
+    });
+  }
+
+  // Gráfico 3: Representatividade % por mês
+  const cRepres = document.getElementById('dcp-chart-repres');
+  if(cRepres){
+    mkC('dcp-chart-repres', {
+      type: 'bar',
+      data: {labels: labels, datasets: [{
+        label: 'Repres. (%)',
+        data: meses.map(function(m){return m.repres_pct;}),
+        backgroundColor: '#1a2f5cCC',
+        borderRadius: 4
+      }]},
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: {
+          legend: {display: false},
+          tooltip: {callbacks: {label: function(ctx){return fP(ctx.raw,1)+' do mês';}}}
+        },
+        scales: {
+          x: {grid: {display: false}, ticks: {font: {size: 10}, maxRotation: 45}},
+          y: {ticks: {callback: function(v){return fP(v,0);}}}
+        }
+      }
+    });
   }
 }
 
-// ────────────────────────────────────────────────────────────────────
-// V ALERTAS · gerados heuristicamente (sub-etapa 4c.5)
-// Vasculha V/E/F para detectar situações que merecem atenção:
-// vendedores em queda, deptos com margem ruim, SKUs em ruptura, etc.
-// ────────────────────────────────────────────────────────────────────
+function _dcpBindEventos(){
+  // Tabs de loja
+  document.querySelectorAll('.dcp-tab').forEach(function(btn){
+    btn.addEventListener('click', function(){
+      _dcpFiltroLoja = btn.getAttribute('data-loja');
+      _dcpRenderConteudo();
+    });
+  });
+
+  // Botão cadastrar
+  const btnCad = document.getElementById('dcp-cadastrar');
+  if(btnCad){
+    btnCad.addEventListener('click', function(){
+      _dcpAbrirCadastroUI();
+    });
+  }
+}
+
+// UI modal de cadastro de dias C&P
+function _dcpAbrirCadastroUI(){
+  // Determina qual loja cadastrar
+  let lojaParaCadastro = _dcpFiltroLoja;
+  if(lojaParaCadastro === 'GRUPO'){
+    // GRUPO não pode cadastrar diretamente. Pede pra escolher uma loja específica.
+    const opcoes = _DCP_LOJAS.filter(function(l){return l.cod !== 'GRUPO';})
+                              .map(function(l){return l.cod+' · '+l.label;}).join('\n');
+    const escolha = prompt('A visão GRUPO é a soma de todas as lojas. Para cadastrar dias C&P, escolha uma loja específica:\n\n'+opcoes+'\n\nDigite o código (ATP-V, ATP-A, CP1, CP3, CP5 ou CP40):');
+    if(!escolha) return;
+    lojaParaCadastro = escolha.trim().toUpperCase();
+    if(!_DCP_LOJAS.find(function(l){return l.cod === lojaParaCadastro;})){
+      alert('Código inválido.');
+      return;
+    }
+  }
+
+  // Lista todos os meses disponíveis no diário
+  const mesesNoDiario = new Set();
+  (V.diario || []).forEach(function(r){
+    if(r.loja === lojaParaCadastro || lojaParaCadastro === 'GRUPO') mesesNoDiario.add(r.data.substring(0,7));
+  });
+  const mesesOrd = Array.from(mesesNoDiario).sort().reverse();
+
+  // Modal
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px;';
+  overlay.innerHTML = '<div style="background:white;border-radius:10px;max-width:600px;width:100%;max-height:90vh;overflow-y:auto;padding:20px;box-shadow:0 10px 40px rgba(0,0,0,.3);">'
+    + '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">'
+    +   '<h3 style="margin:0;font-size:16px;font-weight:700;color:var(--text);">Cadastrar dias C&amp;P · '+esc(lojaParaCadastro)+'</h3>'
+    +   '<button id="dcp-modal-close" style="background:transparent;border:none;cursor:pointer;font-size:18px;color:var(--text-muted);padding:4px;">✕</button>'
+    + '</div>'
+    + '<div style="font-size:11.5px;color:var(--text-muted);margin-bottom:14px;line-height:1.5;">'
+    +   'Para cada mês, informe as datas que foram dias C&amp;P (ofertas) separadas por vírgula. Exemplo: <code>04, 05, 06</code> para os dias 4, 5 e 6 do mês. Deixe em branco para apagar.'
+    + '</div>'
+    + '<div id="dcp-modal-body" style="display:flex;flex-direction:column;gap:10px;"></div>'
+    + '<div style="display:flex;justify-content:flex-end;gap:8px;margin-top:18px;border-top:1px solid var(--border);padding-top:12px;">'
+    +   '<button id="dcp-modal-cancel" style="padding:8px 16px;border:1px solid var(--border-strong);background:white;border-radius:5px;cursor:pointer;font-size:12px;">Cancelar</button>'
+    +   '<button id="dcp-modal-save" style="padding:8px 16px;background:var(--accent);color:white;border:none;border-radius:5px;cursor:pointer;font-size:12px;font-weight:700;">Salvar</button>'
+    + '</div>'
+    + '</div>';
+  document.body.appendChild(overlay);
+
+  const modalBody = document.getElementById('dcp-modal-body');
+  const diasAtuais = _dcpDiasCadastrados[lojaParaCadastro] || {};
+  mesesOrd.forEach(function(ym){
+    const diasDoMes = diasAtuais[ym] || [];
+    const valorInicial = diasDoMes.map(function(d){return d.substring(8,10);}).join(', ');
+    modalBody.innerHTML += '<div style="display:flex;align-items:center;gap:12px;">'
+      + '<div style="min-width:80px;font-weight:700;font-size:12.5px;color:var(--text);">'+_ymToLabel(ym)+'</div>'
+      + '<input type="text" data-ym="'+esc(ym)+'" value="'+esc(valorInicial)+'" '
+      + 'placeholder="ex: 04, 05, 06" '
+      + 'style="flex:1;padding:6px 10px;border:1px solid var(--border-strong);border-radius:5px;font-size:12px;font-family:JetBrains Mono,monospace;">'
+      + '</div>';
+  });
+
+  // Bind
+  document.getElementById('dcp-modal-close').addEventListener('click', function(){overlay.remove();});
+  document.getElementById('dcp-modal-cancel').addEventListener('click', function(){overlay.remove();});
+  document.getElementById('dcp-modal-save').addEventListener('click', async function(){
+    const inputs = modalBody.querySelectorAll('input[data-ym]');
+    const tarefas = [];
+    inputs.forEach(function(inp){
+      const ym = inp.getAttribute('data-ym');
+      const txt = inp.value.trim();
+      const dias = [];
+      if(txt){
+        const partes = txt.split(/[,\s]+/).filter(function(x){return x.length;});
+        partes.forEach(function(p){
+          const n = parseInt(p, 10);
+          if(!isNaN(n) && n >= 1 && n <= 31){
+            const dd = String(n).padStart(2,'0');
+            dias.push(ym+'-'+dd);
+          }
+        });
+      }
+      // Compara com atual pra evitar saves desnecessários
+      const atual = (diasAtuais[ym] || []).slice().sort().join(',');
+      const novo = dias.slice().sort().join(',');
+      if(atual !== novo){
+        tarefas.push(_dcpSalvar(lojaParaCadastro, ym, dias));
+      }
+    });
+    if(!tarefas.length){
+      overlay.remove();
+      return;
+    }
+    document.getElementById('dcp-modal-save').textContent = 'Salvando...';
+    document.getElementById('dcp-modal-save').disabled = true;
+    await Promise.all(tarefas);
+    overlay.remove();
+    _dcpRenderConteudo();
+  });
+}
+
 function renderVAlertas(){
   const cont = document.getElementById('page-v-alertas');
   if(!cont) return;

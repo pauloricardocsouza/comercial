@@ -512,6 +512,27 @@ function renderExcessoNovo(){
     {l:'Status CRÍTICO',v:fI(excessos.filter(function(p){return _status(p)==='CRITICO';}).length),s:'Risco iminente',cls:'wn'},
   ]);
 
+  // Pin: imobilizado em excesso
+  if(typeof _pinRegistrar === 'function'){
+    const _captExc = {totVlCusto:totVlCusto, qtdExc:excessos.length, pctSku:pctSku};
+    _pinRegistrar('kpi-excesso-imobilizado', 'Excesso · valor imobilizado', 'excesso-novo', function(c){
+      c.innerHTML = '<div style="font-size:24px;font-weight:800;color:#dc2626;">'+fK(_captExc.totVlCusto)+'</div>'
+        + '<div style="font-size:11px;color:var(--text-muted);margin-top:4px;">'+fI(_captExc.qtdExc)+' SKUs · '+fP(_captExc.pctSku)+' do cadastro</div>';
+    });
+    setTimeout(function(){
+      const kg = document.getElementById('kg-exc-novo');
+      if(!kg) return;
+      const card = kg.querySelectorAll('.kc')[1];
+      if(!card || card.querySelector('.pin-btn')) return;
+      card.style.position = 'relative';
+      const btn = document.createElement('div');
+      btn.style.cssText = 'position:absolute;top:6px;right:6px;';
+      btn.innerHTML = _pinBotao('kpi-excesso-imobilizado');
+      card.appendChild(btn);
+      _pinAtualizarBotoes();
+    }, 50);
+  }
+
   const statusOrder = ['CRITICO','PARADO','MORTO'];
   const stCounts = statusOrder.map(function(s){return excessos.filter(function(p){return _status(p)===s;}).length;});
   const stVl = statusOrder.map(function(s){return excessos.filter(function(p){return _status(p)===s;}).reduce(function(t,p){return t+(p.estoque?p.estoque.vl_custo:0);},0);});
@@ -927,9 +948,64 @@ function _diagBuildIdx(){
   _diagListaOrd.forEach(function(p){ _diagIdxByC.set(p.cod, p); });
 }
 
+// Aviso quando usuário está em consolidado tentando usar diagnóstico
+// O diagnóstico precisa de E (estoque) específico de uma loja, não faz sentido em consolidado
+function _renderDiagAvisoConsolidado(containerId, tituloPagina){
+  const cont = document.getElementById(containerId);
+  if(!cont) return;
+  const filiaisDispon = (_filiaisDisponiveis || []).filter(function(f){return !f.placeholder;});
+  let html = '<div class="ph"><div class="pk">'+esc(tituloPagina)+'</div><h2>Escolha uma <em>loja</em> para diagnosticar</h2></div>'
+    + '<div class="ph-sep"></div>'
+    + '<div class="page-body" style="padding:40px 20px;">'
+    + '<div style="max-width:560px;margin:20px auto;text-align:center;">'
+    + '<div style="width:64px;height:64px;background:var(--accent-bg);border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto 18px;">'
+    +   '<svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>'
+    + '</div>'
+    + '<h3 style="font-size:18px;font-weight:800;margin-bottom:10px;color:var(--text);">Diagnóstico é por loja específica</h3>'
+    + '<p style="font-size:13px;color:var(--text-muted);line-height:1.6;margin-bottom:24px;">'
+    +   'O diagnóstico analisa estoque, giro, ruptura e histórico de vendas/compras de itens. '
+    +   'Esses dados são por loja — em consolidado os números se misturam e não dão diagnóstico útil. '
+    +   'Selecione uma loja específica para começar.'
+    + '</p>'
+    + '<div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.1em;font-weight:700;margin-bottom:10px;">Selecione a loja:</div>'
+    + '<div style="display:flex;flex-wrap:wrap;gap:8px;justify-content:center;">';
+  filiaisDispon.forEach(function(f){
+    html += '<button class="diag-pick-loja" data-sigla="'+escAttr(f.sigla)+'" '
+      + 'style="padding:9px 16px;background:var(--surface);border:1px solid var(--border-strong);border-radius:6px;cursor:pointer;font-size:12.5px;font-weight:700;color:var(--text);transition:background .12s;">'
+      + esc(f.nome)
+      + '</button>';
+  });
+  html += '</div></div></div>';
+  cont.innerHTML = html;
+
+  cont.querySelectorAll('.diag-pick-loja').forEach(function(btn){
+    btn.addEventListener('mouseenter', function(){ btn.style.background = 'var(--accent-bg)'; });
+    btn.addEventListener('mouseleave', function(){ btn.style.background = 'var(--surface)'; });
+    btn.addEventListener('click', function(){
+      const sigla = btn.getAttribute('data-sigla');
+      const url = new URL(window.location);
+      if(sigla && sigla !== 'grupo') url.searchParams.set('filial', sigla);
+      else url.searchParams.delete('filial');
+      url.searchParams.delete('snapshot');
+      if(typeof _auditLog === 'function'){
+        _auditLog('filial_change', {de: 'consolidado', para: sigla, origem: 'diag'});
+      }
+      window.location = url.toString();
+    });
+  });
+}
+
 function renderDiagNovo(){
   const cont = document.getElementById('page-diagnostico');
   if(!cont || !E) return;
+
+  // Bloqueio: diagnóstico só faz sentido por loja específica
+  // Em consolidado os dados de produtos não fazem sentido (estoque, vendas por SKU misturados)
+  if(typeof _filialAtual === 'undefined' || !_filialAtual || !_filialAtual.base_sigla){
+    _renderDiagAvisoConsolidado('page-diagnostico', 'Diagnóstico de Produto');
+    return;
+  }
+
   _diagBuildIdx();
 
   // Reseta área de conteúdo
@@ -2147,6 +2223,13 @@ function _diagFornBuildIdx(){
 function renderDiagFornNovo(){
   const cont = document.getElementById('page-diag-forn');
   if(!cont || !E) return;
+
+  // Bloqueio: diagnóstico só faz sentido por loja específica
+  if(typeof _filialAtual === 'undefined' || !_filialAtual || !_filialAtual.base_sigla){
+    _renderDiagAvisoConsolidado('page-diag-forn', 'Diagnóstico de Fornecedor');
+    return;
+  }
+
   _diagFornBuildIdx();
 
   const empty = document.getElementById('diag-forn-empty');
@@ -3506,7 +3589,10 @@ function renderPage(pg){
 // ==== Render Home ============================================
 // Já é estática (HTML embutido). Só reativa visibilidade ao navegar.
 function renderHome(){
-  // Nenhuma renderização dinâmica necessária
+  // Renderiza a seção de pins do usuário
+  if(typeof _pinRenderHome === 'function'){
+    _pinRenderHome();
+  }
 }
 
 // ================================================================

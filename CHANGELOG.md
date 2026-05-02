@@ -4,6 +4,130 @@ Lista das melhorias do sistema de BI da R2 Soluções para o Grupo Pinto Cerquei
 
 ---
 
+## v4.33 · 02/mai/2026
+
+**Cinco correções pedidas**
+
+**1. SKUs ocultos por base (bug fix)**
+
+A configuração de SKUs ocultos era para ser por base mas tinha dois bugs:
+
+- O default global (item 30132) era aplicado a todas as bases mesmo sem cadastro específico, então o item ficava oculto em CP também.
+- A função que filtrava SKUs ocultos só atualizava `D.produtos` (do sistema legado), mas as páginas atuais leem de `E.produtos`. Resultado: ocultar um SKU não tirava ele de lugar nenhum visível.
+
+Agora cada base tem sua própria lista, sem default global. O 30132 só estará oculto na base ATP se você cadastrar lá. E o filtro funciona de verdade nas páginas atuais.
+
+**2. Fornecedores internos por base (cleanup)**
+
+Já estava por base no localStorage (chave `gpcSuppliers:BASE`). Mas tinha 4 fornecedores hardcoded no código como default global. Removi o default. Agora cada base começa vazia e você cadastra os fornecedores específicos dela.
+
+**3. Administração travada na visão consolidada**
+
+A página de Administração agora bloqueia o acesso quando você está em GPC consolidado e mostra um aviso pedindo pra escolher uma loja. O motivo: as configurações são todas por base (SKUs ocultos, fornecedores internos, estoque ideal), e gerenciar em consolidado fica confuso. Clicando numa loja, o sistema recarrega já dentro daquela filial.
+
+**4. Análise Dinâmica · subrolagem + trocar Linhas/Colunas**
+
+- O painel de campos disponíveis agora tem altura máxima de 520px com subrolagem própria. A lista de dimensões e métricas não mais empurra a área de zonas pra baixo.
+- A posição das zonas trocou: agora é `Filtros / Colunas` na primeira linha e `Linhas / Valores` na segunda. Fica mais intuitivo: as colunas são o cabeçalho da tabela (em cima) e as linhas são o corpo (embaixo).
+
+**5. Diagnóstico de Produto/Fornecedor bloqueado em consolidado**
+
+Igual à Administração: as páginas de Diagnóstico (Produto e Fornecedor) agora avisam que precisam de uma loja específica e mostram botões pra escolher. O motivo é que esses diagnósticos analisam estoque, giro e ruptura por SKU, dados que só fazem sentido por loja.
+
+---
+
+## v4.32 · 02/mai/2026
+
+**Etapa 8 (parcial) · Página Dias C&P reescrita**
+
+A página Dias C&P foi reescrita seguindo o modelo do dash.solucoesr2.com.br/gpc.html (com base nos screenshots que você passou). A versão antiga usava heurística de "dias atípicos" baseada em desvio padrão. A nova exige cadastro explícito dos dias de oferta — o que dá controle e precisão.
+
+**Como funciona**
+
+A página agora tem um seletor de loja no topo (GPC Consolidado, ATP-V, ATP-A, CP1, CP3, CP5, CP40). Para cada loja, o usuário cadastra quais foram os dias C&P de cada mês via botão "📅 Cadastrar dias C&P".
+
+A partir dos dias cadastrados, o sistema calcula automaticamente:
+
+- **Total faturado em dias C&P** (soma dos dias cadastrados)
+- **Premium médio** (% acima da média dos dias normais do mesmo mês)
+- **Melhor evento** (mês com maior faturamento concentrado nos dias)
+- **Média de representatividade no mês** (quanto os dias C&P pesam no faturamento mensal)
+
+**Painéis e gráficos**
+
+- 4 KPIs no topo
+- Box explicativo do conceito de "Premium"
+- Gráfico mensal de faturamento dos dias C&P
+- Gráfico mensal de premium %
+- Gráfico mensal de representatividade %
+- Top 3 melhores dias individuais
+- Top 3 melhores eventos (3 dias)
+- Tabela histórica completa por mês
+
+**Cadastro de dias**
+
+O cadastro é feito via modal que lista todos os meses disponíveis no diário. Para cada mês, o usuário digita os números dos dias separados por vírgula (ex: "04, 05, 06"). O sistema valida (1-31) e salva no Firestore.
+
+A coleção `dias_cp` é compartilhada entre todos os usuários — só admin pode escrever, todos podem ler. Cada documento tem ID `LOJA_YYYY-MM` (ex: `ATP-V_2026-04`).
+
+**Visão GRUPO**
+
+A loja "GPC Consolidado" agrega o faturamento diário de todas as lojas e usa a união dos dias cadastrados. Para cadastrar dias na visão GRUPO, é necessário primeiro cadastrar para cada loja individual. O cadastro direto pela visão GRUPO mostra um prompt pedindo qual loja específica.
+
+**Importante: regras Firestore v4.32**
+
+A coleção `dias_cp` precisa ser autorizada nas regras (arquivo REGRAS_FIRESTORE_v4.32.txt anexo). Sem isso, o cadastro falha com permission-denied.
+
+**Etapas 8 que ainda faltam**
+
+- **Metas** (cadastro de metas mensais por loja com gráfico de realizado vs meta)
+- **Processamento** remodelado (você disse que as rotinas mudaram, preciso saber as novas)
+
+Para fazer Metas, preciso saber: quais campos quer cadastrar (apenas faturamento? margem? lucro?), qual granularidade (por loja, por departamento?), e qual o look-and-feel dos gráficos.
+
+Para Processamento, preciso saber quais novas rotinas estão sendo usadas pra extrair os dados.
+
+---
+
+## v4.31 · 02/mai/2026
+
+**Etapa 9 · Home customizável (versão inicial)**
+
+A home agora tem uma seção "Meus pins" no topo onde cada usuário fixa os elementos que considera mais importantes. Cada usuário tem sua própria seleção, salva no Firestore.
+
+**Como funciona**
+
+Em algumas páginas (Executivo, Excesso de Estoque, Recebimentos por enquanto), aparece um botão de pin (📍) no canto superior direito de KPIs específicos. Clicar fixa o elemento na home; clicar de novo remove. O ícone vira 📌 quando está fixado.
+
+Na home, os pins ficam em cards que mostram o valor atualizado. Cada card tem:
+- Botão de pin (📌) pra remover
+- Link "Ver página completa" pra abrir a página de origem
+- Drag-and-drop pra reordenar entre eles
+
+A ordem é salva automaticamente após cada arrasto.
+
+**Elementos pináveis nesta versão**
+
+- **Executivo**: Faturamento líquido, Lucro bruto, Vencidos, Total a pagar, Estoque (preço de venda)
+- **Excesso de Estoque**: Valor imobilizado em excesso
+- **Recebimentos**: Total atrasado
+
+**Elementos que ainda não estão pináveis**
+
+Pra cada elemento que vai ser pinável, é preciso (1) adicionar o botão de pin no card original e (2) registrar uma função de "render standalone" que reproduz o conteúdo na home. É trabalho mecânico mas que precisa ser feito caso a caso. Próximas sessões devem expandir pra mais KPIs e gráficos.
+
+**Importante: regras Firestore**
+
+Pra o sistema de pins funcionar, é necessário aplicar as **regras Firestore v4.31** (arquivo REGRAS_FIRESTORE_v4.31.txt anexo) no Firebase Console substituindo as anteriores. Sem isso, salvar pins falha com permission-denied.
+
+**Limitações conhecidas**
+
+- Os pins só funcionam pra usuários autenticados (anonymous auth não persiste pins entre sessões).
+- O botão de pin some se o card for re-renderizado depois de uma navegação. Volta ao reentrar na página.
+- A home só re-renderiza pins quando você navega pra ela. Se você fixar um pin estando em outra página, ele aparece na próxima vez que entrar na home.
+
+---
+
 ## v4.30 · 02/mai/2026
 
 **Etapa 7 · Diagnóstico de fornecedor expandido**

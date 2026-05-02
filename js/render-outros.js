@@ -158,6 +158,27 @@ function renderRecebimentos(){
     {l:'Concentração top 5',      v:fP(conc.top_5_pct||0), s:'soma top 5 clientes', cls:'hl'},
   ]);
 
+  // Pin: total atrasado e inadimplentes
+  if(typeof _pinRegistrar === 'function'){
+    const _captR = {total:resumo.total_atrasado||0, parcelas:resumo.parcelas||0, inad:resumo.clientes_inadimplentes||0, nfs:resumo.nfs||0};
+    _pinRegistrar('kpi-recebimentos-atrasado', 'Recebimentos · total atrasado', 'recebimentos', function(c){
+      c.innerHTML = '<div style="font-size:24px;font-weight:800;color:#dc2626;">'+fK(_captR.total)+'</div>'
+        + '<div style="font-size:11px;color:var(--text-muted);margin-top:4px;">'+fI(_captR.parcelas)+' parcelas · '+fI(_captR.inad)+' clientes</div>';
+    });
+    setTimeout(function(){
+      const kg = document.getElementById('kg-rec');
+      if(!kg) return;
+      const card = kg.querySelectorAll('.kc')[0];
+      if(!card || card.querySelector('.pin-btn')) return;
+      card.style.position = 'relative';
+      const btn = document.createElement('div');
+      btn.style.cssText = 'position:absolute;top:6px;right:6px;';
+      btn.innerHTML = _pinBotao('kpi-recebimentos-atrasado');
+      card.appendChild(btn);
+      _pinAtualizarBotoes();
+    }, 50);
+  }
+
   // ─── Chart aging (doughnut + valor) ───
   const agingData = FAIXAS_ORD.map(function(f){return (aging[f]||{}).valor || 0;});
   const agingTotal = agingData.reduce(function(s,v){return s+v;}, 0);
@@ -1253,9 +1274,11 @@ function _renderCuboUI(c){
   html += '<div id="pv-painel" class="pv-painel" style="display:'+(painelOculto?'none':'grid')+';grid-template-columns:240px 1fr;gap:14px;align-items:start;margin-bottom:14px;">';
 
   // ── Coluna esquerda: lista de campos ──
-  html += '<div class="pv-fields-pane cc" style="padding:12px;">';
+  html += '<div class="pv-fields-pane cc" style="padding:12px;display:flex;flex-direction:column;max-height:520px;">';
   html += '<div class="cct" style="font-size:11px;margin-bottom:4px;">Campos disponíveis</div>';
   html += '<div class="ccs" style="font-size:10px;margin-bottom:10px;">Arraste para as zonas →</div>';
+  // Container scrollável dos campos (dimensões + métricas)
+  html += '<div class="pv-fields-scroll" style="flex:1;overflow-y:auto;padding-right:4px;margin-right:-4px;">';
 
   // Dimensões
   html += '<div style="font-size:9px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;font-weight:700;margin-bottom:4px;">Dimensões</div>';
@@ -1289,6 +1312,7 @@ function _renderCuboUI(c){
     });
   });
   html += '</div>';
+  html += '</div>'; // pv-fields-scroll
   html += '</div>'; // pv-fields-pane
 
   // ── Coluna direita: zonas + ações ──
@@ -1302,7 +1326,7 @@ function _renderCuboUI(c){
     cols:   {titulo:'📊 Colunas',  desc:'distribui em colunas'},
     vals:   {titulo:'∑ Valores',   desc:'métricas a calcular'}
   };
-  ['filters','rows','cols','vals'].forEach(function(zona){
+  ['filters','cols','rows','vals'].forEach(function(zona){
     const info = zonasLabels[zona];
     html += '<div class="pv-zone-wrap">';
     html += '<div style="display:flex;align-items:baseline;gap:6px;margin-bottom:4px;">';

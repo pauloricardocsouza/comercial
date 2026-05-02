@@ -216,7 +216,7 @@ const AUTH_MODE = 'firebase'; // 'mock' | 'firebase'
 // Convenção:
 //   X.x → alteração grande (quebra de compatibilidade, nova feature grande)
 //   x.X → alteração suave (fix, ajuste visual, pequeno refinamento)
-const APP_VERSION = '4.30-comercial';
+const APP_VERSION = '4.33-comercial';
 
 // ================================================================
 // HELPERS DE CHART.JS — compatíveis com Safari/iOS (sem spread ops)
@@ -1862,6 +1862,10 @@ function _loadDadosModulares(baseSlug){
         }
         // Validar schema (não-bloqueante; apenas reporta no console)
         _schemaValidar(varName, j);
+        // Aplica filtro de SKUs ocultos em E.produtos baseado na base ativa
+        if(varName === 'E' && typeof _aplicarHiddenFilterE === 'function'){
+          _aplicarHiddenFilterE();
+        }
         // Pré-calcular badge de alertas quando E (estoque) carrega
         if(varName === 'E' && typeof _preCalcularBadgeAlertas === 'function'){
           setTimeout(_preCalcularBadgeAlertas, 100);
@@ -4287,16 +4291,23 @@ function renderAdmSmoke(){
 
 
 // ================================================================
-// SKUs OCULTOS — itens ignorados em todas as análises
 // ================================================================
-const HIDDEN_SKUS_DEFAULTS = [30132];
+// SKUs OCULTOS — itens ignorados em todas as análises
+// Configurado por base (cada loja tem sua própria lista)
+// ================================================================
+const HIDDEN_SKUS_DEFAULTS = []; // sem ocultos por padrão; admin configura por base
 
 function getHiddenSkus(base){
-  base = base || _getBaseAtivaParaConfig();
+  // Se base for explicitamente passado, usa ele.
+  // Se for undefined/null, usa a base ativa (filial atual).
+  // Se for explicitamente null E estamos no consolidado, faz união.
+  if(typeof base === 'undefined') base = _getBaseAtivaParaConfig();
   try{
     if(base){
       const v = localStorage.getItem('hiddenSkus:'+base);
       if(v) return JSON.parse(v);
+      // Sem cadastro pra esta base: vazio (não usa default global)
+      return [];
     } else {
       // Consolidado: união de ocultos de todas as bases
       const uniao = new Set();
@@ -4306,13 +4317,10 @@ function getHiddenSkus(base){
           if(v) JSON.parse(v).forEach(c => uniao.add(c));
         }catch(e){}
       });
-      if(uniao.size > 0) return [...uniao];
+      return [...uniao];
     }
-    // Legado
-    const v = localStorage.getItem('hiddenSkus');
-    if(v) return JSON.parse(v);
   }catch(e){}
-  return [...HIDDEN_SKUS_DEFAULTS];
+  return [];
 }
 function saveHiddenSkus(list, base){
   base = base || _getBaseAtivaParaConfig() || 'default';
@@ -4334,6 +4342,38 @@ function applyHiddenFilter(){
   });
 }
 
+// Aplica filtro de SKUs ocultos em E.produtos (módulo novo)
+// Chamado após E carregar e quando a base ativa muda
+function _aplicarHiddenFilterE(){
+  if(typeof E === 'undefined' || !E || !E.produtos) return;
+  // Salva versão original na primeira chamada
+  if(!E._origProdutos) E._origProdutos = E.produtos;
+
+  // Determina lista de ocultos baseada na base ativa
+  // Se está em consolidado (sem _filialAtual), faz união de TODAS as bases
+  // Se está em uma filial específica, usa só os ocultos da base dessa filial
+  let ocultos;
+  if(typeof _filialAtual !== 'undefined' && _filialAtual && _filialAtual.base_sigla){
+    // Filial específica: lê só dela
+    try {
+      const v = localStorage.getItem('hiddenSkus:'+_filialAtual.base_sigla);
+      ocultos = v ? JSON.parse(v) : [];
+    } catch(e){ ocultos = []; }
+  } else {
+    // Consolidado: união
+    ocultos = getHiddenSkus(null) || [];
+  }
+
+  const hid = new Set(ocultos.map(function(c){return parseInt(c,10);}));
+  if(hid.size === 0){
+    // Sem ocultos: restaura
+    E.produtos = E._origProdutos;
+    return;
+  }
+  E.produtos = E._origProdutos.filter(function(p){ return !hid.has(p.cod); });
+}
+window._aplicarHiddenFilterE = _aplicarHiddenFilterE;
+
 window.addHiddenSku = function(cod){
   const c = parseInt(cod);
   if(isNaN(c)) return;
@@ -4343,6 +4383,7 @@ window.addHiddenSku = function(cod){
     saveHiddenSkus(list,_baseAdminSelecionada);
     _auditLog('admin_sku_add',{base:_baseAdminSelecionada, sku:c});
     applyHiddenFilter();
+    if(typeof _aplicarHiddenFilterE === 'function') _aplicarHiddenFilterE();
     renderedPages.clear();
     const active = document.querySelector('.page.active');
     if(active){
@@ -4358,6 +4399,7 @@ window.removeHiddenSku = function(cod){
   saveHiddenSkus(list,_baseAdminSelecionada);
   _auditLog('admin_sku_rem',{base:_baseAdminSelecionada, sku:c});
   applyHiddenFilter();
+  if(typeof _aplicarHiddenFilterE === 'function') _aplicarHiddenFilterE();
   renderedPages.clear();
   const active = document.querySelector('.page.active');
   if(active){
@@ -4372,6 +4414,7 @@ window.resetHiddenSkus = async function(){
   saveHiddenSkus([...HIDDEN_SKUS_DEFAULTS],_baseAdminSelecionada);
   _auditLog('admin_sku_reset',{base:_baseAdminSelecionada});
   applyHiddenFilter();
+  if(typeof _aplicarHiddenFilterE === 'function') _aplicarHiddenFilterE();
   renderedPages.clear();
   const active = document.querySelector('.page.active');
   if(active){
@@ -5447,3 +5490,306 @@ document.addEventListener('click', function(e){
   document.head.appendChild(st);
 })();
 
+
+// ════════════════════════════════════════════════════════════════════════
+// SISTEMA DE PINS · v4.31
+// Permite que o usuário "fixe" elementos em sua home pessoal, com ordem
+// customizável. Os pins são salvos no Firestore por usuário.
+//
+// Cada pin tem:
+//   id        → identificador único do elemento (ex: 'kpi-fat-liq')
+//   titulo    → texto exibido no card
+//   pagina    → página de origem (pra link "Ver completo")
+//   ordem     → ordem na home
+//   addedAt   → timestamp
+//
+// Cada elemento "pinável" tem uma função renderer registrada via
+// _pinRegistrar(id, titulo, pagina, fn) onde fn(container) preenche o card.
+// ════════════════════════════════════════════════════════════════════════
+
+const _pinRegistry = new Map(); // id → {titulo, pagina, render}
+let _pinAtivos = []; // [{id, titulo, pagina, ordem}]
+let _pinFirestoreCarregado = false;
+
+// Registra um elemento pinável. Cada chamada de render gera um card.
+function _pinRegistrar(id, titulo, pagina, render){
+  _pinRegistry.set(id, {titulo: titulo, pagina: pagina, render: render});
+}
+window._pinRegistrar = _pinRegistrar;
+
+// Carrega pins do Firestore
+async function _pinCarregarFirestore(){
+  if(_pinFirestoreCarregado) return;
+  try {
+    const auth = (typeof firebase !== 'undefined' && firebase.auth) ? firebase.auth() : null;
+    if(!auth || !auth.currentUser){ _pinFirestoreCarregado = true; return; }
+    const db = firebase.firestore();
+    const ref = db.collection('users').doc(auth.currentUser.uid).collection('pins');
+    const snap = await ref.orderBy('ordem').get();
+    _pinAtivos = [];
+    snap.forEach(function(doc){
+      const d = doc.data();
+      _pinAtivos.push({
+        id: doc.id,
+        titulo: d.titulo || '',
+        pagina: d.pagina || '',
+        ordem: d.ordem || 0
+      });
+    });
+    _pinFirestoreCarregado = true;
+  } catch(e){
+    console.warn('[pin] erro ao carregar pins:', e);
+    _pinFirestoreCarregado = true;
+  }
+}
+
+// Salva um pin no Firestore (toggle)
+async function _pinToggle(id){
+  try {
+    const auth = (typeof firebase !== 'undefined' && firebase.auth) ? firebase.auth() : null;
+    if(!auth || !auth.currentUser){ alert('Faça login para usar pins.'); return; }
+    const db = firebase.firestore();
+    const ref = db.collection('users').doc(auth.currentUser.uid).collection('pins').doc(id);
+
+    const idx = _pinAtivos.findIndex(function(p){return p.id === id;});
+    if(idx >= 0){
+      // Remover
+      await ref.delete();
+      _pinAtivos.splice(idx, 1);
+      _pinToast('Pin removido', 'info');
+    } else {
+      // Adicionar
+      const reg = _pinRegistry.get(id);
+      if(!reg){ console.warn('[pin] id não registrado:', id); return; }
+      const ordem = _pinAtivos.length;
+      const data = {
+        titulo: reg.titulo,
+        pagina: reg.pagina,
+        ordem: ordem,
+        addedAt: firebase.firestore.FieldValue.serverTimestamp()
+      };
+      await ref.set(data);
+      _pinAtivos.push({id: id, titulo: reg.titulo, pagina: reg.pagina, ordem: ordem});
+      _pinToast('Adicionado à home', 'ok');
+    }
+    // Atualiza visual dos botões de pin em todos os elementos
+    _pinAtualizarBotoes();
+  } catch(e){
+    console.warn('[pin] erro ao toggle:', e);
+    alert('Erro ao salvar pin: '+(e.message || 'desconhecido'));
+  }
+}
+window._pinToggle = _pinToggle;
+
+// Salva nova ordem dos pins (após drag-and-drop)
+async function _pinSalvarOrdem(){
+  try {
+    const auth = (typeof firebase !== 'undefined' && firebase.auth) ? firebase.auth() : null;
+    if(!auth || !auth.currentUser) return;
+    const db = firebase.firestore();
+    const batch = db.batch();
+    _pinAtivos.forEach(function(p, i){
+      p.ordem = i;
+      const ref = db.collection('users').doc(auth.currentUser.uid).collection('pins').doc(p.id);
+      batch.update(ref, {ordem: i});
+    });
+    await batch.commit();
+  } catch(e){
+    console.warn('[pin] erro ao salvar ordem:', e);
+  }
+}
+
+// Toast simples
+function _pinToast(msg, tipo){
+  const el = document.createElement('div');
+  const cor = tipo === 'ok' ? '#15803d' : tipo === 'err' ? '#dc2626' : '#1f2937';
+  el.style.cssText = 'position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:'+cor+';color:white;padding:9px 18px;border-radius:6px;font-size:13px;font-weight:600;z-index:9999;box-shadow:0 4px 12px rgba(0,0,0,.2);transition:opacity .3s;';
+  el.textContent = msg;
+  document.body.appendChild(el);
+  setTimeout(function(){ el.style.opacity = '0'; }, 1800);
+  setTimeout(function(){ el.remove(); }, 2200);
+}
+
+// Cria botão de pin pra um elemento (chame ao construir o card pinável)
+function _pinBotao(id){
+  const ativo = _pinAtivos.some(function(p){return p.id === id;});
+  return '<button class="pin-btn" data-pin-id="'+esc(id)+'" '
+    + 'title="'+(ativo?'Remover da home':'Fixar na home')+'" '
+    + 'style="background:transparent;border:none;cursor:pointer;font-size:14px;padding:4px;border-radius:4px;color:'
+    + (ativo?'#f58634':'rgba(0,0,0,.25)')+';" '
+    + '>'+(ativo?'📌':'📍')+'</button>';
+}
+window._pinBotao = _pinBotao;
+
+// Atualiza visual de todos os botões de pin na tela
+function _pinAtualizarBotoes(){
+  document.querySelectorAll('.pin-btn').forEach(function(btn){
+    const id = btn.getAttribute('data-pin-id');
+    const ativo = _pinAtivos.some(function(p){return p.id === id;});
+    btn.textContent = ativo ? '📌' : '📍';
+    btn.style.color = ativo ? '#f58634' : 'rgba(0,0,0,.25)';
+    btn.title = ativo ? 'Remover da home' : 'Fixar na home';
+  });
+}
+window._pinAtualizarBotoes = _pinAtualizarBotoes;
+
+// Listener global pra clicks em botões de pin
+document.addEventListener('click', function(e){
+  const btn = e.target.closest('.pin-btn');
+  if(btn){
+    e.preventDefault();
+    e.stopPropagation();
+    const id = btn.getAttribute('data-pin-id');
+    if(id) _pinToggle(id);
+  }
+});
+
+// Renderiza a área de pins na home
+async function _pinRenderHome(){
+  await _pinCarregarFirestore();
+  const cont = document.getElementById('pin-home-section');
+  if(!cont) return;
+
+  if(!_pinAtivos.length){
+    cont.innerHTML = '<div style="background:var(--surface-2);border:1px dashed var(--border);border-radius:10px;padding:30px;text-align:center;color:var(--text-muted);">'
+      + '<div style="font-size:32px;margin-bottom:8px;opacity:.4;">📍</div>'
+      + '<div style="font-size:13px;font-weight:600;margin-bottom:4px;">Sua home está vazia</div>'
+      + '<div style="font-size:12px;line-height:1.4;">Navegue pelas páginas e clique no ícone <strong>📍</strong> que aparece em KPIs e gráficos para fixar os mais importantes aqui.</div>'
+      + '</div>';
+    return;
+  }
+
+  // Renderiza cada pin chamando seu render registrado
+  let html = '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">'
+    + '<div><div class="cct" style="margin:0;">Meus pins</div>'
+    + '<div class="ccs">'+fI(_pinAtivos.length)+' iten'+(_pinAtivos.length!==1?'s':'')+' fixado'+(_pinAtivos.length!==1?'s':'')+' · arraste para reordenar</div></div>'
+    + '<button id="pin-edit-btn" style="padding:5px 10px;background:transparent;border:1px solid var(--border-strong);border-radius:5px;cursor:pointer;font-size:11px;">⚙ Editar</button>'
+    + '</div>';
+  html += '<div id="pin-grid" style="display:grid;grid-template-columns:repeat(auto-fill, minmax(280px, 1fr));gap:12px;margin-bottom:14px;">';
+  _pinAtivos.forEach(function(p){
+    const reg = _pinRegistry.get(p.id);
+    const titulo = reg ? reg.titulo : p.titulo;
+    const pagina = reg ? reg.pagina : p.pagina;
+    html += '<div class="pin-card" data-pin-id="'+esc(p.id)+'" draggable="true" '
+      + 'style="background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:14px;position:relative;cursor:grab;transition:box-shadow .15s, transform .15s;">'
+      + '<div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:8px;gap:8px;">'
+      +   '<div class="pin-card-titulo" style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;font-weight:700;flex:1;">'+esc(titulo)+'</div>'
+      +   '<button class="pin-btn" data-pin-id="'+esc(p.id)+'" title="Remover da home" '
+      +     'style="background:transparent;border:none;cursor:pointer;font-size:14px;padding:0;color:#f58634;">📌</button>'
+      + '</div>'
+      + '<div class="pin-card-body" style="min-height:60px;"></div>'
+      + (pagina ? '<div style="margin-top:8px;border-top:1px solid var(--border);padding-top:6px;">'
+          + '<a href="javascript:void(0)" data-pin-pagina="'+esc(pagina)+'" '
+          + 'style="font-size:11px;color:var(--accent);text-decoration:none;">→ Ver página completa</a>'
+          + '</div>' : '')
+      + '</div>';
+  });
+  html += '</div>';
+  cont.innerHTML = html;
+
+  // Renderiza o conteúdo de cada card
+  _pinAtivos.forEach(function(p){
+    const reg = _pinRegistry.get(p.id);
+    const card = cont.querySelector('.pin-card[data-pin-id="'+p.id+'"] .pin-card-body');
+    if(!card) return;
+    if(!reg){
+      card.innerHTML = '<div style="color:var(--text-muted);font-size:11px;font-style:italic;">Elemento não disponível nesta sessão. Visite a página de origem para reativar.</div>';
+      return;
+    }
+    try {
+      reg.render(card);
+    } catch(e){
+      console.warn('[pin] erro ao renderizar', p.id, e);
+      card.innerHTML = '<div style="color:#dc2626;font-size:11px;">Erro ao renderizar.</div>';
+    }
+  });
+
+  // Bind navegação de "Ver página completa"
+  cont.querySelectorAll('[data-pin-pagina]').forEach(function(a){
+    a.addEventListener('click', function(){
+      const pg = a.getAttribute('data-pin-pagina');
+      const link = document.querySelector('.sb-link[data-p="'+pg+'"]');
+      if(link) link.click();
+    });
+  });
+
+  // Bind drag-and-drop pra reordenar
+  _pinBindDragDrop();
+}
+window._pinRenderHome = _pinRenderHome;
+
+// Drag-and-drop para reordenar pins na home
+function _pinBindDragDrop(){
+  const grid = document.getElementById('pin-grid');
+  if(!grid) return;
+  let dragging = null;
+
+  grid.querySelectorAll('.pin-card').forEach(function(card){
+    card.addEventListener('dragstart', function(e){
+      dragging = card;
+      card.style.opacity = '0.4';
+      e.dataTransfer.effectAllowed = 'move';
+    });
+    card.addEventListener('dragend', function(){
+      card.style.opacity = '1';
+      dragging = null;
+      // Salva nova ordem baseada no DOM
+      const novaOrdem = [];
+      grid.querySelectorAll('.pin-card').forEach(function(c){
+        const id = c.getAttribute('data-pin-id');
+        const p = _pinAtivos.find(function(x){return x.id === id;});
+        if(p) novaOrdem.push(p);
+      });
+      _pinAtivos = novaOrdem;
+      _pinSalvarOrdem();
+    });
+    card.addEventListener('dragover', function(e){
+      e.preventDefault();
+      if(!dragging || dragging === card) return;
+      const rect = card.getBoundingClientRect();
+      const meio = rect.left + rect.width / 2;
+      if(e.clientX < meio){
+        card.parentNode.insertBefore(dragging, card);
+      } else {
+        card.parentNode.insertBefore(dragging, card.nextSibling);
+      }
+    });
+  });
+}
+
+// Inicialização: carrega pins quando user logar
+(function(){
+  function tentar(){
+    if(typeof firebase !== 'undefined' && firebase.auth){
+      firebase.auth().onAuthStateChanged(function(u){
+        if(u){
+          _pinFirestoreCarregado = false;
+          _pinCarregarFirestore().then(function(){
+            _pinAtualizarBotoes();
+            // Se o usuário está na home, re-renderiza pra refletir os pins
+            const home = document.getElementById('page-home');
+            if(home && home.classList.contains('active') && typeof _pinRenderHome === 'function'){
+              _pinRenderHome();
+            }
+          });
+        } else {
+          _pinAtivos = [];
+          _pinFirestoreCarregado = false;
+        }
+      });
+    } else {
+      setTimeout(tentar, 500);
+    }
+  }
+  tentar();
+})();
+
+// CSS dos pins
+(function(){
+  const css = '.pin-btn:hover { background: rgba(245,134,52,.12) !important; transform: scale(1.15); }'
+    + '.pin-card:hover { box-shadow: 0 4px 12px rgba(0,0,0,.08); }'
+    + '.pin-card[draggable=true]:active { cursor: grabbing; }';
+  const st = document.createElement('style');
+  st.textContent = css;
+  document.head.appendChild(st);
+})();
