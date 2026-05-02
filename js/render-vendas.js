@@ -3972,518 +3972,733 @@ function renderVAlertas(){
 // ────────────────────────────────────────────────────────────────────
 // V METAS · placeholder explicativo (sub-etapa 4c.5)
 // ────────────────────────────────────────────────────────────────────
+// ════════════════════════════════════════════════════════════════════════
+// METAS · v4.34 · análise de desempenho mensal por loja
+// Reescrita conforme dash.solucoesr2.com.br/gpc.html (etapa 8)
+// ════════════════════════════════════════════════════════════════════════
+
+// Mapeamento de loja (cod do JSON → label visível)
+const _METAS_LOJAS = [
+  {cod:'ATP-V', label:'ATP - Varejo',   curto:'ATP V'},
+  {cod:'ATP-A', label:'ATP - Atacado',  curto:'ATP A'},
+  {cod:'CP3',   label:'Cestão Loja 1',  curto:'CES L1'},
+  {cod:'CP5',   label:'Inhambupe',      curto:'INH'}
+];
+
+// Estado global das metas
+let _metasDados = null;        // {lojas: {ATP-V: {YYYY-MM: meta}, ...}, atualizadoEm, ...}
+let _metasFirestoreCarregado = false;
+
+async function _metasCarregarFirestore(){
+  if(_metasFirestoreCarregado) return;
+  try {
+    const auth = (typeof firebase !== 'undefined' && firebase.auth) ? firebase.auth() : null;
+    if(!auth || !auth.currentUser){
+      _metasDados = {lojas:{}};
+      _metasFirestoreCarregado = true;
+      return;
+    }
+    const db = firebase.firestore();
+    const doc = await db.collection('config').doc('metas_gpc_v2').get();
+    if(doc.exists){
+      const data = doc.data();
+      _metasDados = {
+        lojas: data.lojas || {},
+        atualizadoEm: data.atualizadoEm,
+        atualizadoPor: data.atualizadoPor
+      };
+    } else {
+      _metasDados = {lojas:{}};
+    }
+    _metasFirestoreCarregado = true;
+  } catch(e){
+    console.warn('[metas] erro carregando:', e);
+    _metasDados = {lojas:{}};
+    _metasFirestoreCarregado = true;
+  }
+}
+
+async function _metasSalvarFirestore(){
+  try {
+    const auth = (typeof firebase !== 'undefined' && firebase.auth) ? firebase.auth() : null;
+    if(!auth || !auth.currentUser){ alert('Faça login para salvar.'); return false; }
+    const db = firebase.firestore();
+    await db.collection('config').doc('metas_gpc_v2').set({
+      lojas: _metasDados.lojas,
+      atualizadoEm: firebase.firestore.FieldValue.serverTimestamp(),
+      atualizadoPor: auth.currentUser.email || auth.currentUser.uid
+    });
+    return true;
+  } catch(e){
+    console.warn('[metas] erro salvando:', e);
+    alert('Erro ao salvar metas: '+(e.message || e.code || 'desconhecido'));
+    return false;
+  }
+}
+
+// Pega o realizado de uma loja num mês específico (do V.mensal)
+function _metasGetRealizado(lojaCod, ym){
+  if(!V || !V.mensal) return 0;
+  const r = V.mensal.find(function(x){return x.loja === lojaCod && x.ym === ym;});
+  return r ? (r.fat_liq || 0) : 0;
+}
+
+// Pega a meta de uma loja num mês específico
+function _metasGetMeta(lojaCod, ym){
+  if(!_metasDados || !_metasDados.lojas) return 0;
+  const lj = _metasDados.lojas[lojaCod] || {};
+  return lj[ym] || 0;
+}
+
+// Lista todos os YMs que têm meta OU realizado em qualquer loja
+function _metasYmsDisponiveis(){
+  const set = new Set();
+  if(_metasDados && _metasDados.lojas){
+    Object.keys(_metasDados.lojas).forEach(function(lj){
+      Object.keys(_metasDados.lojas[lj] || {}).forEach(function(ym){ set.add(ym); });
+    });
+  }
+  if(V && V.mensal){
+    V.mensal.forEach(function(r){ if(r.ym) set.add(r.ym); });
+  }
+  return Array.from(set).sort();
+}
+
+// Calcula atingimento de uma loja (real / meta)
+function _metasCalcAt(real, meta){
+  if(!meta || meta === 0) return null;
+  return real / meta;
+}
+
+// Status visual baseado em atingimento
+function _metasStatus(at){
+  if(at == null) return {sigla:'—', cor:'var(--text-muted)', cls:''};
+  if(at >= 1.0)  return {sigla:'✓', cor:'#15803d', cls:'ok'};
+  if(at >= 0.95) return {sigla:'~', cor:'#b45309', cls:'wn'};
+  return {sigla:'✗', cor:'#dc2626', cls:'dn'};
+}
+
 function renderVMetas(){
   const cont = document.getElementById('page-v-metas');
   if(!cont) return;
 
-  // Carrega metas e config (do localStorage primeiro, sync com Firebase em background)
-  if(!window._metas) {
-    window._metas = _loadMetas();
+  if(!V || !V.mensal || !V.mensal.length){
+    cont.innerHTML = '<div class="ph"><div class="pk">Vendas · Análise</div><h2>Metas — <em>Análise de Desempenho</em></h2></div>'
+      + '<div class="ph-sep"></div><div class="page-body">'
+      + '<div class="cc" style="text-align:center;color:var(--text-muted);padding:30px;">Sem dados de vendas mensais carregados</div></div>';
+    return;
   }
-  // Em paralelo, tenta puxar versão mais recente do Firebase e re-renderiza se mudou
-  if(AUTH_MODE === 'firebase' && window.fbDb && !window._metas._fbLoaded){
-    _loadMetasFirebase().then(function(remote){
-      if(remote){
-        window._metas._fbLoaded = true;
-        renderVMetas();
+
+  // Carrega metas do Firestore
+  _metasCarregarFirestore().then(function(){ _metasRenderConteudo(); });
+
+  cont.innerHTML = '<div class="ph"><div class="pk">Vendas · Análise</div><h2>Metas — <em>Análise de Desempenho</em></h2></div>'
+    + '<div class="ph-sep"></div><div class="page-body" id="metas-body">'
+    + '<div style="text-align:center;color:var(--text-muted);padding:30px;">Carregando metas...</div>'
+    + '</div>';
+}
+
+function _metasRenderConteudo(){
+  const body = document.getElementById('metas-body');
+  if(!body) return;
+
+  const yms = _metasYmsDisponiveis();
+  if(!yms.length){
+    body.innerHTML = '<div class="cc" style="text-align:center;padding:40px;">'
+      + '<div style="font-size:32px;margin-bottom:8px;opacity:.4;">📊</div>'
+      + '<div style="font-size:14px;font-weight:700;margin-bottom:6px;">Nenhuma meta cadastrada</div>'
+      + '<div style="font-size:12px;color:var(--text-muted);margin-bottom:16px;line-height:1.5;">Cadastre as metas mensais por loja para ver a análise comparativa de atingimento.</div>'
+      + '<button id="metas-btn-cad" class="ebtn" style="background:var(--accent);color:white;border:none;padding:9px 16px;font-size:12px;font-weight:700;">📝 Cadastrar metas</button>'
+      + '<button id="metas-btn-import" class="ebtn" style="background:var(--surface);color:var(--text);border:1px solid var(--border-strong);padding:9px 16px;font-size:12px;font-weight:600;margin-left:6px;">📥 Importar Excel</button>'
+      + '</div>';
+    document.getElementById('metas-btn-cad').addEventListener('click', _metasAbrirEditorUI);
+    document.getElementById('metas-btn-import').addEventListener('click', _metasImportarExcelUI);
+    return;
+  }
+
+  // ─── Calcula KPIs gerais (consolidado GPC) ───
+  let totMeta = 0, totReal = 0;
+  let mesesComMeta = 0, mesesAtingidos = 0;
+  const atingPorAno = {}; // {2024:{soma, count}, ...}
+  const atingMensal = []; // [{ym, meta, real, at, lojas:{ATP-V:{meta,real,at}, ...}}]
+
+  yms.forEach(function(ym){
+    let metaMes = 0, realMes = 0;
+    const lojasMes = {};
+    _METAS_LOJAS.forEach(function(l){
+      const m = _metasGetMeta(l.cod, ym);
+      const r = _metasGetRealizado(l.cod, ym);
+      lojasMes[l.cod] = {meta:m, real:r, at: _metasCalcAt(r, m)};
+      metaMes += m;
+      realMes += r;
+    });
+    const atMes = _metasCalcAt(realMes, metaMes);
+    atingMensal.push({ym:ym, meta:metaMes, real:realMes, at:atMes, lojas:lojasMes});
+
+    totMeta += metaMes;
+    totReal += realMes;
+    if(metaMes > 0){
+      mesesComMeta++;
+      if(atMes != null && atMes >= 1.0) mesesAtingidos++;
+      const ano = ym.substring(0,4);
+      if(!atingPorAno[ano]) atingPorAno[ano] = {soma:0, count:0, atingidos:0};
+      atingPorAno[ano].soma += atMes || 0;
+      atingPorAno[ano].count += 1;
+      if(atMes != null && atMes >= 1.0) atingPorAno[ano].atingidos += 1;
+    }
+  });
+
+  const mesesComMetaList = atingMensal.filter(function(m){return m.meta > 0;});
+  const atingMedio = mesesComMeta > 0
+    ? mesesComMetaList.reduce(function(s,m){return s+(m.at||0);},0) / mesesComMeta
+    : 0;
+
+  let html = '';
+
+  // ─── Cabeçalho do escopo ───
+  const ymIni = mesesComMetaList[0] ? _ymToLabel(mesesComMetaList[0].ym) : '—';
+  const ymFim = mesesComMetaList.length ? _ymToLabel(mesesComMetaList[mesesComMetaList.length-1].ym) : '—';
+  const lojasComMeta = _METAS_LOJAS.filter(function(l){
+    return Object.keys((_metasDados.lojas||{})[l.cod] || {}).length > 0;
+  });
+
+  html += '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:8px;">';
+  html += '<div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;font-weight:700;">'
+    + 'Resultado global · GPC consolidado · '+esc(ymIni)+' a '+esc(ymFim)+' · '+fI(mesesComMeta)+' meses · '+fI(lojasComMeta.length)+' lojas'
+    + '</div>';
+  html += '<div style="display:flex;gap:6px;">';
+  html += '<button id="metas-btn-cad" class="ebtn" style="background:var(--accent);color:white;border:none;padding:6px 12px;font-size:11.5px;font-weight:700;">📝 Cadastrar metas</button>';
+  html += '<button id="metas-btn-import" class="ebtn" style="background:var(--surface);color:var(--text);border:1px solid var(--border-strong);padding:6px 12px;font-size:11.5px;font-weight:600;">📥 Excel</button>';
+  html += '</div></div>';
+
+  // ─── KPIs (4) ───
+  const desvio = totReal - totMeta;
+  const anos = Object.keys(atingPorAno).sort();
+  const anosTxt = anos.map(function(a){
+    const v = atingPorAno[a].soma / atingPorAno[a].count;
+    return a+': '+fP(v*100,1);
+  }).join(' · ');
+  const atingPorAnoCount = anos.map(function(a){
+    return a+': '+atingPorAno[a].atingidos+'/'+atingPorAno[a].count;
+  }).join(' · ');
+
+  html += '<div class="kg" style="grid-template-columns:repeat(4,1fr);margin-bottom:14px;">';
+  html += '<div class="kc"><div class="kl">Meta total acumulada</div>'
+    + '<div class="kv">'+fK(totMeta)+'</div>'
+    + '<div class="ku">'+fI(mesesComMeta)+' meses · '+fI(lojasComMeta.length)+' lojas</div></div>';
+  html += '<div class="kc '+(desvio>=0?'up':'dn')+'"><div class="kl">Realizado total</div>'
+    + '<div class="kv">'+fK(totReal)+'</div>'
+    + '<div class="ku">'+(desvio>=0?'+':'')+fK(desvio)+' vs meta</div></div>';
+  html += '<div class="kc '+(atingMedio>=1?'up':atingMedio>=0.95?'hl':'dn')+'"><div class="kl">Atingimento médio</div>'
+    + '<div class="kv">'+fP(atingMedio*100,1)+'</div>'
+    + '<div class="ku">'+esc(anosTxt)+'</div></div>';
+  html += '<div class="kc"><div class="kl">Meses ≥100%</div>'
+    + '<div class="kv">'+fI(mesesAtingidos)+'/'+fI(mesesComMeta)+'</div>'
+    + '<div class="ku">'+esc(atingPorAnoCount)+'</div></div>';
+  html += '</div>';
+
+  // ─── Gráfico 1: Meta vs Realizado mensal ───
+  html += '<div class="cc" style="margin-bottom:14px;">'
+    + '<div class="cct">GPC · Meta vs Realizado mensal (R$ Milhões)</div>'
+    + '<div class="ccs">Barras = meta · Linha azul = realizado · Linha laranja = atingimento %</div>'
+    + '<div style="height:300px;margin-top:8px;"><canvas id="metas-chart-mensal"></canvas></div>'
+    + '</div>';
+
+  // ─── Gráfico 2: Desvio mensal ───
+  html += '<div class="cc" style="margin-bottom:14px;">'
+    + '<div class="cct">GPC · Desvio mensal da meta (R$k)</div>'
+    + '<div class="ccs">Verde = acima · Vermelho = abaixo da meta</div>'
+    + '<div style="height:240px;margin-top:8px;"><canvas id="metas-chart-desvio"></canvas></div>'
+    + '</div>';
+
+  // ─── Insights (piora ano a ano + pior mês) ───
+  if(anos.length >= 2){
+    const a0 = anos[anos.length-2], a1 = anos[anos.length-1];
+    const v0 = atingPorAno[a0].soma / atingPorAno[a0].count;
+    const v1 = atingPorAno[a1].soma / atingPorAno[a1].count;
+    const direcao = v1 < v0 ? 'Piora' : 'Melhora';
+    const cor = v1 < v0 ? '#b45309' : '#15803d';
+    html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px;">';
+    html += '<div style="background:#f9fafb;border-left:4px solid '+cor+';border-radius:8px;padding:12px 14px;">'
+      + '<div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:4px;">'+direcao+' de '+a0+' para '+a1+'</div>'
+      + '<div style="font-size:11.5px;color:var(--text-dim);line-height:1.5;">'+a0+': '+fP(v0*100,1)+' ('+atingPorAno[a0].atingidos+'/'+atingPorAno[a0].count+' ≥100%) → '+a1+': '+fP(v1*100,1)+' ('+atingPorAno[a1].atingidos+'/'+atingPorAno[a1].count+' ≥100%)</div>'
+      + '</div>';
+
+    // Pior mês
+    const piorMes = mesesComMetaList.slice().sort(function(a,b){return a.at - b.at;})[0];
+    if(piorMes){
+      const lojasPior = _METAS_LOJAS.map(function(l){
+        const lm = piorMes.lojas[l.cod];
+        if(!lm || !lm.meta) return null;
+        return l.curto+': '+fP((lm.at||0)*100,1);
+      }).filter(Boolean).join(' · ');
+      html += '<div style="background:#fef3c7;border-left:4px solid #b45309;border-radius:8px;padding:12px 14px;">'
+        + '<div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:4px;">⚠ '+_ymToLabel(piorMes.ym)+' — Pior mês: '+fP(piorMes.at*100,1)+'</div>'
+        + '<div style="font-size:11.5px;color:var(--text-dim);line-height:1.5;">Desvio '+fK(piorMes.real - piorMes.meta)+'. '+esc(lojasPior)+'</div>'
+        + '</div>';
+    }
+    html += '</div>';
+  }
+
+  // ─── Comparativo entre lojas (linhas) ───
+  html += '<div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;font-weight:700;margin:14px 0 8px;">Comparativo por loja · atingimento mensal</div>';
+  html += '<div class="cc" style="margin-bottom:14px;">'
+    + '<div class="cct">Atingimento mensal (%) · 4 lojas</div>'
+    + '<div class="ccs">Linha tracejada = 100% de meta</div>'
+    + '<div style="height:300px;margin-top:8px;"><canvas id="metas-chart-comp"></canvas></div>'
+    + '</div>';
+
+  // ─── Tabela comparativa ───
+  html += '<div class="cc" style="margin-bottom:14px;">'
+    + '<div class="cct">Tabela comparativa · todas as lojas por mês</div>'
+    + '<div class="tscroll" style="margin-top:8px;">'
+    + '<table class="t"><thead><tr><th class="L">Mês</th>';
+  _METAS_LOJAS.forEach(function(l){
+    html += '<th>'+esc(l.curto)+'</th>';
+  });
+  html += '<th>GPC</th></tr></thead><tbody>';
+  atingMensal.forEach(function(m){
+    if(m.meta === 0) return;
+    html += '<tr><td class="L"><strong>'+_ymToLabel(m.ym)+'</strong></td>';
+    _METAS_LOJAS.forEach(function(l){
+      const lm = m.lojas[l.cod];
+      if(!lm || !lm.meta){
+        html += '<td style="color:var(--text-muted);">—</td>';
+      } else {
+        const st = _metasStatus(lm.at);
+        html += '<td style="color:'+st.cor+';font-weight:600;">'+fP((lm.at||0)*100,1)+' '+st.sigla+'</td>';
+      }
+    });
+    const stG = _metasStatus(m.at);
+    html += '<td style="color:'+stG.cor+';font-weight:700;">'+fP((m.at||0)*100,1)+' '+stG.sigla+'</td>';
+    html += '</tr>';
+  });
+  html += '</tbody></table></div></div>';
+
+  // ─── Histórico detalhado por loja (consolidado + cada loja) ───
+  html += '<div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;font-weight:700;margin:14px 0 8px;">Histórico detalhado · GPC consolidado</div>';
+  html += _metasRenderTabelaDetalhe(atingMensal.map(function(m){return {ym:m.ym, meta:m.meta, real:m.real, at:m.at};}), 'GPC Consolidado');
+
+  _METAS_LOJAS.forEach(function(l){
+    const semMeta = !lojasComMeta.find(function(x){return x.cod === l.cod;});
+    if(semMeta) return;
+    const dados = atingMensal.map(function(m){
+      const lm = m.lojas[l.cod];
+      return {ym:m.ym, meta:lm.meta, real:lm.real, at:lm.at};
+    });
+    html += '<div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;font-weight:700;margin:14px 0 8px;">Histórico · '+esc(l.label)+'</div>';
+    html += _metasRenderTabelaDetalhe(dados, l.label);
+  });
+
+  body.innerHTML = html;
+
+  // Render gráficos
+  _metasRenderGraficos(atingMensal);
+
+  // Bind eventos
+  document.getElementById('metas-btn-cad').addEventListener('click', _metasAbrirEditorUI);
+  document.getElementById('metas-btn-import').addEventListener('click', _metasImportarExcelUI);
+}
+
+function _metasRenderTabelaDetalhe(linhas, titulo){
+  let totMeta = 0, totReal = 0;
+  let html = '<div class="cc" style="margin-bottom:10px;">'
+    + '<div class="cct">'+esc(titulo)+'</div>'
+    + '<div class="tscroll" style="margin-top:8px;">'
+    + '<table class="t"><thead><tr>'
+    + '<th class="L">Mês</th><th>Meta</th><th>Realizado</th><th>Ating.</th><th>Desvio</th>'
+    + '</tr></thead><tbody>';
+  linhas.forEach(function(r){
+    if(r.meta === 0) return;
+    totMeta += r.meta;
+    totReal += r.real;
+    const desvio = r.real - r.meta;
+    const st = _metasStatus(r.at);
+    html += '<tr>'
+      + '<td class="L"><strong>'+_ymToLabel(r.ym)+'</strong></td>'
+      + '<td>'+fK(r.meta)+'</td>'
+      + '<td>'+fK(r.real)+'</td>'
+      + '<td style="color:'+st.cor+';font-weight:600;">'+fP((r.at||0)*100,1)+' '+st.sigla+'</td>'
+      + '<td style="color:'+(desvio>=0?'#15803d':'#dc2626')+';">'+(desvio>=0?'+':'')+fK(desvio)+'</td>'
+      + '</tr>';
+  });
+  // Linha total
+  const atTot = totMeta > 0 ? totReal / totMeta : 0;
+  const stTot = _metasStatus(atTot);
+  const desvioTot = totReal - totMeta;
+  html += '<tr style="border-top:2px solid var(--border-strong);font-weight:700;background:var(--surface-2);">'
+    + '<td class="L">TOTAL</td>'
+    + '<td>'+fK(totMeta)+'</td>'
+    + '<td>'+fK(totReal)+'</td>'
+    + '<td style="color:'+stTot.cor+';">'+fP(atTot*100,1)+' '+stTot.sigla+'</td>'
+    + '<td style="color:'+(desvioTot>=0?'#15803d':'#dc2626')+';">'+(desvioTot>=0?'+':'')+fK(desvioTot)+'</td>'
+    + '</tr>';
+  html += '</tbody></table></div></div>';
+  return html;
+}
+
+function _metasRenderGraficos(atingMensal){
+  const dadosCom = atingMensal.filter(function(m){return m.meta > 0;});
+  const labels = dadosCom.map(function(m){return _ymToLabel(m.ym);});
+
+  // Gráfico 1: Meta vs Realizado mensal
+  if(document.getElementById('metas-chart-mensal')){
+    mkC('metas-chart-mensal', {
+      type: 'bar',
+      data: {labels: labels, datasets: [
+        {label:'Meta', type:'bar', data: dadosCom.map(function(m){return m.meta/1000000;}),
+         backgroundColor: 'rgba(220,230,200,0.6)', borderColor:'#94a3b8', borderWidth:1, borderRadius:3, yAxisID:'y'},
+        {label:'Realizado', type:'line', data: dadosCom.map(function(m){return m.real/1000000;}),
+         borderColor: '#1a2f5c', backgroundColor:'rgba(26,47,92,0.10)', borderWidth:2.5, tension:0.3,
+         pointRadius:3, pointBackgroundColor:'#1a2f5c', yAxisID:'y'},
+        {label:'Atingimento %', type:'line', data: dadosCom.map(function(m){return (m.at||0)*100;}),
+         borderColor: '#f58634', borderWidth:2, borderDash:[5,3], tension:0.3,
+         pointRadius:3, pointBackgroundColor:'#f58634', yAxisID:'y2'}
+      ]},
+      options: {
+        responsive:true, maintainAspectRatio:false,
+        plugins:{
+          legend:{position:'bottom', labels:{padding:8, usePointStyle:true, boxWidth:8, font:{size:10}}},
+          tooltip:{callbacks:{label:function(ctx){
+            if(ctx.dataset.label === 'Atingimento %') return 'Atingimento: '+fP(ctx.raw,1);
+            return ctx.dataset.label+': '+fK(ctx.raw*1000000);
+          }}}
+        },
+        scales:{
+          x:{grid:{display:false}, ticks:{font:{size:10}, maxRotation:45}},
+          y:{position:'left', ticks:{callback:function(v){return 'R$'+v.toFixed(1)+'M';}, font:{size:10}}},
+          y2:{position:'right', grid:{display:false}, min:70, max:115,
+              ticks:{callback:function(v){return v+'%';}, font:{size:10}}}
+        }
       }
     });
   }
-  const M = window._metas;
-  const cfg = M.config || {};
-  const supByFilial = cfg.supervisor_por_filial || {};
-  const supNomes = cfg.supervisor_nomes || {};
 
-  // Determinar visão atual
-  const baseSlug = _getBaseSlug();
-  const isGrupoOuConsolidado = (baseSlug === 'grupo' || baseSlug === 'cp');
-
-  // Filiais alvo
-  let filiaisAlvo;
-  if(baseSlug === 'grupo') filiaisAlvo = ['atp','cp1','cp3','cp5','cp40'];
-  else if(baseSlug === 'cp') filiaisAlvo = ['cp1','cp3','cp5','cp40'];
-  else filiaisAlvo = [baseSlug];
-
-  // Filiais que TÊM metas configuradas (excluindo CP1 que não tem)
-  const filiaisComMeta = filiaisAlvo.filter(f => Array.isArray(supByFilial[f]) && supByFilial[f].length > 0);
-
-  // Anos disponíveis (do realizado)
-  const mensal = (V && V.mensal) || [];
-  const anos = [...new Set(mensal.map(m => m.ym ? m.ym.slice(0,4) : null).filter(Boolean))].sort();
-  const anoAtual = (new Date()).getFullYear().toString();
-  const anoSel = anos.includes(anoAtual) ? anoAtual : (anos[anos.length-1] || anoAtual);
-
-  let html = '<div class="ph"><div class="pk">Vendas · Análise</div><h2><em>Metas</em> e Realizado</h2></div>';
-  html += '<div class="ph-sep"></div>';
-  html += '<div class="page-body">';
-
-  // Header com botão Editor de Metas
-  html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:10px;">';
-  html += '<div style="font-size:12px;color:var(--text-dim);">Ano <select id="metas-ano" style="padding:4px 10px;border-radius:5px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-weight:600;">' + anos.map(a => '<option value="'+a+'" '+(a===anoSel?'selected':'')+'>'+a+'</option>').join('') + '</select></div>';
-  html += '<button id="btn-abrir-editor-metas" class="ebtn" style="background:var(--accent);color:white;border:none;display:inline-flex;align-items:center;gap:6px;padding:7px 14px;font-size:12px;">';
-  html += '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>';
-  html += 'Editor de metas';
-  html += '</button>';
-  html += '</div>';
-
-  // Card resumo do mapeamento de supervisores
-  html += '<div class="cc">';
-  html += '<div class="cct">Mapeamento de supervisores por filial</div>';
-  html += '<div class="ccs">A meta é definida sobre as vendas do supervisor abaixo. Para CP1 não há meta; demais informações continuam visíveis em outras análises.</div>';
-  html += '<div style="margin-top:10px;display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:8px;">';
-  filiaisAlvo.forEach(f => {
-    const sups = supByFilial[f];
-    const fNome = (_filiaisDisponiveis.find(x => x.sigla === f) || {}).nome || f.toUpperCase();
-    const supLabel = (sups && sups.length)
-      ? sups.map(s => '#' + s + ' ' + (supNomes[String(s)] || '')).join(', ')
-      : '<em style="color:#888;">sem meta configurada</em>';
-    html += '<div style="border:1px solid var(--border);border-radius:6px;padding:10px;background:#fafbfc;">'
-      +    '<div style="font-size:11px;color:#666;text-transform:uppercase;letter-spacing:.05em;font-weight:600;">'+esc(fNome)+'</div>'
-      +    '<div style="font-size:13px;margin-top:4px;color:#1a1a1a;">'+supLabel+'</div>'
-      +  '</div>';
-  });
-  html += '</div></div>';
-
-  // Realizado vs Meta
-  html += '<div class="cc" style="margin-top:14px;">';
-  html += '<div class="cct">Realizado vs Meta · Mensal <span style="font-weight:400;color:#666;">(filtrado pelos supervisores corretos)</span></div>';
-  html += '<div class="tscroll"><table class="t">';
-  html += '<thead><tr>';
-  html += '<th class="L">Mês</th>';
-  filiaisComMeta.forEach(f => {
-    const fNome = (_filiaisDisponiveis.find(x => x.sigla === f) || {}).nome || f.toUpperCase();
-    html += '<th colspan="3" style="border-left:2px solid var(--border);">'+esc(fNome)+'</th>';
-  });
-  html += '<th colspan="3" style="border-left:2px solid var(--border);">Total visão</th>';
-  html += '</tr><tr>';
-  html += '<th class="L"></th>';
-  filiaisComMeta.forEach(() => {
-    html += '<th style="font-size:10px;color:#888;border-left:2px solid var(--border);">Meta</th>';
-    html += '<th style="font-size:10px;color:#888;">Real</th>';
-    html += '<th style="font-size:10px;color:#888;">%</th>';
-  });
-  html += '<th style="font-size:10px;color:#888;border-left:2px solid var(--border);">Meta</th>';
-  html += '<th style="font-size:10px;color:#888;">Real</th>';
-  html += '<th style="font-size:10px;color:#888;">%</th>';
-  html += '</tr></thead><tbody id="tb-metas-rvr"></tbody></table></div>';
-  html += '</div>';
-
-  html += '</div>'; // page-body
-  cont.innerHTML = html;
-
-  // Popular tabela Realizado vs Meta (a tabela de edição agora vive no modal)
-  _renderTabelaRealVsMeta(filiaisComMeta, anoSel);
-
-  // Trocar ano (re-renderiza Real vs Meta na página)
-  const selAno = document.getElementById('metas-ano');
-  if(selAno){
-    selAno.addEventListener('change', function(e){
-      _renderTabelaRealVsMeta(filiaisComMeta, e.target.value);
+  // Gráfico 2: Desvio mensal
+  if(document.getElementById('metas-chart-desvio')){
+    const cores = dadosCom.map(function(m){return (m.real - m.meta) >= 0 ? '#86efac' : '#fca5a5';});
+    mkC('metas-chart-desvio', {
+      type:'bar',
+      data:{labels:labels, datasets:[{
+        label:'Desvio',
+        data: dadosCom.map(function(m){return (m.real - m.meta) / 1000;}),
+        backgroundColor: cores,
+        borderRadius:3
+      }]},
+      options:{
+        responsive:true, maintainAspectRatio:false,
+        plugins:{
+          legend:{display:false},
+          tooltip:{callbacks:{label:function(ctx){return (ctx.raw>=0?'+':'')+'R$'+fAbbr(ctx.raw*1000);}}}
+        },
+        scales:{
+          x:{grid:{display:false}, ticks:{font:{size:10}, maxRotation:45}},
+          y:{ticks:{callback:function(v){return 'R$'+v+'k';}, font:{size:10}}}
+        }
+      }
     });
   }
 
-  // Botão "Editor de metas" → abre modal
-  const btnEditor = document.getElementById('btn-abrir-editor-metas');
-  if(btnEditor){
-    btnEditor.addEventListener('click', function(){
-      _abrirEditorMetas(filiaisComMeta, (selAno && selAno.value) || anoSel);
+  // Gráfico 3: Comparativo entre lojas (atingimento %)
+  if(document.getElementById('metas-chart-comp')){
+    const cores = ['#1a2f5c','#7c3aed','#dc2626','#f58634'];
+    const datasets = _METAS_LOJAS.map(function(l, i){
+      return {
+        label: l.label,
+        data: dadosCom.map(function(m){
+          const lm = m.lojas[l.cod];
+          if(!lm || !lm.meta) return null;
+          return (lm.at || 0) * 100;
+        }),
+        borderColor: cores[i % cores.length],
+        backgroundColor: cores[i % cores.length] + '20',
+        borderWidth: 2,
+        borderDash: l.cod === 'ATP-A' ? [5,3] : [],
+        tension: 0.3,
+        pointRadius: 3,
+        spanGaps: true
+      };
+    });
+    mkC('metas-chart-comp', {
+      type:'line',
+      data:{labels:labels, datasets:datasets},
+      options:{
+        responsive:true, maintainAspectRatio:false,
+        plugins:{
+          legend:{position:'bottom', labels:{padding:8, usePointStyle:true, boxWidth:10, font:{size:10}}},
+          tooltip:{callbacks:{label:function(ctx){
+            if(ctx.raw == null) return ctx.dataset.label+': sem meta';
+            return ctx.dataset.label+': '+fP(ctx.raw,1);
+          }}},
+          annotation:{}
+        },
+        scales:{
+          x:{grid:{display:false}, ticks:{font:{size:10}, maxRotation:45}},
+          y:{ticks:{callback:function(v){return v+'%';}, font:{size:10}},
+             grid:{color:function(ctx){return ctx.tick.value === 100 ? '#94a3b8' : '#e5e7eb';}}}
+        }
+      }
     });
   }
 }
 
-// ────────────────────────────────────────────────────────────────────
-// EDITOR DE METAS · modal flutuante
-// ────────────────────────────────────────────────────────────────────
-function _abrirEditorMetas(filiaisComMeta, anoSel){
-  // Remove modal anterior se existir
-  const antigo = document.getElementById('editor-metas-modal');
-  if(antigo) antigo.remove();
-
-  const M = window._metas || {};
-  const cfg = M.config || {};
-  const supByFilial = cfg.supervisor_por_filial || {};
-  const supNomes = cfg.supervisor_nomes || {};
-
-  // Anos disponíveis (do realizado)
-  const mensal = (V && V.mensal) || [];
-  const anos = [...new Set(mensal.map(m => m.ym ? m.ym.slice(0,4) : null).filter(Boolean))].sort();
+// ─── UI: editor manual de metas ───
+function _metasAbrirEditorUI(){
+  const yms = _metasYmsDisponiveis();
+  // Se não tem nenhum ym de meta nem realizado, gera 24 meses pra trás
+  let ymsExibir = yms.slice();
+  if(!ymsExibir.length){
+    const hoje = new Date();
+    for(let i=23; i>=0; i--){
+      const d = new Date(hoje.getFullYear(), hoje.getMonth()-i, 1);
+      ymsExibir.push(d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'));
+    }
+  } else {
+    // Adiciona meses futuros se quiser planejar à frente
+    // Por enquanto só mostra o que tem
+  }
 
   const overlay = document.createElement('div');
-  overlay.id = 'editor-metas-modal';
-  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:9000;display:flex;align-items:center;justify-content:center;padding:20px;';
+  overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px;';
 
-  let html = '<div style="background:var(--surface);border-radius:10px;width:100%;max-width:1100px;max-height:90vh;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,0.4);">';
-
-  // Header
-  html += '<div style="padding:16px 20px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;">';
-  html += '<div>';
-  html += '<div style="font-size:16px;font-weight:800;color:var(--text);">Editor de metas</div>';
-  html += '<div style="font-size:11px;color:var(--text-dim);margin-top:2px;">Edite as células diretamente. Salvar grava no Firestore (visível pra todos os usuários).</div>';
+  let html = '<div style="background:white;border-radius:10px;max-width:900px;width:100%;max-height:90vh;display:flex;flex-direction:column;box-shadow:0 10px 40px rgba(0,0,0,.3);">';
+  html += '<div style="padding:18px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;">';
+  html +=   '<h3 style="margin:0;font-size:16px;font-weight:700;">Cadastrar metas mensais</h3>';
+  html +=   '<button id="metas-modal-close" style="background:transparent;border:none;cursor:pointer;font-size:18px;color:var(--text-muted);">✕</button>';
   html += '</div>';
-  html += '<button id="editor-metas-fechar" style="background:none;border:none;cursor:pointer;padding:6px;color:var(--text-muted);" aria-label="Fechar">';
-  html += '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>';
-  html += '</button>';
-  html += '</div>';
-
-  // Toolbar
-  html += '<div style="padding:12px 20px;border-bottom:1px solid var(--border);background:var(--surface-2);display:flex;flex-wrap:wrap;gap:12px;align-items:center;">';
-  html += '<div><label style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;font-weight:600;margin-right:6px;">Ano:</label>';
-  html += '<select id="editor-metas-ano" style="padding:5px 10px;border-radius:5px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-weight:600;">' + anos.map(a => '<option value="'+a+'" '+(a===anoSel?'selected':'')+'>'+a+'</option>').join('') + '</select></div>';
-  html += '<div style="flex:1;"></div>';
-  html += '<button id="editor-metas-import" class="ebtn" style="background:var(--surface-2);border:1px solid var(--border);color:var(--text);font-size:12px;padding:6px 12px;">Importar CSV</button>';
-  html += '<button id="editor-metas-export" class="ebtn" style="background:var(--surface-2);border:1px solid var(--border);color:var(--text);font-size:12px;padding:6px 12px;">Exportar CSV</button>';
-  html += '</div>';
-
-  // Body (tabela)
-  html += '<div style="flex:1;overflow:auto;padding:16px 20px;">';
-  if(filiaisComMeta.length === 0){
-    html += '<div style="background:#fff3cd;border:1px solid #ffc107;border-radius:6px;padding:14px;color:#664d03;">Nenhuma filial com meta configurada nesta visão.</div>';
-  } else {
-    html += '<table class="t" id="tb-metas-edit"><thead><tr>';
-    html += '<th class="L" style="position:sticky;left:0;background:var(--surface);">Mês</th>';
-    filiaisComMeta.forEach(f => {
-      const fNome = (_filiaisDisponiveis.find(x => x.sigla === f) || {}).nome || f.toUpperCase();
-      html += '<th>'+esc(fNome)+'<br><span style="font-weight:400;font-size:10px;color:#888;">meta R$ líq</span></th>';
+  html += '<div style="padding:12px 20px;border-bottom:1px solid var(--border);font-size:12px;color:var(--text-muted);line-height:1.5;">'
+    +    'Insira a meta de faturamento líquido (em R$) para cada loja em cada mês. Use ponto ou vírgula como separador decimal. Deixe em branco para apagar a meta de um mês.'
+    + '</div>';
+  html += '<div style="flex:1;overflow:auto;padding:8px 20px;">';
+  html += '<table style="width:100%;border-collapse:collapse;font-size:11.5px;">';
+  html += '<thead style="position:sticky;top:0;background:white;z-index:1;"><tr style="border-bottom:2px solid var(--border-strong);">';
+  html += '<th style="text-align:left;padding:8px 6px;font-size:10px;text-transform:uppercase;color:var(--text-muted);letter-spacing:.05em;">Mês</th>';
+  _METAS_LOJAS.forEach(function(l){
+    html += '<th style="text-align:right;padding:8px 6px;font-size:10px;text-transform:uppercase;color:var(--text-muted);letter-spacing:.05em;">'+esc(l.curto)+'</th>';
+  });
+  html += '</tr></thead><tbody>';
+  ymsExibir.forEach(function(ym){
+    html += '<tr style="border-bottom:1px solid var(--border);">';
+    html += '<td style="padding:6px;font-weight:700;">'+_ymToLabel(ym)+'</td>';
+    _METAS_LOJAS.forEach(function(l){
+      const meta = _metasGetMeta(l.cod, ym);
+      const valStr = meta > 0 ? meta.toString() : '';
+      html += '<td style="padding:4px;">'
+        + '<input type="text" data-loja="'+esc(l.cod)+'" data-ym="'+esc(ym)+'" '
+        + 'value="'+esc(valStr)+'" placeholder="0" '
+        + 'style="width:100%;padding:5px 8px;border:1px solid var(--border-strong);border-radius:4px;font-size:11.5px;text-align:right;font-family:JetBrains Mono,monospace;">'
+        + '</td>';
     });
-    html += '<th>Total visão</th>';
-    html += '</tr></thead><tbody></tbody></table>';
-  }
+    html += '</tr>';
+  });
+  html += '</tbody></table>';
   html += '</div>';
-
-  // Footer
-  html += '<div style="padding:14px 20px;border-top:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;background:var(--surface-2);">';
-  html += '<span id="editor-metas-status" style="font-size:12px;color:var(--text-muted);"></span>';
-  html += '<div style="display:flex;gap:10px;">';
-  html += '<button id="editor-metas-cancelar" class="ebtn" style="background:var(--surface);border:1px solid var(--border);color:var(--text);padding:8px 16px;">Cancelar</button>';
-  html += '<button id="editor-metas-salvar" class="ebtn" style="background:var(--accent);color:white;border:none;padding:8px 18px;font-weight:700;">Salvar metas</button>';
+  html += '<div style="padding:14px 20px;border-top:1px solid var(--border);display:flex;gap:8px;justify-content:flex-end;align-items:center;">';
+  html += '<div style="flex:1;font-size:11px;color:var(--text-muted);">'+ymsExibir.length+' meses · '+_METAS_LOJAS.length+' lojas = '+(ymsExibir.length * _METAS_LOJAS.length)+' campos</div>';
+  html += '<button id="metas-modal-cancel" class="ebtn" style="background:white;color:var(--text);border:1px solid var(--border-strong);padding:8px 14px;font-size:12px;">Cancelar</button>';
+  html += '<button id="metas-modal-save" class="ebtn" style="background:var(--accent);color:white;border:none;padding:8px 14px;font-size:12px;font-weight:700;">Salvar metas</button>';
   html += '</div>';
   html += '</div>';
 
-  html += '</div>';
   overlay.innerHTML = html;
   document.body.appendChild(overlay);
 
-  // Popular tabela
-  if(filiaisComMeta.length > 0){
-    _renderTabelaMetasEdit(filiaisComMeta, anoSel);
-  }
-
-  // Função pra fechar
-  function fechar(){
-    overlay.remove();
-  }
-
-  // Listeners
-  document.getElementById('editor-metas-fechar').addEventListener('click', fechar);
-  document.getElementById('editor-metas-cancelar').addEventListener('click', fechar);
-  // Click fora do modal fecha
-  overlay.addEventListener('click', function(e){
-    if(e.target === overlay) fechar();
-  });
-
-  // Trocar ano dentro do modal
-  const selAnoModal = document.getElementById('editor-metas-ano');
-  if(selAnoModal){
-    selAnoModal.addEventListener('change', function(e){
-      _renderTabelaMetasEdit(filiaisComMeta, e.target.value);
-    });
-  }
-
-  // Salvar
-  document.getElementById('editor-metas-salvar').addEventListener('click', function(){
-    _saveMetas();
-    const status = document.getElementById('editor-metas-status');
-    if(status){
-      status.textContent = '✓ salvo · atualizando análises…';
-      status.style.color = 'var(--success-text)';
-    }
-    // Re-renderiza Real vs Meta na página de fundo (com o ano atualmente selecionado lá)
-    const selAnoPagina = document.getElementById('metas-ano');
-    const anoP = (selAnoPagina && selAnoPagina.value) || anoSel;
-    _renderTabelaRealVsMeta(filiaisComMeta, anoP);
-    setTimeout(fechar, 700);
-  });
-
-  // Import/Export
-  document.getElementById('editor-metas-import').addEventListener('click', _importMetasCSV);
-  document.getElementById('editor-metas-export').addEventListener('click', _exportMetasCSV);
-
-  // Atalho ESC pra fechar
-  function escListener(e){
-    if(e.key === 'Escape'){
-      fechar();
-      document.removeEventListener('keydown', escListener);
-    }
-  }
-  document.addEventListener('keydown', escListener);
-}
-
-function _renderTabelaMetasEdit(filiais, ano){
-  const tb = document.querySelector('#tb-metas-edit tbody');
-  if(!tb) return;
-  const M = window._metas;
-  const meses = [];
-  for(let m=1; m<=12; m++) meses.push(ano+'-'+String(m).padStart(2,'0'));
-
-  let html = '';
-  meses.forEach(ym => {
-    html += '<tr>';
-    html += '<td class="L" style="position:sticky;left:0;background:var(--bg-card);">'+_ymToLabel(ym)+'</td>';
-    let total = 0;
-    filiais.forEach(f => {
-      const v = ((M.metas[f] || {})[ym]) || 0;
-      total += v;
-      html += '<td><input type="text" data-filial="'+escAttr(f)+'" data-ym="'+escAttr(ym)+'" value="'+(v>0?fK(v).replace('R$ ',''):'')+'" placeholder="0" '
-        + 'style="width:90px;padding:4px 6px;border:1px solid #ccc;border-radius:3px;text-align:right;font-family:JetBrains Mono,monospace;font-size:12px;" '
-        + 'class="meta-input"></td>';
-    });
-    html += '<td style="font-weight:600;">'+(total>0?fK(total):'—')+'</td>';
-    html += '</tr>';
-  });
-  tb.innerHTML = html;
-
-  // Listener de blur pra atualizar o objeto + recalcular total da linha
-  tb.querySelectorAll('.meta-input').forEach(inp => {
-    inp.addEventListener('blur', function(e){
-      const f = e.target.getAttribute('data-filial');
-      const ym = e.target.getAttribute('data-ym');
-      const raw = e.target.value.replace(/[^0-9,\.]/g, '').replace(/\./g,'').replace(',','.');
-      const num = parseFloat(raw) || 0;
-      if(!M.metas[f]) M.metas[f] = {};
-      if(num > 0) M.metas[f][ym] = num;
-      else delete M.metas[f][ym];
-      // Re-render só a linha
-      _renderTabelaMetasEdit(filiais, ano);
-    });
-  });
-}
-
-function _renderTabelaRealVsMeta(filiais, ano){
-  const tb = document.getElementById('tb-metas-rvr');
-  if(!tb) return;
-  const M = window._metas;
-  const cfg = M.config || {};
-  const supByFilial = cfg.supervisor_por_filial || {};
-  const meses = [];
-  for(let m=1; m<=12; m++) meses.push(ano+'-'+String(m).padStart(2,'0'));
-
-  // ─── Pré-computação (uma vez por chamada, não 72×) ───
-  // Indexa cadastro de vendedores por código
-  const cadIdx = {};
-  if(V && V.vendedores && V.vendedores.cadastro){
-    V.vendedores.cadastro.forEach(function(r){ cadIdx[r.cod] = r; });
-  }
-  // Pré-agrega vendedores.mensal por (loja, cod_supervisor, ym) → soma fat_liq
-  // Estrutura: agg[loja+'|'+codSup+'|'+ym] = total
-  const _aggRealizado = {};
-  const baseSlug = (typeof _getBaseSlug === 'function') ? _getBaseSlug() : 'atp';
-  if(V && V.vendedores && V.vendedores.mensal){
-    V.vendedores.mensal.forEach(function(vm){
-      const cad = cadIdx[vm.cod];
-      // Pula se cadastro inexistente, sem supervisor, sem loja, ou supervisor ignorado
-      if(!Filtros.vendedorEhValido(cad)) return;
-      const k = (cad.loja||'').toLowerCase() + '|' + cad.cod_supervisor + '|' + vm.ym;
-      _aggRealizado[k] = (_aggRealizado[k]||0) + (vm.fat_liq||0);
-    });
-  }
-
-  // Helper: lê o agregado pré-calculado (O(1) por filial × ym)
-  function _realFilialYm(f, ym){
-    const supsAlvo = supByFilial[f];
-    if(!supsAlvo || !supsAlvo.length) return 0;
-    const lojaEsperada = f.toLowerCase();
-    let total = 0;
-    supsAlvo.forEach(function(codSup){
-      // Para cada supervisor configurado, soma o agregado
-      // Em visão grupo/cp, só conta se a loja do vendedor for a esperada
-      // Em visão por filial individual, qualquer loja serve (filtro implícito do JSON)
-      if(baseSlug === 'grupo' || baseSlug === 'cp'){
-        const k = lojaEsperada + '|' + codSup + '|' + ym;
-        total += _aggRealizado[k] || 0;
+  document.getElementById('metas-modal-close').addEventListener('click', function(){overlay.remove();});
+  document.getElementById('metas-modal-cancel').addEventListener('click', function(){overlay.remove();});
+  document.getElementById('metas-modal-save').addEventListener('click', async function(){
+    const inputs = overlay.querySelectorAll('input[data-loja][data-ym]');
+    const novoLojas = JSON.parse(JSON.stringify(_metasDados.lojas || {}));
+    let mudancas = 0;
+    inputs.forEach(function(inp){
+      const loja = inp.getAttribute('data-loja');
+      const ym = inp.getAttribute('data-ym');
+      const txt = inp.value.trim().replace(/\./g,'').replace(/,/g,'.');
+      const v = parseFloat(txt);
+      if(!novoLojas[loja]) novoLojas[loja] = {};
+      const atual = novoLojas[loja][ym] || 0;
+      if(!txt || isNaN(v) || v <= 0){
+        if(atual){ delete novoLojas[loja][ym]; mudancas++; }
       } else {
-        // Em visão por filial, qualquer loja registrada funciona — somar todas
-        // que tenham aquele cod_supervisor e ym
-        Object.keys(_aggRealizado).forEach(function(k){
-          const parts = k.split('|');
-          if(Number(parts[1]) === codSup && parts[2] === ym){
-            total += _aggRealizado[k];
-          }
-        });
+        if(Math.abs(atual - v) > 0.01){
+          novoLojas[loja][ym] = v;
+          mudancas++;
+        }
       }
     });
-    return total;
-  }
+    if(mudancas === 0){
+      overlay.remove();
+      return;
+    }
+    document.getElementById('metas-modal-save').textContent = 'Salvando...';
+    document.getElementById('metas-modal-save').disabled = true;
+    _metasDados.lojas = novoLojas;
+    const ok = await _metasSalvarFirestore();
+    overlay.remove();
+    if(ok){
+      _metasFirestoreCarregado = false;
+      _metasCarregarFirestore().then(_metasRenderConteudo);
+    }
+  });
+}
 
-  let html = '';
-  let totMetaAno = 0, totRealAno = 0;
-  const totMetaPorFilial = {}; const totRealPorFilial = {};
-  filiais.forEach(f => { totMetaPorFilial[f] = 0; totRealPorFilial[f] = 0; });
+// ─── UI: importar Excel ───
+function _metasImportarExcelUI(){
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px;';
+  overlay.innerHTML = '<div style="background:white;border-radius:10px;max-width:560px;width:100%;padding:20px;">'
+    + '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">'
+    +   '<h3 style="margin:0;font-size:16px;font-weight:700;">Importar metas de Excel</h3>'
+    +   '<button id="mi-close" style="background:transparent;border:none;cursor:pointer;font-size:18px;color:var(--text-muted);">✕</button>'
+    + '</div>'
+    + '<div style="font-size:12px;color:var(--text-muted);line-height:1.6;margin-bottom:14px;">'
+    +   'Carregue um arquivo .xlsx no formato esperado: aba "Resumo GPC" com colunas Mês, Meta ATP-V, Meta ATP-A, Meta Cestão, Meta Inhambupe. Ou aba por loja com Mês e Meta. O sistema detecta automaticamente.'
+    + '</div>'
+    + '<input type="file" id="mi-file" accept=".xlsx,.xls" style="width:100%;padding:8px;border:1px dashed var(--border-strong);border-radius:6px;font-size:12px;">'
+    + '<div id="mi-status" style="font-size:11.5px;color:var(--text-dim);margin-top:10px;min-height:20px;"></div>'
+    + '<div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px;">'
+    +   '<button id="mi-cancel" class="ebtn" style="background:white;color:var(--text);border:1px solid var(--border-strong);padding:8px 14px;font-size:12px;">Cancelar</button>'
+    +   '<button id="mi-import" class="ebtn" style="background:var(--accent);color:white;border:none;padding:8px 14px;font-size:12px;font-weight:700;" disabled>Importar</button>'
+    + '</div>'
+    + '</div>';
+  document.body.appendChild(overlay);
 
-  meses.forEach(ym => {
-    let totMetaLin = 0, totRealLin = 0;
-    let cells = '';
-    filiais.forEach(f => {
-      const meta = ((M.metas[f] || {})[ym]) || 0;
-      const real = _realFilialYm(f, ym);
-      const pct = meta > 0 ? (real/meta*100) : 0;
-      const cls = pct >= 100 ? 'val-pos' : pct >= 80 ? '' : pct > 0 ? 'val-neg' : '';
-      cells += '<td style="border-left:2px solid var(--border);">'+(meta>0?fK(meta):'—')+'</td>';
-      cells += '<td>'+(real>0?fK(real):'—')+'</td>';
-      cells += '<td class="'+cls+'">'+(meta>0?fP(pct):'—')+'</td>';
-      totMetaLin += meta; totRealLin += real;
-      totMetaPorFilial[f] += meta;
-      totRealPorFilial[f] += real;
+  let importPayload = null;
+  const status = document.getElementById('mi-status');
+  const btnImport = document.getElementById('mi-import');
+
+  document.getElementById('mi-close').addEventListener('click', function(){overlay.remove();});
+  document.getElementById('mi-cancel').addEventListener('click', function(){overlay.remove();});
+
+  document.getElementById('mi-file').addEventListener('change', async function(e){
+    const file = e.target.files[0];
+    if(!file) return;
+    status.textContent = 'Lendo arquivo...';
+    if(typeof XLSX === 'undefined'){
+      try { await _carregarXLSXLib(); }
+      catch(err){ status.textContent = '✗ Erro: biblioteca XLSX não disponível.'; return; }
+    }
+    try {
+      const data = await file.arrayBuffer();
+      const wb = XLSX.read(data, {type:'array'});
+      // Tenta achar a aba "Resumo GPC"
+      const sheet = wb.Sheets['Resumo GPC'] || wb.Sheets[wb.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json(sheet, {header:1});
+
+      // Detectar layout: header em linha que começa com "Mês"
+      let headerIdx = -1;
+      for(let i=0; i<Math.min(rows.length, 10); i++){
+        if(rows[i] && rows[i][0] && String(rows[i][0]).trim().toLowerCase() === 'mês'){
+          headerIdx = i;
+          break;
+        }
+      }
+      if(headerIdx < 0){
+        status.textContent = '✗ Não encontrei linha de cabeçalho com "Mês".';
+        return;
+      }
+
+      // Layout esperado: Mês | Meta(ATP-V) | Real(ATP-V) | At(ATP-V) | Meta(ATP-A) | ... | Meta(GPC) | ...
+      // Cada loja ocupa 3 colunas: Meta, Realizado, Ating.
+      // Vamos pegar só as colunas Meta de cada uma das 4 lojas (não a GPC)
+      const colunas = [
+        {loja:'ATP-V', col:1},
+        {loja:'ATP-A', col:4},
+        {loja:'CP3',   col:7},   // Cestão Loja 1
+        {loja:'CP5',   col:10}   // Inhambupe
+      ];
+
+      const novoLojas = {};
+      colunas.forEach(function(c){ novoLojas[c.loja] = {}; });
+
+      let totalLinhas = 0;
+      for(let i=headerIdx+1; i<rows.length; i++){
+        const row = rows[i];
+        if(!row || !row[0]) continue;
+        const mes = String(row[0]).trim();
+        // Aceita "Jan/24" ou "01/2024" ou "2024-01"
+        const ym = _metasParseMes(mes);
+        if(!ym) continue;
+        colunas.forEach(function(c){
+          const v = parseFloat(row[c.col]);
+          if(!isNaN(v) && v > 0){
+            novoLojas[c.loja][ym] = v;
+          }
+        });
+        totalLinhas++;
+      }
+
+      const totalCampos = Object.keys(novoLojas).reduce(function(s,lj){
+        return s + Object.keys(novoLojas[lj]).length;
+      }, 0);
+
+      if(totalCampos === 0){
+        status.textContent = '✗ Não consegui ler nenhuma meta. Verifique o formato do arquivo.';
+        return;
+      }
+
+      importPayload = novoLojas;
+      status.innerHTML = '✓ Pronto: <strong>'+totalLinhas+' meses</strong> · <strong>'+totalCampos+' metas</strong> detectadas. Clique em Importar para confirmar.';
+      btnImport.disabled = false;
+    } catch(err){
+      console.error(err);
+      status.textContent = '✗ Erro ao ler: '+(err.message || 'desconhecido');
+    }
+  });
+
+  btnImport.addEventListener('click', async function(){
+    if(!importPayload) return;
+    btnImport.textContent = 'Importando...';
+    btnImport.disabled = true;
+    // Merge: novas metas substituem antigas, mas mantém o que não veio no Excel
+    if(!_metasDados) _metasDados = {lojas:{}};
+    if(!_metasDados.lojas) _metasDados.lojas = {};
+    Object.keys(importPayload).forEach(function(lj){
+      if(!_metasDados.lojas[lj]) _metasDados.lojas[lj] = {};
+      Object.keys(importPayload[lj]).forEach(function(ym){
+        _metasDados.lojas[lj][ym] = importPayload[lj][ym];
+      });
     });
-    const pctLin = totMetaLin > 0 ? (totRealLin/totMetaLin*100) : 0;
-    const clsLin = pctLin >= 100 ? 'val-pos' : pctLin >= 80 ? '' : pctLin > 0 ? 'val-neg' : '';
-    html += '<tr>';
-    html += '<td class="L">'+_ymToLabel(ym)+'</td>';
-    html += cells;
-    html += '<td style="border-left:2px solid var(--border);font-weight:600;">'+(totMetaLin>0?fK(totMetaLin):'—')+'</td>';
-    html += '<td style="font-weight:600;">'+(totRealLin>0?fK(totRealLin):'—')+'</td>';
-    html += '<td class="'+clsLin+'" style="font-weight:600;">'+(totMetaLin>0?fP(pctLin):'—')+'</td>';
-    html += '</tr>';
-    totMetaAno += totMetaLin; totRealAno += totRealLin;
-  });
-
-  // Linha total ano
-  html += '<tr style="background:#f0f4f8;border-top:2px solid var(--border);font-weight:700;">';
-  html += '<td class="L">' + ano + '</td>';
-  filiais.forEach(f => {
-    const meta = totMetaPorFilial[f]; const real = totRealPorFilial[f];
-    const pct = meta > 0 ? (real/meta*100) : 0;
-    const cls = pct >= 100 ? 'val-pos' : pct >= 80 ? '' : pct > 0 ? 'val-neg' : '';
-    html += '<td style="border-left:2px solid var(--border);">'+(meta>0?fK(meta):'—')+'</td>';
-    html += '<td>'+(real>0?fK(real):'—')+'</td>';
-    html += '<td class="'+cls+'">'+(meta>0?fP(pct):'—')+'</td>';
-  });
-  const pctAno = totMetaAno > 0 ? (totRealAno/totMetaAno*100) : 0;
-  const clsAno = pctAno >= 100 ? 'val-pos' : pctAno >= 80 ? '' : pctAno > 0 ? 'val-neg' : '';
-  html += '<td style="border-left:2px solid var(--border);">'+(totMetaAno>0?fK(totMetaAno):'—')+'</td>';
-  html += '<td>'+(totRealAno>0?fK(totRealAno):'—')+'</td>';
-  html += '<td class="'+clsAno+'">'+(totMetaAno>0?fP(pctAno):'—')+'</td>';
-  html += '</tr>';
-  tb.innerHTML = html;
-}
-
-// Persistência de metas — Firebase quando ativo, senão localStorage
-function _loadMetas(){
-  // Tenta localStorage primeiro
-  try {
-    const raw = localStorage.getItem('_metas_gpc');
-    if(raw){
-      const m = JSON.parse(raw);
-      if(m && m.metas) return m;
+    const ok = await _metasSalvarFirestore();
+    overlay.remove();
+    if(ok){
+      _metasFirestoreCarregado = false;
+      _metasCarregarFirestore().then(_metasRenderConteudo);
     }
-  } catch(e){}
-  // Default
-  return {
-    geradoEm: new Date().toISOString().slice(0,10),
-    config: {
-      supervisor_por_filial: {atp:[1,4], cp1:null, cp3:[1], cp5:[17], cp40:[4]},
-      supervisor_nomes: {"1":"VAREJO / CESTAO 01 - IRARA", "4":"ATACADO BALCÃO / VENDA BALCAO", "17":"CESTAO 04 - INHAMBUPE"}
-    },
-    metas: {}
-  };
+  });
 }
 
-function _saveMetas(){
-  if(!window._metas) return;
-  window._metas.atualizadoEm = new Date().toISOString();
-  try {
-    localStorage.setItem('_metas_gpc', JSON.stringify(window._metas));
-  } catch(e){
-    console.error('Erro salvando metas no localStorage:', e);
-  }
-  // Sync Firebase quando ativo
-  if(AUTH_MODE === 'firebase' && window.fbDb){
-    window.fbDb.collection('config').doc('metas_gpc').set(window._metas)
-      .catch(function(e){ console.warn('[metas] sync Firebase falhou:', e.message); });
-  }
-}
-
-// Carrega metas do Firebase (se ativo) ou localStorage
-async function _loadMetasFirebase(){
-  if(AUTH_MODE !== 'firebase' || !window.fbDb) return null;
-  try {
-    const doc = await window.fbDb.collection('config').doc('metas_gpc').get();
-    if(doc.exists){
-      const data = doc.data();
-      // Salva no localStorage como cache
-      try { localStorage.setItem('_metas_gpc', JSON.stringify(data)); } catch(e){}
-      window._metas = data;
-      return data;
-    }
-  } catch(e){
-    console.warn('[metas] load Firebase falhou:', e.message);
+// Parse "Jan/24", "01/2024", "2024-01" → "YYYY-MM"
+function _metasParseMes(s){
+  if(!s) return null;
+  s = String(s).trim();
+  // YYYY-MM
+  if(/^\d{4}-\d{2}$/.test(s)) return s;
+  // MM/YYYY
+  let m = s.match(/^(\d{1,2})\/(\d{4})$/);
+  if(m) return m[2]+'-'+String(m[1]).padStart(2,'0');
+  // Mes/AA ou Mes/AAAA (em pt-BR)
+  const meses = {jan:'01',fev:'02',mar:'03',abr:'04',mai:'05',jun:'06',jul:'07',ago:'08',set:'09',out:'10',nov:'11',dez:'12'};
+  m = s.toLowerCase().match(/^(jan|fev|mar|abr|mai|jun|jul|ago|set|out|nov|dez)[a-z]*\s*[\/-]?\s*(\d{2,4})$/);
+  if(m){
+    let ano = m[2];
+    if(ano.length === 2) ano = '20'+ano;
+    return ano+'-'+meses[m[1]];
   }
   return null;
 }
 
-function _exportMetasCSV(){
-  const M = window._metas;
-  const linhas = ['filial;ym;meta_fat_liq'];
-  Object.keys(M.metas).forEach(f => {
-    Object.keys(M.metas[f]).forEach(ym => {
-      linhas.push(f+';'+ym+';'+M.metas[f][ym]);
-    });
+// Carrega lib XLSX dinamicamente (só quando precisar)
+function _carregarXLSXLib(){
+  return new Promise(function(resolve, reject){
+    if(typeof XLSX !== 'undefined') return resolve();
+    const script = document.createElement('script');
+    script.src = 'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js';
+    script.onload = resolve;
+    script.onerror = reject;
+    document.head.appendChild(script);
   });
-  const csv = linhas.join('\n');
-  const blob = new Blob([csv], {type: 'text/csv;charset=utf-8;'});
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url; a.download = 'metas_gpc_'+new Date().toISOString().slice(0,10)+'.csv';
-  a.click();
-  URL.revokeObjectURL(url);
 }
 
-function _importMetasCSV(){
-  const inp = document.createElement('input');
-  inp.type = 'file'; inp.accept = '.csv,text/csv';
-  inp.addEventListener('change', function(e){
-    const f = e.target.files[0]; if(!f) return;
-    const reader = new FileReader();
-    reader.onload = function(ev){
-      try {
-        const txt = ev.target.result;
-        const linhas = txt.split(/\r?\n/).slice(1).filter(Boolean);
-        if(!window._metas.metas) window._metas.metas = {};
-        let n = 0;
-        linhas.forEach(l => {
-          const parts = l.split(';');
-          if(parts.length < 3) return;
-          const fi = parts[0].trim();
-          const ym = parts[1].trim();
-          const v = parseFloat(parts[2].replace(',','.'));
-          if(!fi || !ym || isNaN(v)) return;
-          if(!window._metas.metas[fi]) window._metas.metas[fi] = {};
-          window._metas.metas[fi][ym] = v;
-          n++;
-        });
-        _saveMetas();
-        alert(n + ' metas importadas.');
-        // Pega ano da fonte ativa (modal se aberto, senão página)
-        const elModal = document.getElementById('editor-metas-ano');
-        const elPag = document.getElementById('metas-ano');
-        const ano = (elModal && elModal.value) || (elPag && elPag.value) || (new Date()).getFullYear().toString();
-        const M = window._metas;
-        const filiais = Object.keys(M.config.supervisor_por_filial).filter(f => Array.isArray(M.config.supervisor_por_filial[f]) && M.config.supervisor_por_filial[f].length);
-        // Re-renderiza tabela do editor (se modal estiver aberto)
-        if(document.getElementById('tb-metas-edit')){
-          _renderTabelaMetasEdit(filiais, ano);
-        }
-        // Re-renderiza Real vs Meta na página (sempre)
-        if(document.getElementById('tb-metas-rvr')){
-          _renderTabelaRealVsMeta(filiais, ano);
-        }
-      } catch(e){
-        alert('Erro lendo CSV: ' + e.message);
-      }
-    };
-    reader.readAsText(f, 'utf-8');
-  });
-  inp.click();
-}
 
 // ────────────────────────────────────────────────────────────────────
 // V CESTÃO L1 · placeholder (sub-etapa 4c.5)

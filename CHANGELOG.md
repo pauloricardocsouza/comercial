@@ -4,6 +4,116 @@ Lista das melhorias do sistema de BI da R2 Soluções para o Grupo Pinto Cerquei
 
 ---
 
+## v4.36 · 02/mai/2026
+
+**Diagnóstico de Fornecedor melhorado**
+
+Inspirado no Raio-X de Fornecedor do antigo compras.solucoesr2.com.br. Mudanças:
+
+- **8 KPIs reorganizados** seguindo a referência: Faturamento Gerado / Margem Bruta / Lucro Líquido / Compras Líquidas / % Pago / Em Aberto / Custo de Atraso / SKUs c/ Prejuízo. Substitui os 6 KPIs anteriores que tinham menor relevância gerencial.
+- **% Pago calculado** dinamicamente: pago ÷ (pago + em aberto). Mostra a parcela quitada das compras feitas pra esse fornecedor.
+- **Custo de Atraso** = juros pagos. Vermelho quando >0.
+- **Lucro Líquido** = Lucro − Custo de Atraso. Mostra o resultado real depois dos juros.
+- **SKUs c/ Prejuízo** = quantos itens do fornecedor têm lucro negativo. Cor amarela quando >0.
+
+**Novo bloco "Financeiro do fornecedor"**
+
+Substitui o card antigo "Notas pagas · resumo". Agora tem o layout da referência:
+- 3 KPIs grandes com bordas coloridas (cinza para Total Comprado, verde para Já Pago, laranja para Em Aberto)
+- Barra de progresso horizontal mostrando proporção pago vs aberto
+- Linha de detalhes com juros, descontos e número de títulos pagos
+
+**Novo gráfico "Margem bruta por mês"**
+
+Linha laranja com área preenchida mostrando a evolução da margem percentual (lucro ÷ faturamento) ao longo do tempo. Aparece só quando há pelo menos 2 meses com dados de venda no cubo OLAP carregado.
+
+**Tabela de SKUs com Cobertura**
+
+A tabela "SKUs do fornecedor" ganhou duas colunas:
+- **Lucro** em R$ (com cor vermelha quando negativo)
+- **Cobertura** em dias (estoque atual ÷ venda diária média) com tag amarela quando >90 dias e vermelha quando >180 dias
+
+A coluna "Giro (d)" foi removida — Cobertura é mais útil porque considera o ritmo real de saída do produto.
+
+**Limitações**
+
+A tabela de extrato de compras ainda mostra agregado por mês. Para fazer a versão da referência (lista detalhada de NFs com produtos, expansível com "+ N produtos"), seria preciso enriquecer o cubo OLAP pra trazer cada NF com seus itens. Essa é uma melhoria de ETL grande, fica como sugestão.
+
+---
+
+## v4.35 · 02/mai/2026
+
+**Diagnóstico de Produto melhorado**
+
+Inspirado no modelo do antigo compras.solucoesr2.com.br. Mudanças:
+
+- Os KPIs agora seguem o padrão da referência: Vendas Líquidas / Margem Bruta / Compras Líquidas / Estoque Atual / Cobertura. O KPI de Status virou apenas tag no cabeçalho (já tinha).
+- **Cobertura calculada**: estoque atual ÷ venda diária média (qt vendida ÷ meses × 30). Mostra "X dias" com cor de alerta se acima de 90 dias (amarelo) ou 180 dias (vermelho).
+- **Tag de Curva ABC** ao lado do status: A (≤80% acumulado), B (≤95%), C (resto). Calculada na hora a partir de E.produtos.
+- **Extrato do produto** abaixo do gráfico de histórico: tabela mensal com saídas (vendas em qt), entradas (compras quando o ETL informa) e saldo do mês.
+- **Gráfico de histórico ampliado**: agora tem 2 séries (saídas + entradas) em vez de só vendas.
+
+**Limitações**
+
+O ETL atual fornece compras 12m apenas como total agregado (sem detalhamento por mês). Por isso o "extrato" mostra entradas só no mês da última compra com o total acumulado. Para um extrato fiel à referência (entradas mês a mês com NF, fornecedor e valor), seria preciso enriquecer o ETL com `compras_por_mes` no produto. Isso fica como sugestão pra próxima rodada.
+
+EAN, data de cadastro original e preço de venda cadastrado também não vêm do ETL. Se quiser esses campos, precisa ajustar a extração WinThor.
+
+---
+
+## v4.34 · 02/mai/2026
+
+**Etapa 8 (parcial) · Página Metas reescrita**
+
+A página Metas foi completamente reescrita seguindo o modelo do dash.solucoesr2.com.br/gpc.html. A versão antiga era baseada em vínculo com supervisores e não tinha relação com a referência. A nova versão é uma análise direta de meta vs realizado por loja.
+
+**Como funciona**
+
+Cadastre as metas mensais de cada loja (4 lojas: ATP-V, ATP-A, Cestão L1, Inhambupe). O realizado vem automaticamente do faturamento líquido em V.mensal. O sistema calcula:
+
+- Atingimento (real ÷ meta)
+- Desvio (real - meta)
+- Status visual: ✓ Atingido (≥100%) · ~ Próximo (≥95%) · ✗ Abaixo (<95%)
+
+**Painéis e gráficos**
+
+- 4 KPIs: Meta total acumulada, Realizado total (com desvio), Atingimento médio, Meses ≥100%
+- Gráfico Meta vs Realizado mensal (barras + linha + atingimento %)
+- Gráfico de desvio mensal (verde/vermelho)
+- Box de insight: piora/melhora ano a ano + identificação do pior mês
+- Gráfico de comparativo de atingimento entre as 4 lojas
+- Tabela comparativa todas as lojas por mês (com símbolos)
+- Histórico detalhado por loja com totais
+
+**Cadastro de metas**
+
+Botão "📝 Cadastrar metas" abre um modal estilo planilha (loja × mês). Insira o valor em R$ de cada meta. Salva no Firestore (collection `config`, doc `metas_gpc_v2`).
+
+**Importação de Excel**
+
+Botão "📥 Excel" permite importar de uma planilha .xlsx no formato da referência (aba "Resumo GPC" com colunas Meta/Realizado/Ating. para cada loja). O sistema lê apenas as metas e ignora o realizado (que vem dos JSONs). A biblioteca XLSX é carregada sob demanda do CDN.
+
+**Mapeamento de loja**
+
+- ATP-V → ATP - Varejo
+- ATP-A → ATP - Atacado
+- CP3 → Cestão Loja 1
+- CP5 → Inhambupe
+
+CP1 (Comercial Pinto) e CP40 (Barros 40) não são considerados nas metas, conforme a referência.
+
+**Limitações conhecidas**
+
+- O realizado pode divergir ligeiramente do Excel histórico se o ETL trata fat_liq de forma diferente. Os números do JSON são autoritativos.
+- O Firestore só permite escrita por admin (regra existente). Outros usuários veem mas não editam.
+- O Excel sample tinha 27 meses (Jan/24 a Mar/26). Os JSONs atuais cobrem só Jan/25 a Abr/26 — meses anteriores aparecerão sem realizado.
+
+**O que falta na etapa 8**
+
+- **Processamento** ainda aguarda explicação das novas rotinas que substituíram as antigas.
+
+---
+
 ## v4.33 · 02/mai/2026
 
 **Cinco correções pedidas**

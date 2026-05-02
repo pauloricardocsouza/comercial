@@ -1165,6 +1165,44 @@ window._openProdNovo = function(cod){
   const giroTxt = giroD!=null ? giroD.toFixed(0)+' dias' : 'sem dados';
   const giroCls = giroD==null?'':giroD>180?'dn':giroD>90?'wn':'ok';
 
+  // Calcula curva ABC (baseado em vendas valor)
+  const vendasVal = vds.valor || 0;
+  let curvaABC = '';
+  if(vendasVal > 0 && _diagListaOrd && _diagListaOrd.length){
+    const totalGrupo = _diagListaOrd.reduce(function(s,x){return s + ((x.vendas&&x.vendas.valor)||0);}, 0);
+    if(totalGrupo > 0){
+      // Ordena (já está ordenada por valor desc) e acha posição cumulativa
+      let acum = 0;
+      for(let i=0; i<_diagListaOrd.length; i++){
+        acum += (_diagListaOrd[i].vendas&&_diagListaOrd[i].vendas.valor)||0;
+        if(_diagListaOrd[i].cod === p.cod){
+          const pct = acum / totalGrupo;
+          curvaABC = pct <= 0.80 ? 'A' : pct <= 0.95 ? 'B' : 'C';
+          break;
+        }
+      }
+    }
+  }
+
+  // Calcula cobertura (em dias) baseada em qt em estoque ÷ vendas/dia
+  // Vendas/dia = qt total ÷ (meses com venda × 30)
+  let coberturaTxt = 'sem dados';
+  let coberturaCls = '';
+  let coberturaDias = null;
+  const mesesVend = vds.meses || 0;
+  const qtVend = vds.qt || 0;
+  if(e.qt > 0 && qtVend > 0 && mesesVend > 0){
+    const vendaDia = qtVend / (mesesVend * 30);
+    if(vendaDia > 0){
+      coberturaDias = e.qt / vendaDia;
+      coberturaTxt = coberturaDias.toFixed(0)+' dias';
+      coberturaCls = coberturaDias > 180 ? 'dn' : coberturaDias > 90 ? 'wn' : coberturaDias < 7 ? 'wn' : 'ok';
+    }
+  } else if(e.qt > 0 && qtVend === 0){
+    coberturaTxt = 'sem venda';
+    coberturaCls = 'dn';
+  }
+
   let html = '';
 
   // Hero
@@ -1178,21 +1216,30 @@ window._openProdNovo = function(cod){
        +      '<div class="ph-mi"><div class="pml">Custo atual</div><div class="pmv">'+(e.custo>0?fB(e.custo):'—')+'</div></div>'
        +      '<div class="ph-mi"><div class="pml">P. venda atual</div><div class="pmv">'+(e.preco>0?fB(e.preco):'—')+'</div></div>'
        +    '</div>'
-       +    '<div class="ph-tags"><span class="kg-tag '+stCls+'" style="font-size:11px;">'+esc(stTxt)+'</span></div>'
+       +    '<div class="ph-tags">'
+       +      '<span class="kg-tag '+stCls+'" style="font-size:11px;">'+esc(stTxt)+'</span>'
+       +      (curvaABC ? ' <span class="kg-tag '+(curvaABC==='A'?'ok':curvaABC==='B'?'hl':'')+'" style="font-size:11px;">Curva '+curvaABC+'</span>' : '')
+       +    '</div>'
        + '</div>';
 
-  // KPIs principais
+  // KPIs principais (5) — alinhado com a referência: Vendas Líq · Margem · Compras Líq · Estoque · Cobertura
   html += '<div class="kg c5" id="kp-diag-novo"></div>';
 
-  // Histórico de vendas mensais
+  // Extrato resumido por mês (vendas qt + entradas) — versão visual aprimorada
   html += '<div class="ds">'
        +    '<div class="ds-hdr">'
        +      '<div class="ds-ico" style="background:var(--accent-bg);color:var(--accent-text);">'
-       +        '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 17 9 11 13 15 21 7"/><polyline points="14 7 21 7 21 14"/></svg>'
+       +        '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="20" x2="12" y2="10"/><line x1="18" y1="20" x2="18" y2="4"/><line x1="6" y1="20" x2="6" y2="16"/></svg>'
        +      '</div>'
-       +      '<div><div class="ds-title">Histórico de vendas</div><div class="ds-sub">Quantidade vendida por mês · '+(vds.meses||0)+' meses com venda</div></div>'
+       +      '<div><div class="ds-title">Extrato do produto</div><div class="ds-sub">Saídas mensais e entradas (compras + devoluções)</div></div>'
        +    '</div>'
-       +    '<div class="ds-body" style="padding:14px;"><div style="height:220px;"><canvas id="c-diag-hist"></canvas></div></div>'
+       +    '<div class="ds-body" style="padding:14px;"><div style="height:240px;"><canvas id="c-diag-hist"></canvas></div></div>'
+       +    '<div class="tscroll" style="border-top:1px solid var(--border);">'
+       +      '<table class="t" style="margin:0;">'
+       +        '<thead><tr><th class="L">Mês</th><th>Saídas (un)</th><th>Entradas (un)</th><th>Saldo</th></tr></thead>'
+       +        '<tbody id="diag-extrato-tbody"></tbody>'
+       +      '</table>'
+       +    '</div>'
        + '</div>';
 
   // Estoque + Compras lado a lado
@@ -1243,29 +1290,63 @@ window._openProdNovo = function(cod){
 
   cont.innerHTML = html;
 
-  // KPIs
+  // KPIs (5) — Vendas Líq · Margem · Compras Líq · Estoque · Cobertura
   const totVendas = vds.valor || 0;
   const lucro = vds.lucro || 0;
   document.getElementById('kp-diag-novo').innerHTML = kgHtml([
-    {l:'Faturamento', v:fK(totVendas), s:(vds.meses||0)+' meses · '+fI(vds.qt||0)+' un vendidas'},
-    {l:'Lucro', v:fK(lucro), s:'Margem real '+fP(margReal),cls:margReal>10?'ok':margReal<5?'wn':''},
-    {l:'Estoque a custo', v:fK(e.vl_custo||0), s:fI(e.qt||0)+' un disponíveis'},
-    {l:'Compras 12m', v:fK(c12.valor||0), s:fI(c12.nfs||0)+' NFs · ult '+esc(c12.ult_data||'—')},
-    {l:'Status', v:stTxt, s:'Giro: '+giroTxt,cls:stCls},
+    {l:'Vendas líquidas', v:fK(totVendas), s:fI(vds.qt||0)+' '+esc(p.unidade||'un')+' · '+(vds.meses||0)+' meses'},
+    {l:'Margem bruta', v:fP(margReal), s:'Lucro '+fK(lucro), cls:margReal>10?'ok':margReal<5?'wn':''},
+    {l:'Compras líquidas', v:fK(c12.valor||0), s:fI(c12.qt||0)+' '+esc(p.unidade||'un')+' · '+fI(c12.nfs||0)+' NFs'},
+    {l:'Estoque atual', v:fI(e.qt||0)+' '+esc(p.unidade||''), s:'R$ '+fK(e.vl_preco||0)+' p/ venda'},
+    {l:'Cobertura', v:coberturaTxt, s:coberturaDias!=null?'base: '+(mesesVend)+' meses de venda':'sem cálculo possível', cls:coberturaCls},
   ]);
 
-  // Chart histórico mensal
+  // Chart histórico mensal — saídas (vendas) + entradas (compras se tem ult_data)
+  // Como compras_12m é só agregado, distribui no mês da última compra (ou mostra total)
   const meses = (p.vendas_por_mes||[]).slice();
   if(meses.length){
+    // Cria mapa de entradas por mês (estimativa: só o mês da última compra, mostrando o total)
+    // Nota: dados mais precisos exigiriam ETL com compras detalhadas por mês — futuro
+    const entradasPorMes = {};
+    if(c12.ult_data && c12.qt > 0){
+      const ymUlt = c12.ult_data.substring(0,7);
+      entradasPorMes[ymUlt] = c12.qt;
+    }
+    const labels = meses.map(function(m){return _ymToLabel(m.ym);});
+    const dadosSaidas = meses.map(function(m){return m.qt||0;});
+    const dadosEntradas = meses.map(function(m){return entradasPorMes[m.ym] || 0;});
+
     mkC('c-diag-hist', {type:'bar',
-      data:{labels:meses.map(function(m){return _ymToLabel(m.ym);}),
-            datasets:[{label:'Qtde vendida', data:meses.map(function(m){return m.qt||0;}),
-                       backgroundColor:_PAL.ac+'CC', borderRadius:4}]},
+      data:{labels:labels,
+            datasets:[
+              {label:'Saídas (un)', data:dadosSaidas, backgroundColor:_PAL.ac+'CC', borderRadius:4},
+              {label:'Entradas (un)', data:dadosEntradas, backgroundColor:_PAL.ok+'B0', borderRadius:4}
+            ]},
       options:{responsive:true,maintainAspectRatio:false,
-        plugins:{legend:{display:false},
-                 tooltip:{callbacks:{label:function(ctx){return fI(ctx.raw)+' '+(p.unidade||'un');}}}},
+        plugins:{legend:{position:'bottom', labels:{padding:8, usePointStyle:true, boxWidth:8, font:{size:10}}},
+                 tooltip:{callbacks:{label:function(ctx){return ctx.dataset.label+': '+fI(ctx.raw)+' '+(p.unidade||'un');}}}},
         scales:{x:{grid:{display:false},ticks:{font:{size:10}}},
                 y:{ticks:{callback:function(v){return fI(v);}}}}}});
+
+    // Popula tabela de extrato
+    const tbody = document.getElementById('diag-extrato-tbody');
+    if(tbody){
+      let saldo = 0;
+      let trs = '';
+      meses.forEach(function(m){
+        const sai = m.qt || 0;
+        const ent = entradasPorMes[m.ym] || 0;
+        const mov = ent - sai;
+        saldo += mov;
+        trs += '<tr>'
+          + '<td class="L"><strong>'+_ymToLabel(m.ym)+'</strong></td>'
+          + '<td style="color:#dc2626;">'+(sai>0?'-'+fI(sai):'—')+'</td>'
+          + '<td style="color:#15803d;">'+(ent>0?'+'+fI(ent):'—')+'</td>'
+          + '<td class="val-strong" style="color:'+(mov>=0?'#15803d':'#dc2626')+';">'+(mov>=0?'+':'')+fI(mov)+'</td>'
+          + '</tr>';
+      });
+      tbody.innerHTML = trs;
+    }
   }
 
   // Scroll pro topo da página
@@ -2378,8 +2459,8 @@ window._openFornNovo = function(cod){
        +    '</div>'
        + '</div>';
 
-  // KPIs
-  html += '<div class="kg" style="grid-template-columns:repeat(6,1fr);" id="kp-diag-forn-novo"></div>';
+  // KPIs (8) — em duas linhas de 4
+  html += '<div class="kg" style="grid-template-columns:repeat(4,1fr);" id="kp-diag-forn-novo"></div>';
 
   // Histórico mensal: vendas (R$) vs compras (R$) — usa cubo OLAP
   const histVend = _diagFornVendasPorMes(cod);
@@ -2416,6 +2497,23 @@ window._openFornNovo = function(cod){
 
   // Top 12 SKUs em chart
   const top12 = skus.filter(function(p){return p.vendas && p.vendas.valor>0;}).slice(0, 12);
+
+  // Gráfico de margem mensal (linha laranja, % sobre vendas) — só se cubo OLAP traz lucro mensal
+  const margMensal = histVend.linhas.filter(function(l){return l.valor > 0;});
+  if(margMensal.length >= 2){
+    html += '<div class="ds">'
+         +    '<div class="ds-hdr">'
+         +      '<div class="ds-ico" style="background:var(--highlight-bg);color:var(--highlight-text);">'
+         +        '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>'
+         +      '</div>'
+         +      '<div><div class="ds-title">Margem bruta por mês</div>'
+         +        '<div class="ds-sub">% sobre o faturamento gerado pelos produtos do fornecedor</div>'
+         +      '</div>'
+         +    '</div>'
+         +    '<div class="ds-body" style="padding:14px;"><div style="height:220px;"><canvas id="c-df-marg"></canvas></div></div>'
+         + '</div>';
+  }
+
   if(top12.length > 0){
     html += '<div class="cc"><div class="cct">Top 12 SKUs por faturamento</div>'
          +    '<div class="ccs">Concentração nos top 3 SKUs: <strong>'+fP(concPct)+'</strong> do faturamento</div>'
@@ -2436,8 +2534,9 @@ window._openFornNovo = function(cod){
        +        '<th class="L">Depto</th>'
        +        '<th>Faturamento</th>'
        +        '<th>Margem</th>'
+       +        '<th>Lucro</th>'
        +        '<th>Estoque (custo)</th>'
-       +        '<th>Giro (d)</th>'
+       +        '<th>Cobertura</th>'
        +        '<th>Status</th>'
        +      '</tr></thead><tbody>';
   skus.forEach(function(p, i){
@@ -2445,15 +2544,29 @@ window._openFornNovo = function(cod){
     const e = p.estoque || {};
     const margCls = (vds.marg||0)<0?'dn':(vds.marg||0)<5?'wn':(vds.marg||0)<10?'':'ok';
     const stCls = p.status==='ATIVO'?'ok':p.status==='CRITICO'?'wn':p.status==='PARADO'?'wn':p.status==='MORTO'?'dn':'';
-    const giro = p.giro_dias!=null ? p.giro_dias.toFixed(0) : '-';
+    // Cobertura: estoque atual ÷ venda diária média
+    let cobTxt = '—', cobCls = '';
+    if(e.qt > 0 && vds.qt > 0 && vds.meses > 0){
+      const vDia = vds.qt / (vds.meses * 30);
+      if(vDia > 0){
+        const dias = e.qt / vDia;
+        cobTxt = dias.toFixed(0)+' dias';
+        cobCls = dias > 180 ? 'dn' : dias > 90 ? 'wn' : '';
+      }
+    } else if(e.qt > 0 && (!vds.qt || vds.qt === 0)){
+      cobTxt = 'sem venda'; cobCls = 'dn';
+    }
+    const lucroVal = vds.lucro || 0;
+    const lucroCls = lucroVal < 0 ? 'dn' : '';
     html += '<tr>'
          +    '<td class="L" style="color:var(--text-muted);font-weight:700;">'+(i+1)+'</td>'
          +    '<td class="L" data-prod-cod="'+esc(p.cod)+'" title="Clique para ver diagnóstico do produto"><strong>'+esc((p.desc||'').substring(0,40))+'</strong></td>'
          +    '<td>'+esc((p.depto&&p.depto.nome)||'-')+'</td>'
          +    '<td class="val-strong">'+fK(vds.valor||0)+'</td>'
          +    '<td><span class="kg-tag '+margCls+'">'+fP(vds.marg||0)+'</span></td>'
+         +    '<td><span class="'+lucroCls+'" style="font-weight:600;">'+fK(lucroVal)+'</span></td>'
          +    '<td>'+fK(e.vl_custo||0)+'</td>'
-         +    '<td>'+giro+'</td>'
+         +    '<td>'+(cobCls?'<span class="kg-tag '+cobCls+'">'+esc(cobTxt)+'</span>':esc(cobTxt))+'</td>'
          +    '<td><span class="kg-tag '+stCls+'">'+esc(p.status||'-')+'</span></td>'
          +  '</tr>';
   });
@@ -2602,31 +2715,62 @@ window._openFornNovo = function(cod){
     html += '</div>';
   }
 
-  // ─── SEÇÃO: Notas pagas (resumo do que foi pago) ───
+  // ─── SEÇÃO: Financeiro do fornecedor (KPIs grandes + barra de progresso pago/aberto) ───
   const finPagas = _diagFornFinanceiroPagas(cod);
-  if(finPagas){
-    html += '<div class="cc" style="margin-top:14px;">'
-         +    '<div class="cct">Notas pagas · resumo</div>'
-         +    '<div class="ccs">Total já pago para este fornecedor no período coberto pelo extrato financeiro</div>'
-         +    '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:10px;">'
-         +      '<div style="background:var(--surface-2);border:1px solid var(--border);border-radius:5px;padding:10px;">'
-         +        '<div style="color:var(--text-muted);font-size:10px;text-transform:uppercase;letter-spacing:.05em;">Total pago</div>'
-         +        '<div style="font-size:18px;font-weight:700;color:var(--text);margin-top:4px;">'+fK(finPagas.pago||0)+'</div>'
+  const finPosForBar = _diagFornFinanceiroPosicao(cod);
+  const fTotPago = (finPagas && finPagas.pago) || 0;
+  const fTotAberto = (finPosForBar && finPosForBar.total) || 0;
+  const fTotComprado = fTotPago + fTotAberto;
+  const fPctPago = fTotComprado > 0 ? (fTotPago / fTotComprado * 100) : 0;
+  const fPctAberto = 100 - fPctPago;
+
+  if(fTotComprado > 0){
+    html += '<div class="ds" style="margin-top:14px;">'
+         +    '<div class="ds-hdr">'
+         +      '<div class="ds-ico" style="background:var(--accent-bg);color:var(--accent-text);">'
+         +        '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg>'
          +      '</div>'
-         +      '<div style="background:var(--surface-2);border:1px solid var(--border);border-radius:5px;padding:10px;">'
-         +        '<div style="color:var(--text-muted);font-size:10px;text-transform:uppercase;letter-spacing:.05em;">Títulos pagos</div>'
-         +        '<div style="font-size:18px;font-weight:700;color:var(--text);margin-top:4px;">'+fI(finPagas.titulos||0)+'</div>'
-         +      '</div>'
-         +      '<div style="background:var(--surface-2);border:1px solid var(--border);border-radius:5px;padding:10px;">'
-         +        '<div style="color:var(--text-muted);font-size:10px;text-transform:uppercase;letter-spacing:.05em;">Juros pagos</div>'
-         +        '<div style="font-size:18px;font-weight:700;color:'+(finPagas.juros>0?'#dc2626':'var(--text)')+';margin-top:4px;">'+fK(finPagas.juros||0)+'</div>'
-         +      '</div>'
-         +      '<div style="background:var(--surface-2);border:1px solid var(--border);border-radius:5px;padding:10px;">'
-         +        '<div style="color:var(--text-muted);font-size:10px;text-transform:uppercase;letter-spacing:.05em;">Descontos obtidos</div>'
-         +        '<div style="font-size:18px;font-weight:700;color:'+(finPagas.desc>0?'#15803d':'var(--text)')+';margin-top:4px;">'+fK(finPagas.desc||0)+'</div>'
-         +      '</div>'
+         +      '<div><div class="ds-title">Financeiro do fornecedor</div><div class="ds-sub">Status das duplicatas de todas as NFs</div></div>'
          +    '</div>'
-         + '</div>';
+         +    '<div class="ds-body" style="padding:14px;">'
+         +      '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:14px;">'
+         +        '<div style="background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:14px;border-top:3px solid #94a3b8;">'
+         +          '<div style="color:var(--text-muted);font-size:10px;text-transform:uppercase;letter-spacing:.05em;font-weight:700;">Total Comprado (líq.)</div>'
+         +          '<div style="font-size:24px;font-weight:800;color:var(--text);margin-top:6px;">'+fK(fTotComprado)+'</div>'
+         +        '</div>'
+         +        '<div style="background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:14px;border-top:3px solid #15803d;">'
+         +          '<div style="color:var(--text-muted);font-size:10px;text-transform:uppercase;letter-spacing:.05em;font-weight:700;">Já Pago</div>'
+         +          '<div style="font-size:24px;font-weight:800;color:#15803d;margin-top:6px;">'+fK(fTotPago)+'</div>'
+         +          '<div style="font-size:11px;color:var(--text-muted);margin-top:4px;">'+fP(fPctPago,1)+'</div>'
+         +        '</div>'
+         +        '<div style="background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:14px;border-top:3px solid #f58634;">'
+         +          '<div style="color:var(--text-muted);font-size:10px;text-transform:uppercase;letter-spacing:.05em;font-weight:700;">Em Aberto</div>'
+         +          '<div style="font-size:24px;font-weight:800;color:#f58634;margin-top:6px;">'+fK(fTotAberto)+'</div>'
+         +          '<div style="font-size:11px;color:var(--text-muted);margin-top:4px;">'+fP(fPctAberto,1)+'</div>'
+         +        '</div>'
+         +      '</div>'
+         +      '<div style="height:8px;background:var(--surface-2);border-radius:4px;overflow:hidden;display:flex;">'
+         +        '<div style="width:'+fPctPago.toFixed(1)+'%;background:#15803d;"></div>'
+         +        '<div style="width:'+fPctAberto.toFixed(1)+'%;background:#f58634;"></div>'
+         +      '</div>'
+         +      '<div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text-dim);margin-top:6px;">'
+         +        '<span><span style="color:#15803d;">●</span> Pago: '+fP(fPctPago,1)+' ('+fK(fTotPago)+')</span>'
+         +        '<span><span style="color:#f58634;">●</span> Em aberto: '+fP(fPctAberto,1)+' ('+fK(fTotAberto)+')</span>'
+         +      '</div>';
+    if(finPagas && (finPagas.juros > 0 || finPagas.desc > 0)){
+      html += '<div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border);display:flex;gap:14px;font-size:11.5px;">';
+      if(finPagas.juros > 0){
+        html += '<div><span style="color:var(--text-muted);">Juros pagos:</span> <strong style="color:#dc2626;">'+fK(finPagas.juros)+'</strong></div>';
+      }
+      if(finPagas.desc > 0){
+        html += '<div><span style="color:var(--text-muted);">Descontos:</span> <strong style="color:#15803d;">'+fK(finPagas.desc)+'</strong></div>';
+      }
+      if(finPagas.titulos){
+        html += '<div><span style="color:var(--text-muted);">Títulos pagos:</span> <strong>'+fI(finPagas.titulos)+'</strong></div>';
+      }
+      html += '</div>';
+    }
+    html += '</div></div>';
   }
 
   // Observações automáticas
@@ -2649,15 +2793,26 @@ window._openFornNovo = function(cod){
 
   cont.innerHTML = html;
 
-  // KPIs
-  const prazoMedioCompras = extratoComp.prazoMedio || 0;
+  // KPIs (8) — alinhados com a referência: Faturamento · Margem · Lucro · Compras · % Pago · Em Aberto · Custo Atraso · SKUs c/ Prejuízo
+  const finPagasPreview = _diagFornFinanceiroPagas(cod);
+  const finPosPreview   = _diagFornFinanceiroPosicao(cod);
+  const totalPago = (finPagasPreview && finPagasPreview.pago) || 0;
+  const totalAberto = (finPosPreview && finPosPreview.total) || 0;
+  const totalComprado = totalPago + totalAberto;
+  const pctPago = totalComprado > 0 ? (totalPago / totalComprado * 100) : 0;
+  const custoAtraso = (finPagasPreview && finPagasPreview.juros) || 0;
+  const skusComPrejuizo = skus.filter(function(p){return (p.vendas && p.vendas.lucro && p.vendas.lucro < 0);}).length;
+  const pctCobertura = (f.v_compra > 0 && f.v_venda > 0) ? (f.v_compra / f.v_venda * 100) : 0;
+
   document.getElementById('kp-diag-forn-novo').innerHTML = kgHtml([
-    {l:'SKUs cadastrados', v:fI(f.skus||0), s:fI(skus.filter(function(p){return p.status==='ATIVO';}).length)+' ativos'},
-    {l:'Compras 12m', v:fK(f.v_compra||0), s:fI(f.nfs_compra||0)+' NFs'},
-    {l:'Vendas', v:fK(f.v_venda||0), s:'No período coberto pelo cubo'},
-    {l:'Lucro', v:fK(f.lucro||0), s:'Margem '+fP(f.marg||0), cls:f.marg>10?'ok':f.marg<5?'wn':''},
-    {l:'Devoluções', v:fK(f.dev_valor||0), s:f.dev_valor>0?fP(f.pct_devol||0)+' das compras':'Nenhuma 2026', cls:f.dev_valor>5000?'dn':''},
-    {l:'Prazo médio compra', v:prazoMedioCompras>0?fI(prazoMedioCompras)+'d':'—', s:prazoMedioCompras>0?'média ponderada por NF':'sem dado de prazo no cubo'}
+    {l:'Faturamento gerado', v:fK(f.v_venda||0), s:'Vendas dos SKUs cadastrados'},
+    {l:'Margem bruta', v:fP(f.marg||0), s:'Lucro '+fK(f.lucro||0), cls:f.marg>10?'ok':f.marg<5?'wn':''},
+    {l:'Lucro líquido', v:fK((f.lucro||0) - custoAtraso), s:custoAtraso>0?'Lucro − custo de atraso':'Sem juros pagos'},
+    {l:'Compras líquidas', v:fK(f.v_compra||0), s:f.v_venda>0?fP(pctCobertura)+' do fat.':fI(f.nfs_compra||0)+' NFs'},
+    {l:'% Pago', v:totalComprado>0?fP(pctPago):'—', s:totalPago>0?fK(totalPago)+' quitado':'sem pagamentos no período'},
+    {l:'Em aberto', v:fK(totalAberto), s:totalComprado>0?fP(100-pctPago)+' das compras':'sem títulos'},
+    {l:'Custo de atraso', v:fK(custoAtraso), s:'Juros pagos', cls:custoAtraso>0?'dn':''},
+    {l:'SKUs c/ prejuízo', v:fI(skusComPrejuizo), s:f.skus>0?'De '+fI(f.skus)+' SKUs ativos':'sem SKUs', cls:skusComPrejuizo>0?'wn':''}
   ]);
 
   // Chart histórico mensal: vendas R$ vs compras R$ (ou qt como fallback)
@@ -2701,6 +2856,24 @@ window._openFornNovo = function(cod){
                  tooltip:{callbacks:{label:function(ctx){return fI(ctx.raw)+' un';}}}},
         scales:{x:{grid:{display:false},ticks:{font:{size:10}}},
                 y:{ticks:{callback:function(v){return fI(v);}}}}}});
+  }
+
+  // Chart de margem mensal (% sobre vendas)
+  if(margMensal.length >= 2){
+    const margValores = margMensal.map(function(l){
+      return l.valor > 0 ? (l.lucro / l.valor * 100) : 0;
+    });
+    mkC('c-df-marg', {type:'line',
+      data:{labels:margMensal.map(function(l){return _ymToLabel(l.ym);}),
+            datasets:[{label:'Margem (%)', data:margValores,
+                       borderColor:'#f58634', backgroundColor:'rgba(245,134,52,0.12)',
+                       borderWidth:2.5, tension:0.35, fill:true,
+                       pointRadius:4, pointBackgroundColor:'#f58634'}]},
+      options:{responsive:true, maintainAspectRatio:false,
+        plugins:{legend:{display:false},
+                 tooltip:{callbacks:{label:function(ctx){return fP(ctx.raw,1);}}}},
+        scales:{x:{grid:{display:false}, ticks:{font:{size:10}}},
+                y:{ticks:{callback:function(v){return fP(v,0);}, font:{size:10}}}}}});
   }
 
   // Chart top 12 SKUs
