@@ -4,6 +4,42 @@ Lista das melhorias do sistema de BI da R2 Soluções para o Grupo Pinto Cerquei
 
 ---
 
+## v4.23 · 02/mai/2026
+
+**Análise Dinâmica · revisão estática profunda**
+
+Continuei a revisão crítica do código e encontrei mais bugs detectáveis sem teste:
+
+**Métrica nova: Descontos obtidos**
+
+O fato financeiro do cubo tem um campo `f_desc` (descontos) que eu não havia mapeado. Adicionado como métrica "Descontos obtidos" na seção Financeiro.
+
+**Cache de cálculo: gráficos e exports não recalculam mais**
+
+Quando você abria o gráfico ou exportava XLSX, a pivot era recalculada do zero. Em pivots grandes isso podia congelar a tela por segundos. Agora o resultado é cacheado em `_pvUltimoResultado` e reutilizado.
+
+**Cache de labels de dimensões**
+
+O lookup de "qual é o nome do depto código 3?" era feito por busca linear na lista. Pra pivots com muitas linhas e dimensões grandes (ex: 1500 SKUs), isso podia chegar a milhões de comparações por render. Agora é Map com lookup O(1).
+
+**Pizza com valores negativos: agora mostra mensagem em vez de gráfico esquisito**
+
+Métricas como Lucro podem ter valores negativos (prejuízo). Pizza não consegue representar fatias negativas. Agora valores não-positivos são filtrados, e se não sobra nenhum positivo, aparece "Sem valores positivos para plotar em pizza".
+
+**Pizza com métricas calculadas (Margem%, Ticket médio)**
+
+Antes a pizza somava o valor entre todas as colunas. Pra métricas aditivas (faturamento, lucro) isso é correto. Pra métricas calculadas como margem% ou ticket médio, somar entre colunas distorce o resultado. Agora a pizza usa só a primeira coluna nesses casos.
+
+**Ordenação natural de chaves**
+
+A ordenação default das linhas e colunas usava lex (string). Isso fazia depto 1, 10, 2, 20, 3 aparecer fora de ordem. Agora a ordenação tenta numérico primeiro, depois lex. Datas no formato `2026-04` continuam ordenando corretamente como string.
+
+**Mensagem de erro mais clara quando análise salva está obsoleta**
+
+Se você carregar uma análise salva com métricas que não existem mais nessa versão do sistema, agora aparece "As métricas dessa análise não existem nesta versão do sistema" em vez de uma mensagem confusa com lista vazia.
+
+---
+
 ## v4.22 · 02/mai/2026
 
 **Bug fixes críticos descobertos em verificação sistemática**

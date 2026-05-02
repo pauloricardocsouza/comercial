@@ -966,7 +966,8 @@ const _CUBO_METRICAS = {
   // FINANCEIRO
   f_pago:   {label:'Pago',                 fato:'financeiro', campo:'f_pago',    agg:'sum', fmt:'k'},
   f_titulos:{label:'Títulos pagos',        fato:'financeiro', campo:'f_titulos', agg:'sum', fmt:'i'},
-  f_juros:  {label:'Juros pagos',          fato:'financeiro', campo:'f_juros',   agg:'sum', fmt:'k'}
+  f_juros:  {label:'Juros pagos',          fato:'financeiro', campo:'f_juros',   agg:'sum', fmt:'k'},
+  f_desc:   {label:'Descontos obtidos',    fato:'financeiro', campo:'f_desc',    agg:'sum', fmt:'k'}
 };
 
 // Mapa de dimensões disponíveis com seu label e qual campo do fato indexa
@@ -992,6 +993,8 @@ function _renderCuboUI(c){
   const dims = c.dimensoes || {};
   const fatos = c.fatos || {};
   const idx = _buildCuboIdx(c);
+  // Invalida cache de labels de dimensão (cubo pode ter mudado)
+  _pvDimCache = {};
 
   // Inicializa estado (ou recupera do localStorage)
   let saved = null;
@@ -1593,7 +1596,12 @@ function _pvCalcular(){
       });
       return {metrica: meta.label, fato: meta.fato, dimsIncompat: incompat};
     }).filter(Boolean);
-    // Pega as dims que aparecem em todos os conflitos
+    // Caso 1: todas as métricas são desconhecidas (nenhuma em _CUBO_METRICAS)
+    // Acontece quando o usuário carrega análise salva com schema antigo
+    if(!incompatPorMetrica.length){
+      return {erro: 'As métricas dessa análise não existem nesta versão do sistema. Remova-as e adicione novas métricas válidas.'};
+    }
+    // Caso 2: métricas existem mas são incompatíveis com as dimensões
     const todasDimsRuins = new Set();
     incompatPorMetrica.forEach(function(x){
       x.dimsIncompat.forEach(function(d){ todasDimsRuins.add(d); });
@@ -1601,6 +1609,9 @@ function _pvCalcular(){
     const labels = Array.from(todasDimsRuins).map(function(d){
       return (_CUBO_DIMS_INFO[d] && _CUBO_DIMS_INFO[d].label) || d;
     });
+    if(!labels.length){
+      return {erro: 'As métricas selecionadas não puderam ser calculadas. Tente outra combinação.'};
+    }
     return {erro: 'Nenhuma métrica é compatível com as dimensões selecionadas. Remova ' + labels.join(' ou ') + ' das linhas/colunas, ou troque por outra métrica.'};
   }
 
@@ -1682,12 +1693,31 @@ function _pvCalcular(){
   });
 
   // Coleta rowKeys e colKeys distintos
-  const rowKeys = Object.keys(matriz).sort();
+  // Sort natural: tenta numérico primeiro, depois lexicográfico
+  function _sortChaves(arr){
+    return arr.slice().sort(function(a, b){
+      const partsA = a.split('|||');
+      const partsB = b.split('|||');
+      for(let i = 0; i < partsA.length; i++){
+        const va = partsA[i], vb = partsB[i];
+        // Tenta numérico
+        const na = Number(va), nb = Number(vb);
+        if(!isNaN(na) && !isNaN(nb) && va !== '' && vb !== ''){
+          if(na !== nb) return na - nb;
+        } else {
+          const cmp = String(va).localeCompare(String(vb), 'pt-BR');
+          if(cmp !== 0) return cmp;
+        }
+      }
+      return 0;
+    });
+  }
+  const rowKeys = _sortChaves(Object.keys(matriz));
   const colKeysSet = new Set();
   rowKeys.forEach(function(rk){
     Object.keys(matriz[rk]).forEach(function(ck){ colKeysSet.add(ck); });
   });
-  const colKeys = Array.from(colKeysSet).sort();
+  const colKeys = _sortChaves(Array.from(colKeysSet));
 
   return {
     matriz: matriz,
@@ -1703,6 +1733,7 @@ function _pvCalcular(){
 // ── Renderiza a tabela ──
 // Wrapper público: debounced + indicador "calculando"
 let _pvDebounceTimer = null;
+let _pvUltimoResultado = null; // cache do último _pvCalcular() pra evitar recalculo em export/gráfico
 function _pvAtualizar(){
   if(_pvDebounceTimer) clearTimeout(_pvDebounceTimer);
   // Mostra indicador imediatamente se cálculo for demorar
@@ -1718,6 +1749,9 @@ function _pvAtualizar(){
 
 function _pvAtualizarReal(){
   const result = _pvCalcular();
+  // Cacheia só resultado válido (sem erro) pra uso em export/gráfico
+  if(result && !result.erro) _pvUltimoResultado = result;
+  else _pvUltimoResultado = null;
   const cont = document.getElementById('pv-result');
   const status = document.getElementById('pv-status');
   if(!cont) return;
@@ -1793,19 +1827,27 @@ function _pvAtualizarDisponibilidade(){
 }
 
 // ── Helpers de label ──
+// Cache: dCod → Map(cod → nome). Construído sob demanda no primeiro lookup
+// e invalidado quando o cubo muda (em _renderCuboUI).
+let _pvDimCache = {};
+
 function _pvLabelDim(dCod, valor){
   if(valor === '__na__' || valor == null || valor === '') return '—';
   const info = _CUBO_DIMS_INFO[dCod];
   if(!info) return String(valor);
   if(dCod === 'ym'){ return _ymToLabel(String(valor)); }
-  // Lookup na dimensão
-  const dim = ((_pivotState.cubo.dimensoes||{})[info.dimKey]||{}).items || [];
-  for(let i = 0; i < dim.length; i++){
-    if(String(dim[i].cod) === String(valor)){
-      return dim[i].nome || dim[i].desc || String(valor);
-    }
+  // Cache por dimensão
+  let cache = _pvDimCache[dCod];
+  if(!cache){
+    cache = new Map();
+    const dim = ((_pivotState.cubo.dimensoes||{})[info.dimKey]||{}).items || [];
+    dim.forEach(function(it){
+      cache.set(String(it.cod), it.nome || it.desc || String(it.cod));
+    });
+    _pvDimCache[dCod] = cache;
   }
-  return String(valor);
+  const v = cache.get(String(valor));
+  return v != null ? v : String(valor);
 }
 
 function _pvFmtMetrica(mCod, valor){
@@ -2155,7 +2197,7 @@ async function _pvExcluirAnaliseUI(){
 let _pvChart = null;
 
 function _pvRenderGrafico(){
-  const r = _pvCalcular();
+  const r = _pvUltimoResultado || _pvCalcular();
   const wrap = document.getElementById('pv-chart-wrap');
   if(!wrap || wrap.style.display === 'none') return;
   if(!r || r.erro){
@@ -2192,17 +2234,40 @@ function _pvRenderGrafico(){
   let cfg;
   if(tipo === 'pie'){
     // Pizza: só faz sentido com 1 série; usa total da linha
+    // Pra métricas calculadas (margem%, ticket médio), não é correto somar entre colunas
+    // — usa só a primeira coluna nesses casos pra não distorcer
+    const mMeta = _CUBO_METRICAS[mCod];
+    const ehCalc = mMeta && mMeta.calc;
     const valores = r.rowKeys.map(function(rk){
-      let total = 0;
       const colKeys = r.colKeys.length ? r.colKeys : [''];
+      if(ehCalc){
+        // Usa só a primeira coluna (representativo, não distorce)
+        const cell = (r.matriz[rk]||{})[colKeys[0]] || {};
+        return cell[mCod] || 0;
+      }
+      // Métricas aditivas: soma todas as colunas
+      let total = 0;
       colKeys.forEach(function(ck){
         const cell = (r.matriz[rk]||{})[ck] || {};
         total += (cell[mCod]||0);
       });
       return total;
     });
-    // Top 10 + "Outros"
-    const idxs = valores.map(function(v,i){return {v:v,i:i};}).sort(function(a,b){return b.v-a.v;});
+    // Top 10 + "Outros" — filtra valores não-positivos (pizza não representa negativo)
+    const idxs = valores
+      .map(function(v,i){return {v:v,i:i};})
+      .filter(function(x){return x.v > 0;})
+      .sort(function(a,b){return b.v-a.v;});
+    if(idxs.length === 0){
+      // Nenhum valor positivo — mostra mensagem em vez de gráfico vazio
+      const ctx = canvas.getContext('2d');
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.fillStyle = '#9ca3af';
+      ctx.font = '13px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('Sem valores positivos para plotar em pizza', canvas.width/2, canvas.height/2);
+      return;
+    }
     const topN = idxs.slice(0,10);
     const outros = idxs.slice(10).reduce(function(s,x){return s+x.v;},0);
     const finalLabels = topN.map(function(x){return rowLabels[x.i];});
@@ -2259,7 +2324,7 @@ function _pvRenderGrafico(){
 // EXPORTAR pivot pra Excel (XLSX)
 // ────────────────────────────────────────────────────────────────────
 function _pvExportarXLSX(){
-  const r = _pvCalcular();
+  const r = _pvUltimoResultado || _pvCalcular();
   if(!r || r.erro){
     alert('Configure a pivot antes de exportar.');
     return;
