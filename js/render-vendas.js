@@ -1830,7 +1830,7 @@ function renderExecutivo(){
     {l:'Faturamento líquido', v:fK(totalFat),     s:labelPeriodo},
     {l:'Lucro bruto',         v:fK(totalLucro),   s:'Margem '+fP(margem)+' · '+labelPeriodo, cls:margem>12?'up':''},
     {l:'Compras líquidas',    v:fK(totalCompras), s:fP(cobPct)+' do fat. · '+labelPeriodo,    cls:cobCls},
-    {l:'Vencidos',            v:fK(valorVencidos),s:fI(nVencidos)+' títulos vencidos',        cls:'dn'},
+    {l:'Vencidos',            v:fK(valorVencidos),s:fI(nVencidos)+' títulos · 1 dia ou mais',        cls:'dn'},
     {l:'Em aberto',           v:fK(totalAberto),  s:'Total a pagar', cls:'hl'},
     {l:'Estoque (preço venda)',v:estoqueValorPV>0?fK(estoqueValorPV):'—',s:estoqueValorPV>0?'Snapshot '+dataEstoque:'sem dados', cls:'vio'},
     {l:'SKUs com venda',      v:fI(skusComVenda), s:fI(skusComEstoque)+' c/ estoque atual'},
@@ -2539,7 +2539,7 @@ function renderVItens(){
        + '</div>';
 
   // KPIs
-  html += '<div class="kg" style="grid-template-columns:repeat(4,1fr);margin-bottom:14px;" id="kg-vit"></div>';
+  html += '<div class="kg" style="grid-template-columns:repeat(5,1fr);margin-bottom:14px;" id="kg-vit"></div>';
 
   // Linha 1: pizza geral + barras evolução por depto top 5
   html += '<div class="row2eq" style="margin-bottom:14px;">'
@@ -2594,13 +2594,24 @@ function renderVItens(){
   const top1 = deptoArr[0];
   const top1Pct = totalGeral>0 ? top1.fat_liq/totalGeral*100 : 0;
   const margGeral = totalGeral>0 ? deptoArr.reduce(function(s,d){return s+d.lucro;}, 0)/totalGeral*100 : 0;
-  const totalQt = deptoArr.reduce(function(s,d){return s+d.qt;}, 0);
+  // Separa QT em UN (peças/embalagens) vs KG (perecíveis vendidos a peso)
+  // Heurística: deptos com PERECIVEL, ACOUGUE, HORTI, FRIOS, FRUT no nome são em KG
+  const _ehKg = function(nome){
+    const n = (nome||'').toUpperCase();
+    return /PERECIV|ACOUGUE|HORTI|FRIOS|PADAR|FRUT|PEIXARIA/.test(n);
+  };
+  let qtUn = 0, qtKg = 0;
+  deptoArr.forEach(function(d){
+    if(_ehKg(d.nome)) qtKg += d.qt||0;
+    else qtUn += d.qt||0;
+  });
 
   document.getElementById('kg-vit').innerHTML = kgHtml([
     {l:'Faturamento total',  v:fK(totalGeral), s:deptoArr.length+' deptos · '+yms.length+' meses'},
     {l:'Top depto',          v:esc(top1.nome), s:fP(top1Pct)+' do total · '+fK(top1.fat_liq), cls:'hl'},
     {l:'Margem consolidada', v:fP(margGeral),  s:'média ponderada por fat.'},
-    {l:'QT total vendida',   v:fI(totalQt),    s:'unidades + KG (mistos)'},
+    {l:'QT em unidades',     v:fI(qtUn),       s:'mercearia, bebidas, bazar, hipel'},
+    {l:'QT em KG',           v:fI(qtKg),       s:'perecíveis, açougue, hortifruti'},
   ]);
 
   // ─── Pizza por depto ───

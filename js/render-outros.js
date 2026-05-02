@@ -385,9 +385,12 @@ function renderVerbas(){
 
   // ─── Banner de escopo ───
   const periodo = meta.periodo || {};
+  const _perTxt2 = (periodo.inicio && periodo.fim)
+    ? esc(periodo.inicio)+' a '+esc(periodo.fim)
+    : '<span style="color:var(--text-muted);font-style:italic;">carregando…</span>';
   html += '<div style="background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:10px 14px;margin-bottom:14px;font-size:12px;color:var(--text-dim);">'
        +   '<strong>Modelo:</strong> '+esc(meta.modelo||'verba como redução de custo')+' · '
-       +   '<strong>Período:</strong> '+esc(periodo.inicio||'?')+' a '+esc(periodo.fim||'?')+' · '
+       +   '<strong>Período:</strong> '+_perTxt2+' · '
        +   fI(meta.linhas_processadas||0)+' aplicações · '
        +   'gerado em '+esc((meta.gerado_em||'').substring(0,16).replace('T',' '))
        + '</div>';
@@ -918,471 +921,1411 @@ function _buildCuboIdx(c){
   return idx;
 }
 
+// ────────────────────────────────────────────────────────────────────
+// ANÁLISE DINÂMICA · Tabela dinâmica estilo Excel (v4.17 · 02/mai/2026)
+// Drag-and-drop, múltiplas dimensões em linhas/colunas, filtros, ordenação.
+// Compatibilidade fato × dimensão (opção C): métricas habilitam/desabilitam
+// conforme as dimensões em uso.
+// ────────────────────────────────────────────────────────────────────
+
+// Mapa de quais campos cada fato possui — fonte de verdade da compatibilidade
+// IMPORTANTE: 'sku' é o nome real do campo nos fatos vendas e compras (sem sufixo).
+// Tratamos como duas dimensões lógicas diferentes (sku_vendas, sku_compras) porque
+// o domínio de SKU é diferente entre os fatos, mas no fato o campo é só 'sku'.
+const _CUBO_FATO_DIMS = {
+  vendas:     ['ym','lj','sup','vend','dep','cat','forn','sku_vendas'],
+  compras:    ['ym','lj','dep','cat','forn','sku_compras'],
+  financeiro: ['ym','lj','grp','cnt','forn']
+};
+
+// Mapa: dimensão lógica → nome real do campo no fato (quando diferente)
+// Usado pra resolver qual coluna do fato indexa cada dimensão lógica.
+const _CUBO_DIM_TO_CAMPO = {
+  sku_vendas: 'sku',
+  sku_compras: 'sku'
+  // demais dimensões usam o mesmo nome
+};
+
+// Mapa de métricas → campo no fato + função de agregação + qual fato pertence
+const _CUBO_METRICAS = {
+  // VENDAS
+  v_brt:    {label:'Faturamento bruto',    fato:'vendas',     campo:'v_brt', agg:'sum', fmt:'k'},
+  v_liq:    {label:'Faturamento líquido',  fato:'vendas',     campo:'v_liq', agg:'sum', fmt:'k'},
+  v_dev:    {label:'Devolução cliente',    fato:'vendas',     campo:'v_dev', agg:'sum', fmt:'k'},
+  v_cmv:    {label:'CMV',                  fato:'vendas',     campo:'v_cmv', agg:'sum', fmt:'k'},
+  v_luc:    {label:'Lucro bruto',          fato:'vendas',     campo:'v_luc', agg:'sum', fmt:'k'},
+  v_marg:   {label:'Margem %',             fato:'vendas',     calc:'marg',   fmt:'p'},
+  v_qt:     {label:'Qtde vendida',         fato:'vendas',     campo:'v_qt',  agg:'sum', fmt:'i'},
+  v_nfs:    {label:'NFs vendidas',         fato:'vendas',     campo:'v_nfs', agg:'sum', fmt:'i'},
+  v_cli:    {label:'Clientes positivados', fato:'vendas',     campo:'v_cli', agg:'sum', fmt:'i'},
+  v_tkt:    {label:'Ticket médio',         fato:'vendas',     calc:'tkt',    fmt:'k'},
+  // COMPRAS
+  c_val:    {label:'Compras (valor)',      fato:'compras',    campo:'c_val', agg:'sum', fmt:'k'},
+  c_qt:     {label:'Compras (qtde)',       fato:'compras',    campo:'c_qt',  agg:'sum', fmt:'i'},
+  c_nfs:    {label:'NFs entrada',          fato:'compras',    campo:'c_nfs', agg:'sum', fmt:'i'},
+  // FINANCEIRO
+  f_pago:   {label:'Pago',                 fato:'financeiro', campo:'f_pago',    agg:'sum', fmt:'k'},
+  f_titulos:{label:'Títulos pagos',        fato:'financeiro', campo:'f_titulos', agg:'sum', fmt:'i'},
+  f_juros:  {label:'Juros pagos',          fato:'financeiro', campo:'f_juros',   agg:'sum', fmt:'k'}
+};
+
+// Mapa de dimensões disponíveis com seu label e qual campo do fato indexa
+const _CUBO_DIMS_INFO = {
+  ym:         {label:'Mês',          dimKey:'tempo',      icone:'📅'},
+  lj:         {label:'Loja',         dimKey:'loja',       icone:'🏪'},
+  sup:        {label:'Supervisor',   dimKey:'supervisor', icone:'👔'},
+  vend:       {label:'Vendedor',     dimKey:'vendedor',   icone:'👤'},
+  dep:        {label:'Departamento', dimKey:'depto',      icone:'📦'},
+  cat:        {label:'Categoria',    dimKey:'categoria',  icone:'🏷️'},
+  forn:       {label:'Fornecedor',   dimKey:'fornecedor', icone:'🚚'},
+  sku_vendas: {label:'SKU (vendas)', dimKey:'sku_vendas', icone:'🛒'},
+  sku_compras:{label:'SKU (compras)',dimKey:'sku_compras',icone:'📥'},
+  grp:        {label:'Grupo conta',  dimKey:'grupo_conta',icone:'💰'},
+  cnt:        {label:'Conta',        dimKey:'conta',      icone:'💳'}
+};
+
+// Estado global da pivot
+let _pivotState = null;
+
 function _renderCuboUI(c){
   const meta = c.meta || {};
   const dims = c.dimensoes || {};
   const fatos = c.fatos || {};
-  const fv = fatos.vendas || {campos:[], linhas:[]};
   const idx = _buildCuboIdx(c);
 
-  // Estado da página
-  _cuboState = {
-    cubo: c,
-    idx: idx,
-    fatoVendas: fv,
-    filtros: {
-      ymDe: ((dims.tempo||{}).items||[])[0] && dims.tempo.items[0].cod,
-      ymAte: ((dims.tempo||{}).items||[])[(dims.tempo.items||[]).length-1] && dims.tempo.items[dims.tempo.items.length-1].cod,
-      loja: '__all__',
-      supervisor: '__all__'
-    },
-    // Pivot config
-    linha: 'tempo',     // dimensão de linha (default: tempo)
-    coluna: '__none__', // dimensão de coluna (default: nenhuma = 1D)
-    metrica: 'fat_liq',
-    topN: 30
-  };
+  // Inicializa estado (ou recupera do localStorage)
+  let saved = null;
+  try {
+    const raw = localStorage.getItem('pivot_state_v1');
+    if(raw){ saved = JSON.parse(raw); }
+  } catch(e){}
 
-  const tempos = (dims.tempo||{}).items || [];
-  const lojas = (dims.loja||{}).items || [];
-  const supervisores = (dims.supervisor||{}).items || [];
+  _pivotState = saved || {
+    rows: ['ym'],
+    cols: [],
+    vals: ['v_liq'],
+    filters: {},
+    comp: {tipo:null, base:null}, // null | 'vert' | 'horiz'
+    sort: {col:null, dir:'asc'}
+  };
+  _pivotState.cubo = c;
+  _pivotState.idx = idx;
 
   let html = '';
-
-  // Aviso de fallback (quando GRUPO usa cubo CP)
   if(c._fallback_de){
     html += '<div style="background:#fef3c7;border:1px solid #d97706;border-radius:8px;padding:10px 14px;margin-bottom:10px;font-size:12px;color:#92400e;">'
-         +   '<strong>Atenção:</strong> a visão GRUPO não tem cubo próprio. Mostrando dados do cubo de Comercial Pinto (4 lojas: CP1, CP3, CP5, CP40). ATP não está incluído nesta análise.'
+         +   '<strong>Atenção:</strong> a visão GRUPO não tem cubo próprio. Mostrando dados de Comercial Pinto (CP1, CP3, CP5, CP40). ATP não está incluído.'
          + '</div>';
   }
 
   // Banner com info do cubo
+  const _per = meta.periodo || {};
+  const _perTxt = (_per.inicio && _per.fim)
+    ? esc(_per.inicio)+' a '+esc(_per.fim)+' ('+esc(_per.meses||'?')+' meses)'
+    : '<span style="color:var(--text-muted);font-style:italic;">carregando…</span>';
+  const fv = fatos.vendas || {};
+  const fc = fatos.compras || {};
+  const ff = fatos.financeiro || {};
   html += '<div style="background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:10px 14px;margin-bottom:14px;font-size:12px;color:var(--text-dim);">'
-       +   '<strong>Período:</strong> '+esc(((meta.periodo||{}).inicio||'?'))+' a '+esc(((meta.periodo||{}).fim||'?'))+' ('+esc(((meta.periodo||{}).meses||'?'))+' meses) · '
-       +   '<strong>'+fI(fv.linhas.length)+'</strong> linhas no fato vendas · '
-       +   '<strong>'+(dims.vendedor && dims.vendedor.items ? dims.vendedor.items.length : 0)+'</strong> vendedores · '
-       +   '<strong>'+(dims.fornecedor && dims.fornecedor.items ? dims.fornecedor.items.length : 0)+'</strong> fornecedores'
+       +   '<strong>Período:</strong> '+_perTxt+' · '
+       +   '<strong>'+fI((fv.linhas||[]).length)+'</strong> linhas vendas · '
+       +   '<strong>'+fI((fc.linhas||[]).length)+'</strong> compras · '
+       +   '<strong>'+fI((ff.linhas||[]).length)+'</strong> financeiro'
        + '</div>';
 
-  // ─── Filtros globais ───
-  html += '<div class="cc" style="margin-bottom:14px;">'
-       +    '<div class="cct">Filtros globais</div>'
-       +    '<div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:10px;margin-top:8px;">'
-       +      '<div><label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:3px;">De</label>'
-       +        '<select id="cu-ym-de" style="width:100%;padding:6px;font-size:12px;border:1px solid var(--border);border-radius:4px;background:#fff;">'
-       +          tempos.map(function(t){return '<option value="'+t.cod+'">'+t.nome+'</option>';}).join('')
-       +        '</select></div>'
-       +      '<div><label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:3px;">Até</label>'
-       +        '<select id="cu-ym-ate" style="width:100%;padding:6px;font-size:12px;border:1px solid var(--border);border-radius:4px;background:#fff;">'
-       +          tempos.map(function(t){return '<option value="'+t.cod+'"'+(t.cod===_cuboState.filtros.ymAte?' selected':'')+'>'+t.nome+'</option>';}).join('')
-       +        '</select></div>'
-       +      '<div><label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:3px;">Loja</label>'
-       +        '<select id="cu-loja" style="width:100%;padding:6px;font-size:12px;border:1px solid var(--border);border-radius:4px;background:#fff;">'
-       +          '<option value="__all__">Todas</option>'
-       +          lojas.map(function(l){return '<option value="'+esc(l.cod)+'">'+esc(l.nome)+'</option>';}).join('')
-       +        '</select></div>'
-       +      '<div><label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:3px;">Supervisor</label>'
-       +        '<select id="cu-sup" style="width:100%;padding:6px;font-size:12px;border:1px solid var(--border);border-radius:4px;background:#fff;">'
-       +          '<option value="__all__">Todos</option>'
-       +          supervisores.map(function(s){return '<option value="'+s.cod+'">'+esc(s.nome)+'</option>';}).join('')
-       +        '</select></div>'
-       +    '</div>'
+  // ─── Layout 2 colunas: painel de campos (esquerda) + pivot (direita) ───
+  html += '<div class="pv-layout" style="display:grid;grid-template-columns:260px 1fr;gap:14px;align-items:start;">';
+
+  // ── Painel esquerdo: lista de campos (drag source) + zonas de drop ──
+  html += '<div class="pv-panel cc" style="position:sticky;top:64px;max-height:calc(100vh - 100px);overflow-y:auto;padding:12px;">';
+  html += '<div class="cct" style="font-size:12px;margin-bottom:8px;">Campos disponíveis</div>';
+  html += '<div class="ccs" style="font-size:10px;margin-bottom:10px;">Arraste para as zonas abaixo</div>';
+
+  // Lista de dimensões disponíveis (drag source)
+  html += '<div id="pv-fields" style="display:flex;flex-direction:column;gap:4px;margin-bottom:14px;">';
+  Object.keys(_CUBO_DIMS_INFO).forEach(function(dCod){
+    // Só mostra se há pelo menos 1 fato com essa dimensão
+    const usadoEm = Object.keys(_CUBO_FATO_DIMS).filter(function(f){
+      return _CUBO_FATO_DIMS[f].indexOf(dCod) >= 0;
+    });
+    if(!usadoEm.length) return;
+    const info = _CUBO_DIMS_INFO[dCod];
+    html += '<div class="pv-field" draggable="true" data-field="'+dCod+'" data-type="dim" '
+         +  'style="padding:6px 10px;background:var(--surface);border:1px solid var(--border);border-radius:5px;cursor:grab;font-size:12px;display:flex;align-items:center;gap:6px;">'
+         +    '<span style="font-size:14px;">'+info.icone+'</span>'
+         +    '<span>'+esc(info.label)+'</span>'
+         + '</div>';
+  });
+  html += '</div>';
+
+  // Lista de métricas
+  html += '<div class="cct" style="font-size:12px;margin-bottom:8px;border-top:1px solid var(--border);padding-top:10px;">Métricas (valores)</div>';
+  html += '<div id="pv-metrics" style="display:flex;flex-direction:column;gap:4px;">';
+  // Agrupar por fato pra organizar visualmente
+  ['vendas','compras','financeiro'].forEach(function(grupoFato){
+    const titulos = {vendas:'Vendas', compras:'Compras', financeiro:'Financeiro'};
+    html += '<div style="font-size:9px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;font-weight:700;margin-top:6px;">'+titulos[grupoFato]+'</div>';
+    Object.keys(_CUBO_METRICAS).forEach(function(mCod){
+      const m = _CUBO_METRICAS[mCod];
+      if(m.fato !== grupoFato) return;
+      html += '<div class="pv-field pv-metric" draggable="true" data-field="'+mCod+'" data-type="metric" data-fato="'+m.fato+'" '
+           +  'style="padding:5px 9px;background:var(--surface);border:1px solid var(--border);border-radius:5px;cursor:grab;font-size:11.5px;">'
+           +    '<span style="color:#0a7c4a;font-weight:700;">∑</span> '+esc(m.label)
+           + '</div>';
+    });
+  });
+  html += '</div>'; // pv-metrics
+
+  // Zonas de drop · 4 áreas
+  html += '<div style="margin-top:14px;border-top:1px solid var(--border);padding-top:10px;">';
+  ['filters','rows','cols','vals'].forEach(function(zona){
+    const labels = {filters:'🔍 Filtros', rows:'📋 Linhas', cols:'📊 Colunas', vals:'∑ Valores'};
+    html += '<div class="pv-zone-label" style="font-size:9px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;font-weight:700;margin-top:6px;margin-bottom:4px;">'+labels[zona]+'</div>';
+    html += '<div class="pv-zone" data-zone="'+zona+'" '
+         +  'style="min-height:34px;background:var(--surface-2);border:2px dashed var(--border);border-radius:5px;padding:4px;display:flex;flex-direction:column;gap:3px;">'
+         + '</div>';
+  });
+  html += '</div>'; // zones wrap
+
+  // Botões ação
+  html += '<div style="margin-top:14px;display:flex;flex-direction:column;gap:6px;border-top:1px solid var(--border);padding-top:10px;">';
+  html += '<button id="pv-clear" class="ebtn" style="background:var(--surface);color:var(--text);border:1px solid var(--border);padding:6px;font-size:11px;">🗑 Limpar tudo</button>';
+  html += '<select id="pv-comp" style="padding:6px;border:1px solid var(--border);border-radius:5px;font-size:11px;background:var(--surface);color:var(--text);">'
+       +    '<option value="">Sem cálculo comparativo</option>'
+       +    '<option value="vert">% vertical (% da coluna)</option>'
+       +    '<option value="horiz">% horizontal (crescimento vs anterior)</option>'
+       + '</select>';
+  html += '</div>';
+
+  html += '</div>'; // pv-panel
+
+  // ── Painel direito: a pivot ──
+  html += '<div class="pv-pivot cc" style="padding:12px;min-height:300px;">';
+  // Barra de ações topo
+  html += '<div class="pv-toolbar" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:10px;padding-bottom:10px;border-bottom:1px solid var(--border);">'
+       +    '<select id="pv-load-sel" style="padding:5px 8px;border:1px solid var(--border);border-radius:5px;font-size:12px;background:var(--surface);color:var(--text);min-width:200px;">'
+       +      '<option value="">— Carregar análise salva —</option>'
+       +    '</select>'
+       +    '<button id="pv-save" class="ebtn" style="font-size:11px;padding:5px 10px;background:var(--accent);color:white;border:none;">💾 Salvar</button>'
+       +    '<button id="pv-delete" class="ebtn" style="font-size:11px;padding:5px 10px;background:var(--surface);color:#dc2626;border:1px solid var(--border);" disabled title="Selecione uma análise salva">🗑 Excluir</button>'
+       +    '<div style="flex:1;"></div>'
+       +    '<button id="pv-chart" class="ebtn" style="font-size:11px;padding:5px 10px;background:var(--surface);color:var(--text);border:1px solid var(--border);">📊 Gráfico</button>'
+       +    '<button id="pv-export-xlsx" class="ebtn" style="font-size:11px;padding:5px 10px;background:var(--surface);color:var(--text);border:1px solid var(--border);">📥 XLSX</button>'
        + '</div>';
-
-  // ─── Drilldowns rápidos ───
-  html += '<div class="cc" style="margin-bottom:14px;">'
-       +    '<div class="cct">Visões rápidas</div>'
-       +    '<div class="ccs">Análises pré-configuradas · clique para aplicar</div>'
-       +    '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;" id="cu-quick">'
-       +      '<button class="cu-quick-btn" data-q="evolucao">📊 Evolução mensal · faturamento</button>'
-       +      '<button class="cu-quick-btn" data-q="lj-sup">🏪 Loja × Supervisor</button>'
-       +      '<button class="cu-quick-btn" data-q="depto-mes">📦 Depto × Mês</button>'
-       +      '<button class="cu-quick-btn" data-q="top-vendedor">👤 Top vendedores · ano</button>'
-       +      '<button class="cu-quick-btn" data-q="top-fornecedor">🏭 Top fornecedores · margem</button>'
-       +      '<button class="cu-quick-btn" data-q="top-sku">🛒 Top SKUs · vendidos</button>'
+  // Container do gráfico (escondido por padrão)
+  html += '<div id="pv-chart-wrap" style="display:none;margin-bottom:14px;background:var(--surface-2);border:1px solid var(--border);border-radius:6px;padding:10px;">'
+       +    '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">'
+       +      '<label style="font-size:11px;color:var(--text-muted);">Tipo:</label>'
+       +      '<select id="pv-chart-type" style="padding:4px 8px;border:1px solid var(--border);border-radius:4px;font-size:11px;background:var(--surface);color:var(--text);">'
+       +        '<option value="bar">Colunas</option>'
+       +        '<option value="line">Linhas</option>'
+       +        '<option value="pie">Pizza</option>'
+       +      '</select>'
+       +      '<label style="font-size:11px;color:var(--text-muted);">Métrica:</label>'
+       +      '<select id="pv-chart-metric" style="padding:4px 8px;border:1px solid var(--border);border-radius:4px;font-size:11px;background:var(--surface);color:var(--text);"></select>'
+       +      '<button id="pv-chart-close" style="margin-left:auto;background:transparent;border:none;color:var(--text-muted);cursor:pointer;font-size:14px;">✕</button>'
        +    '</div>'
+       +    '<div style="height:320px;"><canvas id="pv-chart-canvas"></canvas></div>'
        + '</div>';
+  html += '<div id="pv-status" style="font-size:11px;color:var(--text-muted);margin-bottom:8px;"></div>';
+  html += '<div id="pv-result" style="overflow:auto;"></div>';
+  html += '</div>';
 
-  // CSS dos botões
-  if(!document.getElementById('cu-quick-css')){
-    const st = document.createElement('style');
-    st.id = 'cu-quick-css';
-    st.textContent = '.cu-quick-btn{padding:6px 10px;font-size:11px;border:1px solid var(--border);background:#fff;border-radius:14px;cursor:pointer;transition:.15s;color:var(--text);}'
-                  + '.cu-quick-btn:hover{background:var(--accent);color:#fff;border-color:var(--accent);}';
-    document.head.appendChild(st);
-  }
-
-  // ─── Pivot interativo ───
-  html += '<div class="cc" style="margin-bottom:14px;">'
-       +    '<div class="cct">Pivot interativo</div>'
-       +    '<div class="ccs">Escolha linha, coluna e métrica para cruzar dimensões</div>'
-       +    '<div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:10px;margin-top:8px;">'
-       +      '<div><label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:3px;">Linha</label>'
-       +        '<select id="cu-linha" style="width:100%;padding:6px;font-size:12px;border:1px solid var(--border);border-radius:4px;background:#fff;">'
-       +          '<option value="tempo">Tempo (mês)</option>'
-       +          '<option value="loja">Loja</option>'
-       +          '<option value="supervisor">Supervisor</option>'
-       +          '<option value="vendedor">Vendedor</option>'
-       +          '<option value="depto">Departamento</option>'
-       +          '<option value="categoria">Categoria/Seção</option>'
-       +          '<option value="fornecedor">Fornecedor</option>'
-       +          '<option value="sku_vendas">SKU (top 100)</option>'
-       +        '</select></div>'
-       +      '<div><label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:3px;">Coluna</label>'
-       +        '<select id="cu-coluna" style="width:100%;padding:6px;font-size:12px;border:1px solid var(--border);border-radius:4px;background:#fff;">'
-       +          '<option value="__none__">— sem coluna (1D) —</option>'
-       +          '<option value="tempo">Tempo (mês)</option>'
-       +          '<option value="loja">Loja</option>'
-       +          '<option value="supervisor">Supervisor</option>'
-       +          '<option value="depto">Departamento</option>'
-       +        '</select></div>'
-       +      '<div><label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:3px;">Métrica</label>'
-       +        '<select id="cu-metrica" style="width:100%;padding:6px;font-size:12px;border:1px solid var(--border);border-radius:4px;background:#fff;">'
-       +          '<option value="fat_liq">Faturamento líquido</option>'
-       +          '<option value="fat_brt">Faturamento bruto</option>'
-       +          '<option value="lucro">Lucro</option>'
-       +          '<option value="cmv">CMV</option>'
-       +          '<option value="margem">Margem %</option>'
-       +          '<option value="qt_v">Quantidade vendida</option>'
-       +          '<option value="nfs_v">NFs vendidas</option>'
-       +          '<option value="cli">Clientes positivados</option>'
-       +          '<option value="tkt_med">Ticket médio</option>'
-       +          '<option value="devol">Devolução</option>'
-       +        '</select></div>'
-       +      '<div><label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:3px;">Top N (linhas)</label>'
-       +        '<select id="cu-topn" style="width:100%;padding:6px;font-size:12px;border:1px solid var(--border);border-radius:4px;background:#fff;">'
-       +          '<option value="10">Top 10</option>'
-       +          '<option value="20">Top 20</option>'
-       +          '<option value="30" selected>Top 30</option>'
-       +          '<option value="50">Top 50</option>'
-       +          '<option value="100">Top 100</option>'
-       +          '<option value="999">Tudo</option>'
-       +        '</select></div>'
-       +    '</div>'
-       +    '<div style="margin-top:10px;">'
-       +      '<button id="cu-aplicar" style="padding:7px 16px;background:var(--accent);color:#fff;border:none;border-radius:5px;font-size:12px;font-weight:600;cursor:pointer;">Aplicar</button>'
-       +      '<span id="cu-status" style="margin-left:10px;font-size:11px;color:var(--text-muted);"></span>'
-       +    '</div>'
-       + '</div>';
-
-  // ─── Resultado ───
-  html += '<div id="cu-resultado"></div>';
+  html += '</div>'; // pv-layout
 
   document.getElementById('cubo-body').innerHTML = html;
 
-  // Define ymDe inicial = 12 meses antes do último (ou primeiro se for menos)
-  const tempos2 = tempos;
-  let ymDeIdxInicial = Math.max(0, tempos2.length - 12);
-  document.getElementById('cu-ym-de').selectedIndex = ymDeIdxInicial;
-  _cuboState.filtros.ymDe = tempos2[ymDeIdxInicial].cod;
-
-  // ─── Listeners ───
-  ['cu-ym-de','cu-ym-ate','cu-loja','cu-sup'].forEach(function(id){
-    document.getElementById(id).addEventListener('change', function(){
-      _cuboState.filtros.ymDe = document.getElementById('cu-ym-de').value;
-      _cuboState.filtros.ymAte = document.getElementById('cu-ym-ate').value;
-      _cuboState.filtros.loja = document.getElementById('cu-loja').value;
-      _cuboState.filtros.supervisor = document.getElementById('cu-sup').value;
+  // Aplica estado inicial nas zonas
+  _pvSyncZonas();
+  // Bind drag-and-drop
+  _pvBindDnD();
+  // Bind ações
+  document.getElementById('pv-clear').addEventListener('click', function(){
+    _pivotState.rows = [];
+    _pivotState.cols = [];
+    _pivotState.vals = [];
+    _pivotState.filters = {};
+    _pivotState.comp = {tipo:null, base:null};
+    _pvPersistir();
+    _pvSyncZonas();
+    _pvAtualizar();
+  });
+  const compSel = document.getElementById('pv-comp');
+  if(compSel){
+    compSel.value = _pivotState.comp.tipo || '';
+    compSel.addEventListener('change', function(){
+      _pivotState.comp.tipo = compSel.value || null;
+      _pvPersistir();
+      _pvAtualizar();
     });
+  }
+
+  // ─── Salvar análise ───
+  document.getElementById('pv-save').addEventListener('click', _pvSalvarAnaliseUI);
+  // ─── Excluir análise ───
+  document.getElementById('pv-delete').addEventListener('click', _pvExcluirAnaliseUI);
+  // ─── Carregar análise ───
+  const loadSel = document.getElementById('pv-load-sel');
+  loadSel.addEventListener('change', function(){
+    if(loadSel.value){ _pvCarregarAnalise(loadSel.value); }
+    document.getElementById('pv-delete').disabled = !loadSel.value;
   });
+  // Popular lista de análises salvas
+  _pvAtualizarListaSalvas();
 
-  document.getElementById('cu-aplicar').addEventListener('click', function(){
-    _cuboState.linha = document.getElementById('cu-linha').value;
-    _cuboState.coluna = document.getElementById('cu-coluna').value;
-    _cuboState.metrica = document.getElementById('cu-metrica').value;
-    _cuboState.topN = parseInt(document.getElementById('cu-topn').value, 10);
-    _executarPivot();
-  });
-
-  // Visões rápidas
-  document.querySelectorAll('.cu-quick-btn').forEach(function(b){
-    b.addEventListener('click', function(){ _aplicarVisaoRapida(b.dataset.q); });
-  });
-
-  // Renderiza pivot inicial
-  _executarPivot();
-}
-
-// Aplica uma visão rápida (presets)
-function _aplicarVisaoRapida(q){
-  const presets = {
-    'evolucao':       {linha:'tempo',      coluna:'__none__',   metrica:'fat_liq', topN:999},
-    'lj-sup':         {linha:'loja',       coluna:'supervisor', metrica:'fat_liq', topN:999},
-    'depto-mes':      {linha:'depto',      coluna:'tempo',      metrica:'fat_liq', topN:999},
-    'top-vendedor':   {linha:'vendedor',   coluna:'__none__',   metrica:'fat_liq', topN:30},
-    'top-fornecedor': {linha:'fornecedor', coluna:'__none__',   metrica:'lucro',   topN:30},
-    'top-sku':        {linha:'sku_vendas', coluna:'__none__',   metrica:'qt_v',    topN:30}
-  };
-  const p = presets[q];
-  if(!p) return;
-  document.getElementById('cu-linha').value = p.linha;
-  document.getElementById('cu-coluna').value = p.coluna;
-  document.getElementById('cu-metrica').value = p.metrica;
-  document.getElementById('cu-topn').value = p.topN;
-  _cuboState.linha = p.linha;
-  _cuboState.coluna = p.coluna;
-  _cuboState.metrica = p.metrica;
-  _cuboState.topN = p.topN;
-  _executarPivot();
-}
-
-// Executa a agregação e renderiza tabela + chart
-function _executarPivot(){
-  const status = document.getElementById('cu-status');
-  status.textContent = 'Calculando…';
-  status.style.color = 'var(--accent)';
-
-  // Async pra não travar a UI
-  setTimeout(function(){
-    const t0 = Date.now();
-    const r = _agregarPivot();
-    const ms = Date.now() - t0;
-    _renderResultadoPivot(r);
-    status.textContent = '✓ '+fI(r.totalLinhasProcessadas)+' linhas processadas em '+ms+'ms · '+fI(r.linhas.length)+' grupos';
-    status.style.color = 'var(--success)';
-  }, 30);
-}
-
-// Núcleo: agregação column-store eficiente
-function _agregarPivot(){
-  const st = _cuboState;
-  const fv = st.fatoVendas;
-  const linhasFato = fv.linhas;
-  const campos = fv.campos;
-
-  // Indexação dos campos (column-store: array de arrays)
-  // campos: ['ym','lj','sup','vend','dep','cat','forn','sku','v_brt','v_liq','v_dev','v_cmv','v_luc','v_qt','v_nfs','v_cli']
-  const c = {};
-  campos.forEach(function(nm, i){ c[nm] = i; });
-
-  // Mapeia métrica → campo do fato + tipo de agregação
-  const metMap = {
-    fat_brt: {campo:'v_brt', tipo:'sum'},
-    fat_liq: {campo:'v_liq', tipo:'sum'},
-    devol:   {campo:'v_dev', tipo:'sum'},
-    cmv:     {campo:'v_cmv', tipo:'sum'},
-    lucro:   {campo:'v_luc', tipo:'sum'},
-    qt_v:    {campo:'v_qt',  tipo:'sum'},
-    nfs_v:   {campo:'v_nfs', tipo:'sum'},
-    cli:     {campo:'v_cli', tipo:'sum'},
-    margem:  {tipo:'calc', formula:'lucro/fat_liq*100'},
-    tkt_med: {tipo:'calc', formula:'fat_liq/nfs_v'}
-  };
-  const mDef = metMap[st.metrica] || metMap.fat_liq;
-
-  // Filtros
-  const ymDe = st.filtros.ymDe, ymAte = st.filtros.ymAte;
-  const ljF = st.filtros.loja, supF = st.filtros.supervisor;
-
-  // Mapeia dimensão de linha/coluna → campo do fato
-  const dimMap = {
-    tempo: 'ym', loja: 'lj', supervisor: 'sup', vendedor: 'vend',
-    depto: 'dep', categoria: 'cat', fornecedor: 'forn', sku_vendas: 'sku'
-  };
-  const linCampo = dimMap[st.linha];
-  const colCampo = st.coluna === '__none__' ? null : dimMap[st.coluna];
-
-  // Agregação: Map(linhaKey → Map(colKey → {fat_brt,fat_liq,...}))
-  const agg = new Map();
-  let totalProc = 0, totalFiltrado = 0;
-
-  for(let i = 0, n = linhasFato.length; i < n; i++){
-    const ln = linhasFato[i];
-    const ym = ln[c.ym];
-    if(ym < ymDe || ym > ymAte) continue;
-    if(ljF !== '__all__' && ln[c.lj] !== ljF) continue;
-    if(supF !== '__all__' && ln[c.sup] !== parseInt(supF, 10)) continue;
-
-    totalFiltrado++;
-
-    const lk = ln[c[linCampo]];
-    const ck = colCampo ? ln[c[colCampo]] : '__total__';
-
-    if(!agg.has(lk)) agg.set(lk, new Map());
-    const colMap = agg.get(lk);
-    if(!colMap.has(ck)){
-      colMap.set(ck, {fat_brt:0, fat_liq:0, devol:0, cmv:0, lucro:0, qt_v:0, nfs_v:0, cli:0});
+  // ─── Gráfico ───
+  document.getElementById('pv-chart').addEventListener('click', function(){
+    const wrap = document.getElementById('pv-chart-wrap');
+    if(wrap.style.display === 'none'){
+      wrap.style.display = '';
+      _pvRenderGrafico();
+    } else {
+      wrap.style.display = 'none';
     }
-    const cell = colMap.get(ck);
-    // `|| 0` protege contra cubos sem campos (cubo CP antigo não tem v_nfs/v_cli)
-    cell.fat_brt += ln[c.v_brt] || 0;
-    cell.fat_liq += ln[c.v_liq] || 0;
-    cell.devol   += ln[c.v_dev] || 0;
-    cell.cmv     += ln[c.v_cmv] || 0;
-    cell.lucro   += ln[c.v_luc] || 0;
-    cell.qt_v    += ln[c.v_qt]  || 0;
-    cell.nfs_v   += ln[c.v_nfs] || 0;
-    cell.cli     += ln[c.v_cli] || 0;
-  }
-  totalProc = linhasFato.length;
-
-  // Calcula valor da métrica em cada célula
-  function valorMetrica(cell){
-    if(mDef.tipo === 'sum') return cell[st.metrica];
-    if(st.metrica === 'margem') return cell.fat_liq>0 ? (cell.lucro/cell.fat_liq*100) : 0;
-    if(st.metrica === 'tkt_med') return cell.nfs_v>0 ? (cell.fat_liq/cell.nfs_v) : 0;
-    return 0;
-  }
-
-  // Coleta colunas únicas (ordenadas)
-  const colunasSet = new Set();
-  agg.forEach(function(colMap){ colMap.forEach(function(_, k){ colunasSet.add(k); }); });
-  let colunas = Array.from(colunasSet);
-  if(st.coluna === 'tempo') colunas.sort();
-  else colunas.sort();
-
-  // Resolve labels das linhas e colunas
-  const idx = st.idx;
-  function labelDim(dimNome, key){
-    if(dimNome === 'tempo') return _ymToLabel(key);
-    if(dimNome === 'loja') return key;  // loja já vem como string ATP
-    if(dimNome === 'sku_vendas'){
-      const it = idx.sku_vendas.get(key);
-      return it ? (it.desc || ('#'+key)) : '#'+key;
-    }
-    const dimKey = dimNome === 'supervisor' ? 'supervisor' : dimNome === 'fornecedor' ? 'fornecedor' : dimNome;
-    const it = idx[dimKey] && idx[dimKey].get(key);
-    return it ? (it.nome || it.desc || String(key)) : String(key);
-  }
-
-  // Constrói linhas com totais
-  const linhas = [];
-  agg.forEach(function(colMap, lk){
-    const cells = {};
-    let totLinha = {fat_brt:0, fat_liq:0, devol:0, cmv:0, lucro:0, qt_v:0, nfs_v:0, cli:0};
-    colMap.forEach(function(cell, ck){
-      cells[ck] = valorMetrica(cell);
-      totLinha.fat_brt += cell.fat_brt;
-      totLinha.fat_liq += cell.fat_liq;
-      totLinha.devol   += cell.devol;
-      totLinha.cmv     += cell.cmv;
-      totLinha.lucro   += cell.lucro;
-      totLinha.qt_v    += cell.qt_v;
-      totLinha.nfs_v   += cell.nfs_v;
-      totLinha.cli     += cell.cli;
-    });
-    linhas.push({
-      key: lk,
-      label: labelDim(st.linha, lk),
-      cells: cells,
-      total: valorMetrica(totLinha)
-    });
   });
+  document.getElementById('pv-chart-close').addEventListener('click', function(){
+    document.getElementById('pv-chart-wrap').style.display = 'none';
+  });
+  document.getElementById('pv-chart-type').addEventListener('change', _pvRenderGrafico);
+  document.getElementById('pv-chart-metric').addEventListener('change', _pvRenderGrafico);
 
-  // Ordena linhas: por tempo se for tempo, senão por valor desc
-  if(st.linha === 'tempo') linhas.sort(function(a,b){return a.key < b.key ? -1 : 1;});
-  else linhas.sort(function(a,b){return b.total - a.total;});
+  // ─── Export XLSX ───
+  document.getElementById('pv-export-xlsx').addEventListener('click', _pvExportarXLSX);
 
-  // Aplica top N
-  const linhasFinal = linhas.slice(0, st.topN);
-
-  // Total geral
-  let totalGeral = 0;
-  linhas.forEach(function(l){ totalGeral += l.total; });
-
-  return {
-    linhas: linhasFinal,
-    todasLinhas: linhas,
-    colunas: colunas,
-    colunasLabels: colunas.map(function(ck){ return st.coluna === '__none__' ? '' : labelDim(st.coluna, ck); }),
-    totalGeral: totalGeral,
-    totalLinhasProcessadas: totalFiltrado,
-    metrica: st.metrica,
-    metricaDef: mDef
-  };
+  // Renderiza a pivot inicial
+  _pvAtualizar();
 }
 
-// Renderiza o resultado: chart + tabela
-function _renderResultadoPivot(r){
-  const cont = document.getElementById('cu-resultado');
-  if(!r.linhas.length){
-    cont.innerHTML = '<div class="cc" style="text-align:center;color:var(--text-muted);padding:30px;">Nenhum dado encontrado para os filtros selecionados.</div>';
+// ── Persistência local ──
+function _pvPersistir(){
+  try {
+    const snap = {
+      rows: _pivotState.rows,
+      cols: _pivotState.cols,
+      vals: _pivotState.vals,
+      filters: _pivotState.filters,
+      comp: _pivotState.comp,
+      sort: _pivotState.sort
+    };
+    localStorage.setItem('pivot_state_v1', JSON.stringify(snap));
+  } catch(e){}
+}
+
+// ── Sincroniza visualmente as zonas com o estado ──
+function _pvSyncZonas(){
+  ['rows','cols','vals','filters'].forEach(function(zona){
+    const el = document.querySelector('.pv-zone[data-zone="'+zona+'"]');
+    if(!el) return;
+    const items = zona === 'filters' ? Object.keys(_pivotState.filters) : _pivotState[zona];
+    if(!items.length){
+      el.innerHTML = '<div style="color:var(--text-muted);font-size:10px;font-style:italic;padding:4px;">arraste aqui</div>';
+      return;
+    }
+    el.innerHTML = items.map(function(field){
+      const isMet = _CUBO_METRICAS[field];
+      const isDim = _CUBO_DIMS_INFO[field];
+      const label = isMet ? isMet.label : (isDim ? isDim.label : field);
+      const icone = isMet ? '∑' : (isDim ? isDim.icone : '');
+      // Pra filtros, mostrar resumo dos valores selecionados
+      let extra = '';
+      if(zona === 'filters'){
+        const fvals = _pivotState.filters[field] || [];
+        extra = ' <span style="color:var(--text-muted);font-size:9px;">('+fvals.length+')</span>';
+      }
+      return '<div class="pv-pill" data-field="'+field+'" data-zone="'+zona+'" draggable="true" '
+        +    'style="padding:4px 8px;background:var(--accent-bg,#e0e7ff);color:var(--accent-text,#1a2f5c);border-radius:4px;font-size:11px;display:flex;align-items:center;gap:5px;justify-content:space-between;cursor:grab;">'
+        +      '<span><span style="font-weight:700;">'+icone+'</span> '+esc(label)+extra+'</span>'
+        +      '<button class="pv-pill-x" data-field="'+field+'" data-zone="'+zona+'" style="background:transparent;border:none;color:inherit;cursor:pointer;font-size:13px;line-height:1;padding:0 2px;" title="Remover">×</button>'
+        +    '</div>';
+    }).join('');
+  });
+  // Bind dos × (remover) e click no pill (filtros)
+  document.querySelectorAll('.pv-pill-x').forEach(function(btn){
+    btn.addEventListener('click', function(e){
+      e.stopPropagation();
+      const f = btn.getAttribute('data-field');
+      const z = btn.getAttribute('data-zone');
+      _pvRemover(z, f);
+    });
+  });
+  // Click no pill da zona "filters" abre seletor de valores
+  document.querySelectorAll('.pv-zone[data-zone="filters"] .pv-pill').forEach(function(pill){
+    pill.addEventListener('click', function(){
+      const f = pill.getAttribute('data-field');
+      _pvAbrirFiltro(f);
+    });
+  });
+  // Bind drag dos pills (HTML5 + touch) — só uma vez por elemento
+  if(typeof _pvBindPillsDrag === 'function') _pvBindPillsDrag();
+}
+
+function _pvRemover(zona, field){
+  if(zona === 'filters'){
+    delete _pivotState.filters[field];
+  } else {
+    _pivotState[zona] = _pivotState[zona].filter(function(x){return x !== field;});
+  }
+  _pvPersistir();
+  _pvSyncZonas();
+  _pvAtualizar();
+}
+
+// ── Drag-and-drop ──
+function _pvBindDnD(){
+  let dragData = null;
+
+  // Source: campos disponíveis e pills já em zonas
+  function bindDragSource(el){
+    // ─ Drag HTML5 (desktop / com mouse) ─
+    el.addEventListener('dragstart', function(e){
+      const field = el.getAttribute('data-field');
+      const fromZone = el.getAttribute('data-zone');
+      const type = el.getAttribute('data-type');
+      dragData = {field:field, fromZone:fromZone, type:type};
+      el.style.opacity = '0.4';
+      e.dataTransfer.effectAllowed = 'move';
+      try { e.dataTransfer.setData('text/plain', field); } catch(_){}
+    });
+    el.addEventListener('dragend', function(){
+      el.style.opacity = '';
+      dragData = null;
+    });
+
+    // ─ Touch (mobile): inicia o drag visual ─
+    el.addEventListener('touchstart', function(e){
+      if(e.touches.length !== 1) return;
+      const t = e.touches[0];
+      const field = el.getAttribute('data-field');
+      const fromZone = el.getAttribute('data-zone');
+      const type = el.getAttribute('data-type');
+      const ghost = el.cloneNode(true);
+      ghost.style.cssText = el.style.cssText
+        + ';position:fixed;pointer-events:none;z-index:99999;opacity:0.85;'
+        + 'box-shadow:0 4px 12px rgba(0,0,0,.25);transform:scale(1.05);';
+      ghost.style.left = (t.clientX - el.offsetWidth/2) + 'px';
+      ghost.style.top  = (t.clientY - el.offsetHeight/2) + 'px';
+      ghost.style.width = el.offsetWidth + 'px';
+      document.body.appendChild(ghost);
+      el.style.opacity = '0.4';
+      window.__pvTouchDrag = {field:field, fromZone:fromZone, type:type, ghost:ghost, sourceEl:el, started:false, startX:t.clientX, startY:t.clientY};
+    }, {passive:true});
+  }
+
+  document.querySelectorAll('#pv-fields .pv-field, #pv-metrics .pv-field').forEach(bindDragSource);
+  // Pills bindam separado (são re-criados a cada syncZonas)
+  _pvBindPillsDrag();
+
+  // ─ Listeners globais de touch ─
+  // (registrados uma vez, lendo window.__pvTouchDrag)
+  if(!window.__pvTouchListenersOk){
+    window.__pvTouchListenersOk = true;
+    document.addEventListener('touchmove', function(e){
+      const td = window.__pvTouchDrag;
+      if(!td) return;
+      if(e.touches.length !== 1) return;
+      const t = e.touches[0];
+      if(!td.started){
+        const dx = Math.abs(t.clientX - td.startX);
+        const dy = Math.abs(t.clientY - td.startY);
+        if(dx > 8 || dy > 8) td.started = true;
+      }
+      if(!td.started) return;
+      e.preventDefault();
+      td.ghost.style.left = (t.clientX - td.ghost.offsetWidth/2) + 'px';
+      td.ghost.style.top  = (t.clientY - td.ghost.offsetHeight/2) + 'px';
+      td.ghost.style.display = 'none';
+      const elBelow = document.elementFromPoint(t.clientX, t.clientY);
+      td.ghost.style.display = '';
+      const zone = elBelow && elBelow.closest && elBelow.closest('.pv-zone');
+      document.querySelectorAll('.pv-zone').forEach(function(z){
+        z.style.background = (z === zone) ? 'var(--accent-bg, #e0e7ff)' : 'var(--surface-2)';
+      });
+    }, {passive:false});
+
+    document.addEventListener('touchend', function(e){
+      const td = window.__pvTouchDrag;
+      if(!td) return;
+      const t = (e.changedTouches && e.changedTouches[0]) || null;
+      if(td.ghost && td.ghost.parentNode) td.ghost.parentNode.removeChild(td.ghost);
+      if(td.sourceEl) td.sourceEl.style.opacity = '';
+      document.querySelectorAll('.pv-zone').forEach(function(z){ z.style.background = 'var(--surface-2)'; });
+      if(td.started && t){
+        const elBelow = document.elementFromPoint(t.clientX, t.clientY);
+        const zone = elBelow && elBelow.closest && elBelow.closest('.pv-zone');
+        if(zone){
+          const targetZona = zone.getAttribute('data-zone');
+          _pvAdicionar(targetZona, {field:td.field, fromZone:td.fromZone, type:td.type});
+        }
+      }
+      window.__pvTouchDrag = null;
+    }, {passive:true});
+
+    document.addEventListener('touchcancel', function(){
+      const td = window.__pvTouchDrag;
+      if(!td) return;
+      if(td.ghost && td.ghost.parentNode) td.ghost.parentNode.removeChild(td.ghost);
+      if(td.sourceEl) td.sourceEl.style.opacity = '';
+      document.querySelectorAll('.pv-zone').forEach(function(z){ z.style.background = 'var(--surface-2)'; });
+      window.__pvTouchDrag = null;
+    }, {passive:true});
+  }
+
+  // Targets: zonas (HTML5 drag — desktop)
+  document.querySelectorAll('.pv-zone').forEach(function(zone){
+    zone.addEventListener('dragover', function(e){
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      zone.style.background = 'var(--accent-bg, #e0e7ff)';
+    });
+    zone.addEventListener('dragleave', function(){
+      zone.style.background = 'var(--surface-2)';
+    });
+    zone.addEventListener('drop', function(e){
+      e.preventDefault();
+      zone.style.background = 'var(--surface-2)';
+      // Pode vir de pill (window.__pvPillDrag) ou de field (dragData local)
+      const drag = dragData || window.__pvPillDrag;
+      if(!drag) return;
+      const targetZona = zone.getAttribute('data-zone');
+      _pvAdicionar(targetZona, drag);
+      window.__pvPillDrag = null;
+    });
+  });
+}
+
+// Toast visual curto pra feedback de rejeição de drop
+function _pvToast(msg){
+  let t = document.getElementById('pv-toast');
+  if(!t){
+    t = document.createElement('div');
+    t.id = 'pv-toast';
+    t.style.cssText = 'position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#1f2937;color:#fff;padding:10px 18px;border-radius:6px;font-size:13px;z-index:99998;box-shadow:0 4px 12px rgba(0,0,0,.25);transition:opacity .2s;pointer-events:none;';
+    document.body.appendChild(t);
+  }
+  t.textContent = msg;
+  t.style.opacity = '1';
+  clearTimeout(t.__hideTimer);
+  t.__hideTimer = setTimeout(function(){ t.style.opacity = '0'; }, 2500);
+}
+
+function _pvAdicionar(zona, drag){
+  const field = drag.field;
+  const isMetric = !!_CUBO_METRICAS[field];
+  const isDim    = !!_CUBO_DIMS_INFO[field];
+
+  // Métrica só vai pra "vals". Dimensão vai pra rows/cols/filters.
+  if(isMetric && zona !== 'vals'){
+    _pvToast('Métricas só podem ir em "∑ Valores"');
+    return;
+  }
+  if(isDim && zona === 'vals'){
+    _pvToast('Dimensões não podem ir em "∑ Valores"');
     return;
   }
 
-  const st = _cuboState;
-  const isPct = st.metrica === 'margem';
-  const isQtde = st.metrica === 'qt_v' || st.metrica === 'nfs_v' || st.metrica === 'cli';
-  const fmt = function(v){
-    if(isPct) return fP(v);
-    if(isQtde) return fI(v);
-    return fK(v);
-  };
-
-  let html = '<div class="cc" style="margin-bottom:14px;">';
-  html += '<div class="cct">Resultado · ' + esc(_dimLabel(st.linha));
-  if(st.coluna !== '__none__') html += ' × ' + esc(_dimLabel(st.coluna));
-  html += ' · ' + esc(_metricaLabel(st.metrica)) + '</div>';
-  html += '<div class="ccs">' + fI(r.linhas.length) + ' grupos exibidos · total geral: <strong>' + fmt(r.totalGeral) + '</strong></div>';
-
-  // Chart só pra 1D (sem coluna de quebra)
-  if(st.coluna === '__none__' && r.linhas.length <= 50){
-    html += '<div style="height:300px;margin-top:10px;"><canvas id="c-cu-pivot"></canvas></div>';
-  }
-
-  // Tabela
-  html += '<div class="tscroll" style="margin-top:10px;"><table class="t" id="t-cu-pivot"><thead><tr>';
-  html += '<th class="L" style="width:24px;">#</th>';
-  html += '<th class="L">' + esc(_dimLabel(st.linha)) + '</th>';
-  if(st.coluna === '__none__'){
-    html += '<th>' + esc(_metricaLabel(st.metrica)) + '</th>';
-    html += '<th>% sobre total</th>';
+  // Se vinha de uma zona anterior, remove de lá primeiro
+  if(drag.fromZone){
+    if(drag.fromZone === 'filters'){ delete _pivotState.filters[field]; }
+    else _pivotState[drag.fromZone] = _pivotState[drag.fromZone].filter(function(x){return x !== field;});
   } else {
-    r.colunasLabels.forEach(function(cl){ html += '<th>' + esc(cl) + '</th>'; });
-    html += '<th><strong>Total</strong></th>';
+    // Veio da lista — checa se já está em alguma zona (move em vez de duplicar)
+    ['rows','cols','vals'].forEach(function(z){
+      _pivotState[z] = _pivotState[z].filter(function(x){return x !== field;});
+    });
+    if(zona !== 'filters' && _pivotState.filters[field]){ delete _pivotState.filters[field]; }
   }
-  html += '</tr></thead><tbody>';
 
-  r.linhas.forEach(function(ln, i){
-    html += '<tr>';
-    html += '<td class="L" style="color:var(--text-muted);font-weight:700;">' + (i+1) + '</td>';
-    html += '<td class="L"><strong>' + esc((ln.label||'').substring(0, 50)) + '</strong></td>';
-    if(st.coluna === '__none__'){
-      html += '<td class="val-strong">' + fmt(ln.total) + '</td>';
-      const pct = r.totalGeral > 0 ? (ln.total/r.totalGeral*100) : 0;
-      html += '<td class="val-dim">' + fP(pct) + '</td>';
-    } else {
-      r.colunas.forEach(function(ck){
-        const v = ln.cells[ck];
-        html += '<td>' + (v !== undefined ? fmt(v) : '<span style="color:var(--text-muted);">—</span>') + '</td>';
+  // Adiciona na zona destino
+  if(zona === 'filters'){
+    if(!_pivotState.filters[field]) _pivotState.filters[field] = [];
+  } else {
+    if(_pivotState[zona].indexOf(field) < 0) _pivotState[zona].push(field);
+  }
+
+  _pvPersistir();
+  _pvSyncZonas();
+  // Re-bind drag dos novos pills (HTML5 + touch)
+  _pvBindPillsDrag();
+  _pvAtualizar();
+
+  // Se foi pra filters, abre dialog imediatamente
+  if(zona === 'filters'){
+    setTimeout(function(){ _pvAbrirFiltro(field); }, 50);
+  }
+}
+
+// Bind apenas dos pills nas zonas (chamado após cada syncZonas)
+function _pvBindPillsDrag(){
+  document.querySelectorAll('.pv-pill').forEach(function(p){
+    if(p.__pvBound) return; // evita duplicar
+    p.__pvBound = true;
+    // HTML5 drag
+    p.addEventListener('dragstart', function(e){
+      const f = p.getAttribute('data-field');
+      const z = p.getAttribute('data-zone');
+      window.__pvPillDrag = {field:f, fromZone:z};
+      p.style.opacity = '0.4';
+      try { e.dataTransfer.setData('text/plain', f); } catch(_){}
+      e.dataTransfer.effectAllowed = 'move';
+    });
+    p.addEventListener('dragend', function(){ p.style.opacity = ''; });
+    // Touch
+    p.addEventListener('touchstart', function(e){
+      if(e.touches.length !== 1) return;
+      const t = e.touches[0];
+      const field = p.getAttribute('data-field');
+      const fromZone = p.getAttribute('data-zone');
+      const ghost = p.cloneNode(true);
+      ghost.style.cssText = p.style.cssText
+        + ';position:fixed;pointer-events:none;z-index:99999;opacity:0.85;'
+        + 'box-shadow:0 4px 12px rgba(0,0,0,.25);transform:scale(1.05);';
+      ghost.style.left = (t.clientX - p.offsetWidth/2) + 'px';
+      ghost.style.top  = (t.clientY - p.offsetHeight/2) + 'px';
+      ghost.style.width = p.offsetWidth + 'px';
+      document.body.appendChild(ghost);
+      p.style.opacity = '0.4';
+      window.__pvTouchDrag = {field:field, fromZone:fromZone, ghost:ghost, sourceEl:p, started:false, startX:t.clientX, startY:t.clientY};
+    }, {passive:true});
+  });
+}
+
+// ── Dialog de filtro: multi-select dos valores da dimensão ──
+function _pvAbrirFiltro(field){
+  const dimInfo = _CUBO_DIMS_INFO[field];
+  if(!dimInfo) return;
+  const items = ((_pivotState.cubo.dimensoes||{})[dimInfo.dimKey]||{}).items || [];
+  const selecionados = new Set(_pivotState.filters[field] || []);
+
+  // Modal simples
+  let html = '<div id="pv-flt-modal" style="position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9999;display:flex;align-items:center;justify-content:center;">'
+    +    '<div style="background:var(--surface);border-radius:8px;padding:18px;max-width:480px;width:90%;max-height:80vh;display:flex;flex-direction:column;">'
+    +      '<div style="font-weight:700;font-size:13px;margin-bottom:10px;">'+dimInfo.icone+' Filtrar por '+esc(dimInfo.label)+'</div>'
+    +      '<div style="display:flex;gap:6px;margin-bottom:8px;">'
+    +        '<input type="text" id="pv-flt-search" placeholder="Buscar…" style="flex:1;padding:5px 8px;border:1px solid var(--border);border-radius:4px;font-size:12px;background:var(--surface);color:var(--text);">'
+    +        '<button id="pv-flt-all" class="ebtn" style="font-size:11px;padding:4px 8px;">Todos</button>'
+    +        '<button id="pv-flt-none" class="ebtn" style="font-size:11px;padding:4px 8px;">Nenhum</button>'
+    +      '</div>'
+    +      '<div id="pv-flt-list" style="flex:1;overflow-y:auto;border:1px solid var(--border);border-radius:5px;padding:6px;background:var(--surface-2);max-height:400px;">';
+  // Lista
+  items.forEach(function(it){
+    const cod = it.cod;
+    const nome = it.nome || it.desc || String(cod);
+    const checked = selecionados.has(cod) || selecionados.has(String(cod)) || selecionados.size === 0;
+    html += '<label class="pv-flt-row" style="display:flex;align-items:center;gap:6px;padding:3px 4px;font-size:12px;cursor:pointer;" data-name="'+esc(String(nome).toLowerCase())+'">'
+      +     '<input type="checkbox" data-cod="'+esc(String(cod))+'" '+(checked?'checked':'')+'>'
+      +     '<span>'+esc(nome)+'</span>'
+      +    '</label>';
+  });
+  html += '</div>'
+    +    '<div style="display:flex;justify-content:space-between;margin-top:12px;gap:8px;">'
+    +      '<button id="pv-flt-cancel" class="ebtn" style="font-size:12px;">Cancelar</button>'
+    +      '<button id="pv-flt-apply" class="ebtn" style="background:var(--accent);color:white;border:none;font-size:12px;">Aplicar</button>'
+    +    '</div>'
+    +  '</div>'
+    + '</div>';
+  const wrap = document.createElement('div');
+  wrap.innerHTML = html;
+  document.body.appendChild(wrap.firstChild);
+
+  const modal = document.getElementById('pv-flt-modal');
+  const search = document.getElementById('pv-flt-search');
+  search.addEventListener('input', function(){
+    const t = search.value.toLowerCase().trim();
+    document.querySelectorAll('.pv-flt-row').forEach(function(row){
+      const n = row.getAttribute('data-name');
+      row.style.display = (!t || n.indexOf(t) >= 0) ? '' : 'none';
+    });
+  });
+  document.getElementById('pv-flt-all').addEventListener('click', function(){
+    document.querySelectorAll('#pv-flt-list input[type=checkbox]').forEach(function(c){
+      if(c.closest('.pv-flt-row').style.display !== 'none') c.checked = true;
+    });
+  });
+  document.getElementById('pv-flt-none').addEventListener('click', function(){
+    document.querySelectorAll('#pv-flt-list input[type=checkbox]').forEach(function(c){
+      if(c.closest('.pv-flt-row').style.display !== 'none') c.checked = false;
+    });
+  });
+  document.getElementById('pv-flt-cancel').addEventListener('click', function(){ modal.remove(); });
+  document.getElementById('pv-flt-apply').addEventListener('click', function(){
+    const sel = [];
+    let total = 0;
+    document.querySelectorAll('#pv-flt-list input[type=checkbox]').forEach(function(c){
+      total++;
+      if(c.checked){
+        const cod = c.getAttribute('data-cod');
+        // Tenta converter pra número se for numérico
+        const n = Number(cod);
+        sel.push(isNaN(n) || String(n) !== cod ? cod : n);
+      }
+    });
+    // Se selecionou todos, considera "sem filtro" (limpa)
+    if(sel.length === total) _pivotState.filters[field] = [];
+    else _pivotState.filters[field] = sel;
+    _pvPersistir();
+    _pvSyncZonas();
+    _pvAtualizar();
+    modal.remove();
+  });
+}
+
+// ── Núcleo: calcula a pivot ──
+function _pvCalcular(){
+  const st = _pivotState;
+  const rows = st.rows;
+  const cols = st.cols;
+  const vals = st.vals;
+  if(!vals.length) return null;
+
+  const dimsEmUso = rows.concat(cols);
+  // Para cada métrica, verifica se o fato dela suporta as dims em uso
+  const valsValidas = vals.filter(function(m){
+    const meta = _CUBO_METRICAS[m]; if(!meta) return false;
+    return dimsEmUso.every(function(d){ return _CUBO_FATO_DIMS[meta.fato].indexOf(d) >= 0; });
+  });
+  if(!valsValidas.length){
+    // Diagnostica qual dimensão está bloqueando
+    const incompatPorMetrica = vals.map(function(m){
+      const meta = _CUBO_METRICAS[m];
+      if(!meta) return null;
+      const incompat = dimsEmUso.filter(function(d){
+        return _CUBO_FATO_DIMS[meta.fato].indexOf(d) < 0;
       });
-      html += '<td class="val-strong">' + fmt(ln.total) + '</td>';
+      return {metrica: meta.label, fato: meta.fato, dimsIncompat: incompat};
+    }).filter(Boolean);
+    // Pega as dims que aparecem em todos os conflitos
+    const todasDimsRuins = new Set();
+    incompatPorMetrica.forEach(function(x){
+      x.dimsIncompat.forEach(function(d){ todasDimsRuins.add(d); });
+    });
+    const labels = Array.from(todasDimsRuins).map(function(d){
+      return (_CUBO_DIMS_INFO[d] && _CUBO_DIMS_INFO[d].label) || d;
+    });
+    return {erro: 'Nenhuma métrica é compatível com as dimensões selecionadas. Remova ' + labels.join(' ou ') + ' das linhas/colunas, ou troque por outra métrica.'};
+  }
+
+  // Coleta linhas brutas de cada fato necessário, aplicando filtros + filtros embutidos
+  const fatosNecessarios = {};
+  valsValidas.forEach(function(m){ fatosNecessarios[_CUBO_METRICAS[m].fato] = true; });
+  const fatos = st.cubo.fatos || {};
+
+  // Map: rowKey → colKey → métrica → valor agregado
+  // rowKey/colKey são tuplas serializadas
+  const matriz = {};
+  // Pra calcular margem (lucro/vlr_liq) precisamos guardar lucro e v_liq separados
+  // Estratégia: guardar agregados base como nomes internos e calcular pós
+
+  // Helper: resolve nome real do campo no fato a partir da dim lógica
+  function _campoDeDim(d){ return _CUBO_DIM_TO_CAMPO[d] || d; }
+
+  Object.keys(fatosNecessarios).forEach(function(fato){
+    const f = fatos[fato]; if(!f || !f.linhas) return;
+    const campos = f.campos;
+    const colIdx = {};
+    campos.forEach(function(c, i){ colIdx[c] = i; });
+
+    // Filtro pré-loop
+    const fltAplicar = [];
+    Object.keys(st.filters).forEach(function(d){
+      const vals = st.filters[d];
+      if(!vals || !vals.length) return;
+      const campoReal = _campoDeDim(d);
+      if(colIdx[campoReal] == null) return; // dim n/a neste fato → linhas todas passam
+      const setV = new Set(vals.map(function(v){return String(v);}));
+      fltAplicar.push({ci:colIdx[campoReal], setV:setV});
+    });
+
+    f.linhas.forEach(function(lin){
+      // Filtro
+      for(let i = 0; i < fltAplicar.length; i++){
+        if(!fltAplicar[i].setV.has(String(lin[fltAplicar[i].ci]))) return;
+      }
+      // Construir rowKey/colKey
+      const rk = rows.map(function(d){ const ci = colIdx[_campoDeDim(d)]; return ci != null ? lin[ci] : '__na__'; }).join('|||');
+      const ck = cols.map(function(d){ const ci = colIdx[_campoDeDim(d)]; return ci != null ? lin[ci] : '__na__'; }).join('|||');
+      if(!matriz[rk]) matriz[rk] = {};
+      if(!matriz[rk][ck]) matriz[rk][ck] = {};
+      const cell = matriz[rk][ck];
+      // Agrega cada métrica
+      valsValidas.forEach(function(mCod){
+        const m = _CUBO_METRICAS[mCod];
+        if(m.fato !== fato) return;
+        if(m.calc){
+          // Métrica calculada: precisamos guardar campos base
+          if(m.calc === 'marg'){
+            cell.__v_luc = (cell.__v_luc||0) + (lin[colIdx.v_luc]||0);
+            cell.__v_liq = (cell.__v_liq||0) + (lin[colIdx.v_liq]||0);
+          } else if(m.calc === 'tkt'){
+            cell.__v_liq = (cell.__v_liq||0) + (lin[colIdx.v_liq]||0);
+            cell.__v_nfs = (cell.__v_nfs||0) + (lin[colIdx.v_nfs]||0);
+          }
+        } else {
+          cell[mCod] = (cell[mCod]||0) + (lin[colIdx[m.campo]]||0);
+        }
+      });
+    });
+  });
+
+  // Pós-cálculo: métricas calculadas
+  Object.keys(matriz).forEach(function(rk){
+    Object.keys(matriz[rk]).forEach(function(ck){
+      const cell = matriz[rk][ck];
+      valsValidas.forEach(function(mCod){
+        const m = _CUBO_METRICAS[mCod];
+        if(m.calc === 'marg'){
+          cell[mCod] = (cell.__v_liq>0) ? (cell.__v_luc/cell.__v_liq*100) : 0;
+        } else if(m.calc === 'tkt'){
+          cell[mCod] = (cell.__v_nfs>0) ? (cell.__v_liq/cell.__v_nfs) : 0;
+        }
+      });
+    });
+  });
+
+  // Coleta rowKeys e colKeys distintos
+  const rowKeys = Object.keys(matriz).sort();
+  const colKeysSet = new Set();
+  rowKeys.forEach(function(rk){
+    Object.keys(matriz[rk]).forEach(function(ck){ colKeysSet.add(ck); });
+  });
+  const colKeys = Array.from(colKeysSet).sort();
+
+  return {
+    matriz: matriz,
+    rowKeys: rowKeys,
+    colKeys: colKeys,
+    rows: rows,
+    cols: cols,
+    vals: valsValidas,
+    valsIgnoradas: vals.filter(function(v){return valsValidas.indexOf(v) < 0;})
+  };
+}
+
+// ── Renderiza a tabela ──
+// Wrapper público: debounced + indicador "calculando"
+let _pvDebounceTimer = null;
+function _pvAtualizar(){
+  if(_pvDebounceTimer) clearTimeout(_pvDebounceTimer);
+  // Mostra indicador imediatamente se cálculo for demorar
+  const status = document.getElementById('pv-status');
+  if(status){
+    status.innerHTML = '<span style="color:var(--text-muted);">⏳ calculando…</span>';
+  }
+  _pvDebounceTimer = setTimeout(function(){
+    _pvAtualizarReal();
+    _pvDebounceTimer = null;
+  }, 80);
+}
+
+function _pvAtualizarReal(){
+  const result = _pvCalcular();
+  const cont = document.getElementById('pv-result');
+  const status = document.getElementById('pv-status');
+  if(!cont) return;
+
+  // Atualiza disponibilidade visual das métricas baseado nas dims em uso
+  _pvAtualizarDisponibilidade();
+
+  if(!result){
+    cont.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:40px;font-size:13px;">Arraste pelo menos uma métrica em <strong>∑ Valores</strong> e uma dimensão em <strong>📋 Linhas</strong> ou <strong>📊 Colunas</strong> para começar.</div>';
+    status.textContent = '';
+    return;
+  }
+  if(result.erro){
+    cont.innerHTML = '<div style="background:#fee2e2;color:#991b1b;border:1px solid #fca5a5;border-radius:6px;padding:12px;font-size:12px;">'+esc(result.erro)+'</div>';
+    status.textContent = '';
+    return;
+  }
+
+  // Status
+  let st = fI(result.rowKeys.length)+' linhas × '+fI(result.colKeys.length||1)+' colunas · '+result.vals.length+' métricas';
+  if(result.valsIgnoradas.length){
+    st += ' · ⚠ '+result.valsIgnoradas.length+' métrica(s) ignorada(s) por incompatibilidade';
+  }
+  status.textContent = st;
+
+  // Render da tabela
+  cont.innerHTML = _pvRenderTabela(result);
+  // Bind sort no header
+  cont.querySelectorAll('th[data-sort]').forEach(function(th){
+    th.addEventListener('click', function(){
+      const k = th.getAttribute('data-sort');
+      if(_pivotState.sort.col === k){
+        _pivotState.sort.dir = _pivotState.sort.dir === 'asc' ? 'desc' : 'asc';
+      } else {
+        _pivotState.sort.col = k;
+        _pivotState.sort.dir = 'desc';
+      }
+      _pvPersistir();
+      _pvAtualizar();
+    });
+  });
+
+  // Se gráfico está aberto, atualiza também
+  const cw = document.getElementById('pv-chart-wrap');
+  if(cw && cw.style.display !== 'none'){
+    _pvRenderGrafico();
+  }
+}
+
+// ── Atualiza estado visual (riscado/desabilitado) das métricas no painel ──
+function _pvAtualizarDisponibilidade(){
+  const dimsEmUso = _pivotState.rows.concat(_pivotState.cols);
+  document.querySelectorAll('#pv-metrics .pv-metric').forEach(function(el){
+    const fato = el.getAttribute('data-fato');
+    const compat = dimsEmUso.every(function(d){
+      return _CUBO_FATO_DIMS[fato].indexOf(d) >= 0;
+    });
+    if(compat){
+      el.style.opacity = '1';
+      el.style.textDecoration = 'none';
+      el.title = '';
+    } else {
+      el.style.opacity = '0.4';
+      el.style.textDecoration = 'line-through';
+      const incompat = dimsEmUso.filter(function(d){
+        return _CUBO_FATO_DIMS[fato].indexOf(d) < 0;
+      }).map(function(d){
+        return _CUBO_DIMS_INFO[d] ? _CUBO_DIMS_INFO[d].label : d;
+      });
+      el.title = 'Incompatível com: '+incompat.join(', ');
+    }
+  });
+}
+
+// ── Helpers de label ──
+function _pvLabelDim(dCod, valor){
+  if(valor === '__na__' || valor == null || valor === '') return '—';
+  const info = _CUBO_DIMS_INFO[dCod];
+  if(!info) return String(valor);
+  if(dCod === 'ym'){ return _ymToLabel(String(valor)); }
+  // Lookup na dimensão
+  const dim = ((_pivotState.cubo.dimensoes||{})[info.dimKey]||{}).items || [];
+  for(let i = 0; i < dim.length; i++){
+    if(String(dim[i].cod) === String(valor)){
+      return dim[i].nome || dim[i].desc || String(valor);
+    }
+  }
+  return String(valor);
+}
+
+function _pvFmtMetrica(mCod, valor){
+  if(valor == null || isNaN(valor)) return '—';
+  const m = _CUBO_METRICAS[mCod]; if(!m) return String(valor);
+  if(m.fmt === 'k') return fK(valor);
+  if(m.fmt === 'p') return fP(valor);
+  if(m.fmt === 'i') return fI(valor);
+  return String(valor);
+}
+
+// ── Renderiza HTML da tabela ──
+function _pvRenderTabela(r){
+  const rows = r.rows;
+  const cols = r.cols;
+  const vals = r.vals;
+  const matriz = r.matriz;
+  let rowKeys = r.rowKeys;
+  const colKeys = r.colKeys.length ? r.colKeys : [''];
+
+  // Cálculo comparativo: % vertical (% da coluna) ou % horizontal (crescimento vs anterior)
+  // Aplica em cima dos valores
+  const compTipo = _pivotState.comp.tipo;
+
+  // Totais por coluna pra % vertical
+  const totalCol = {}; // ck → mCod → soma
+  if(compTipo === 'vert'){
+    colKeys.forEach(function(ck){ totalCol[ck] = {}; });
+    rowKeys.forEach(function(rk){
+      colKeys.forEach(function(ck){
+        const cell = (matriz[rk]||{})[ck] || {};
+        vals.forEach(function(mCod){
+          const m = _CUBO_METRICAS[mCod];
+          // Pct só faz sentido pra valores aditivos (não pra % e médias)
+          if(m.fmt === 'p' || m.calc) return;
+          totalCol[ck][mCod] = (totalCol[ck][mCod]||0) + (cell[mCod]||0);
+        });
+      });
+    });
+  }
+
+  // Sort: aplicar à ordem das linhas se houver col selecionada
+  if(_pivotState.sort.col){
+    const sortKey = _pivotState.sort.col; // formato: "rowLabel" | "ck|||mCod"
+    const dir = _pivotState.sort.dir === 'asc' ? 1 : -1;
+    if(sortKey === '__rowLabel__'){
+      rowKeys = rowKeys.slice().sort(function(a,b){
+        return a.localeCompare(b, 'pt-BR') * dir;
+      });
+    } else {
+      const parts = sortKey.split('|||');
+      const sortMet = parts.pop(); // último é a métrica
+      const sortCk = parts.join('|||');
+      rowKeys = rowKeys.slice().sort(function(a,b){
+        const va = ((matriz[a]||{})[sortCk]||{})[sortMet] || 0;
+        const vb = ((matriz[b]||{})[sortCk]||{})[sortMet] || 0;
+        return (va - vb) * dir;
+      });
+    }
+  }
+
+  // Limita pra não travar UI em tabelas gigantes
+  const TOP_LIMITE = 500;
+  const truncado = rowKeys.length > TOP_LIMITE;
+  if(truncado) rowKeys = rowKeys.slice(0, TOP_LIMITE);
+
+  // ─── Header ───
+  let html = '<table class="t" style="font-size:11px;">';
+  html += '<thead>';
+  // Se há colunas, faz header de 2 níveis: 1ª linha cols, 2ª métricas
+  if(cols.length > 0){
+    html += '<tr>';
+    rows.forEach(function(d){
+      html += '<th class="L" rowspan="2" data-sort="__rowLabel__" style="cursor:pointer;background:var(--surface-2);position:sticky;left:0;z-index:2;">'+esc(_CUBO_DIMS_INFO[d]?_CUBO_DIMS_INFO[d].label:d)+'</th>';
+    });
+    colKeys.forEach(function(ck){
+      const colVals = ck.split('|||');
+      const colLabel = cols.map(function(d, i){
+        return _pvLabelDim(d, colVals[i]);
+      }).join(' / ');
+      html += '<th colspan="'+vals.length+'" style="text-align:center;background:var(--accent-bg,#e0e7ff);color:var(--accent-text,#1a2f5c);font-weight:700;">'+esc(colLabel)+'</th>';
+    });
+    if(vals.length === 1){
+      // Total geral por linha — só faz sentido com 1 métrica
+      html += '<th rowspan="2" style="background:var(--surface-3,#cbd5e1);font-weight:700;">Total</th>';
+    }
+    html += '</tr>';
+    html += '<tr>';
+    colKeys.forEach(function(ck){
+      vals.forEach(function(mCod){
+        html += '<th data-sort="'+esc(ck)+'|||'+esc(mCod)+'" style="cursor:pointer;background:var(--surface-2);font-size:10px;">'+esc(_CUBO_METRICAS[mCod].label)+'</th>';
+      });
+    });
+    html += '</tr>';
+  } else {
+    // Sem cols: header simples (linhas + métricas)
+    html += '<tr>';
+    rows.forEach(function(d){
+      html += '<th class="L" data-sort="__rowLabel__" style="cursor:pointer;background:var(--surface-2);position:sticky;left:0;z-index:2;">'+esc(_CUBO_DIMS_INFO[d]?_CUBO_DIMS_INFO[d].label:d)+'</th>';
+    });
+    vals.forEach(function(mCod){
+      html += '<th data-sort="|||'+esc(mCod)+'" style="cursor:pointer;background:var(--surface-2);">'+esc(_CUBO_METRICAS[mCod].label)+'</th>';
+    });
+    html += '</tr>';
+  }
+  html += '</thead>';
+
+  // ─── Body ───
+  html += '<tbody>';
+  // Total geral (linhas com __na__ acumulam tudo se cols vazia)
+  rowKeys.forEach(function(rk){
+    const rVals = rk.split('|||');
+    html += '<tr>';
+    rows.forEach(function(d, i){
+      html += '<td class="L" style="background:var(--surface);position:sticky;left:0;font-weight:600;">'+esc(_pvLabelDim(d, rVals[i]))+'</td>';
+    });
+    let totalRow = 0; // soma da linha pra coluna Total quando 1 métrica
+    colKeys.forEach(function(ck, ckIdx){
+      vals.forEach(function(mCod){
+        const cell = (matriz[rk]||{})[ck] || {};
+        let v = cell[mCod];
+        let txt;
+        // Análise vertical
+        if(compTipo === 'vert' && totalCol[ck] && totalCol[ck][mCod]){
+          const p = (v||0) / totalCol[ck][mCod] * 100;
+          txt = fP(p) + ' <span style="color:var(--text-muted);font-size:9px;">('+_pvFmtMetrica(mCod, v)+')</span>';
+        }
+        // Análise horizontal: cresc vs col anterior
+        else if(compTipo === 'horiz' && ckIdx > 0){
+          const ckPrev = colKeys[ckIdx - 1];
+          const cellPrev = (matriz[rk]||{})[ckPrev] || {};
+          const vPrev = cellPrev[mCod];
+          if(vPrev && vPrev !== 0){
+            const cresc = ((v||0) / vPrev - 1) * 100;
+            const corr = cresc >= 0 ? 'val-pos' : 'val-neg';
+            const sign = cresc >= 0 ? '+' : '';
+            txt = '<span class="'+corr+'">'+sign+fP(cresc)+'</span> <span style="color:var(--text-muted);font-size:9px;">('+_pvFmtMetrica(mCod, v)+')</span>';
+          } else {
+            txt = _pvFmtMetrica(mCod, v);
+          }
+        }
+        else {
+          txt = _pvFmtMetrica(mCod, v);
+        }
+        html += '<td>'+txt+'</td>';
+        if(vals.length === 1){ totalRow += (v||0); }
+      });
+    });
+    if(cols.length > 0 && vals.length === 1){
+      html += '<td style="background:var(--surface-2);font-weight:700;">'+_pvFmtMetrica(vals[0], totalRow)+'</td>';
     }
     html += '</tr>';
   });
-  html += '</tbody></table></div>';
-  html += '</div>';
+  html += '</tbody></table>';
 
-  cont.innerHTML = html;
+  if(truncado){
+    html += '<div style="margin-top:8px;font-size:11px;color:var(--text-muted);font-style:italic;">⚠ Exibindo apenas as primeiras '+TOP_LIMITE+' linhas. Use filtros para refinar.</div>';
+  }
 
-  // Renderiza chart se cabe
-  if(st.coluna === '__none__' && r.linhas.length <= 50){
-    const isTempo = st.linha === 'tempo';
-    const labels = r.linhas.map(function(l){return (l.label||'').substring(0, 22);});
-    const data = r.linhas.map(function(l){return l.total;});
-    mkC('c-cu-pivot', {type:'bar',
-      data:{labels:labels, datasets:[{label:_metricaLabel(st.metrica), data:data,
-        backgroundColor:_PAL.ac+'CC', borderRadius:4}]},
-      options:{
-        indexAxis: isTempo ? 'x' : 'y',
-        responsive:true, maintainAspectRatio:false,
-        plugins:{legend:{display:false},
-                 tooltip:{callbacks:{label:function(ctx){return fmt(ctx.raw);}}}},
-        scales: isTempo
-          ? {y:{ticks:{callback:function(v){return isPct?fP(v):isQtde?fI(v):fAbbr(v);}}}, x:{grid:{display:false}}}
-          : {x:{ticks:{callback:function(v){return isPct?fP(v):isQtde?fI(v):fAbbr(v);}}}, y:{grid:{display:false}, ticks:{font:{size:10}}}}
-      }});
+  return html;
+}
+
+// ────────────────────────────────────────────────────────────────────
+// SALVAR / CARREGAR / EXCLUIR / COMPARTILHAR análises (Firestore)
+// Collection: analises_pivot/{id}
+// Schema: { nome, owner_uid, owner_email, escopo: 'privado'|'time', criado_em, atualizado_em, state: {rows, cols, vals, filters, comp} }
+// ────────────────────────────────────────────────────────────────────
+
+let _pvAnalisesCache = []; // [{id, nome, owner_uid, escopo, ...}]
+
+async function _pvCarregarListaAnalises(){
+  if(typeof window.fbDb === 'undefined' || !window.fbDb){
+    return [];
+  }
+  try {
+    const sess = (typeof _getSessao === 'function') ? _getSessao() : null;
+    const uid = sess && sess.uid;
+    // Pega todas (regra Firestore filtra escopo)
+    const snap = await window.fbDb.collection('analises_pivot').get();
+    const arr = [];
+    snap.forEach(function(doc){
+      const d = doc.data();
+      arr.push({
+        id: doc.id,
+        nome: d.nome || '(sem nome)',
+        owner_uid: d.owner_uid,
+        owner_email: d.owner_email,
+        escopo: d.escopo || 'privado',
+        atualizado_em: d.atualizado_em,
+        state: d.state || {},
+        ehMeu: uid && d.owner_uid === uid
+      });
+    });
+    arr.sort(function(a,b){ return (b.atualizado_em||'').localeCompare(a.atualizado_em||''); });
+    _pvAnalisesCache = arr;
+    return arr;
+  } catch(e){
+    console.warn('[pivot] erro ao listar análises salvas:', e.message);
+    return [];
   }
 }
 
+async function _pvAtualizarListaSalvas(){
+  const sel = document.getElementById('pv-load-sel');
+  if(!sel) return;
+  // Mostra estado de loading enquanto Firestore responde
+  sel.innerHTML = '<option value="">⏳ Carregando análises salvas…</option>';
+  sel.disabled = true;
+  const arr = await _pvCarregarListaAnalises();
+  let html = '<option value="">— Carregar análise salva —</option>';
+  // Agrupa: minhas + do time
+  const minhas = arr.filter(function(a){return a.ehMeu;});
+  const time = arr.filter(function(a){return !a.ehMeu && a.escopo === 'time';});
+  if(!minhas.length && !time.length){
+    html = '<option value="">— Nenhuma análise salva —</option>';
+  } else {
+    if(minhas.length){
+      html += '<optgroup label="Minhas análises">';
+      minhas.forEach(function(a){
+        html += '<option value="'+esc(a.id)+'">'+esc(a.nome)+(a.escopo==='time'?' 🌐':'')+'</option>';
+      });
+      html += '</optgroup>';
+    }
+    if(time.length){
+      html += '<optgroup label="Compartilhadas pelo time">';
+      time.forEach(function(a){
+        html += '<option value="'+esc(a.id)+'">'+esc(a.nome)+' · '+esc(a.owner_email||'?')+'</option>';
+      });
+      html += '</optgroup>';
+    }
+  }
+  sel.innerHTML = html;
+  sel.disabled = false;
+}
+
+async function _pvSalvarAnaliseUI(){
+  if(typeof window.fbDb === 'undefined' || !window.fbDb){
+    alert('Salvamento disponível apenas com Firebase ativo.');
+    return;
+  }
+  const sess = (typeof _getSessao === 'function') ? _getSessao() : null;
+  if(!sess || !sess.uid){
+    alert('Você precisa estar logado para salvar análises.');
+    return;
+  }
+  if(!_pivotState.vals.length){
+    alert('Configure pelo menos uma métrica antes de salvar.');
+    return;
+  }
+  const nome = prompt('Nome da análise:', _pivotState._nomeAtual || '');
+  if(!nome || !nome.trim()) return;
+  const escopo = confirm('Compartilhar com o time? (OK = sim, todos podem ver / Cancelar = só você)') ? 'time' : 'privado';
+
+  // Refresh token pra evitar permission-denied
+  try {
+    if(window.fbAuth && window.fbAuth.currentUser){
+      await window.fbAuth.currentUser.getIdToken(true);
+    }
+  } catch(e){}
+
+  const doc = {
+    nome: nome.trim(),
+    owner_uid: sess.uid,
+    owner_email: sess.email || '',
+    escopo: escopo,
+    criado_em: new Date().toISOString(),
+    atualizado_em: new Date().toISOString(),
+    state: {
+      rows: _pivotState.rows,
+      cols: _pivotState.cols,
+      vals: _pivotState.vals,
+      filters: _pivotState.filters,
+      comp: _pivotState.comp,
+      sort: _pivotState.sort
+    }
+  };
+  try {
+    const ref = await window.fbDb.collection('analises_pivot').add(doc);
+    _pivotState._idAtual = ref.id;
+    _pivotState._nomeAtual = nome.trim();
+    if(typeof _auditLog === 'function') _auditLog('analise_salvar', {id:ref.id, nome:nome, escopo:escopo});
+    await _pvAtualizarListaSalvas();
+    document.getElementById('pv-load-sel').value = ref.id;
+    document.getElementById('pv-delete').disabled = false;
+    alert('Análise "'+nome+'" salva.');
+  } catch(e){
+    console.error('[pivot] erro ao salvar:', e);
+    alert('Erro ao salvar: '+(e.message||'desconhecido'));
+  }
+}
+
+async function _pvCarregarAnalise(id){
+  const a = _pvAnalisesCache.find(function(x){return x.id === id;});
+  if(!a) return;
+  if(!a.state) return;
+  _pivotState.rows = a.state.rows || [];
+  _pivotState.cols = a.state.cols || [];
+  _pivotState.vals = a.state.vals || [];
+  _pivotState.filters = a.state.filters || {};
+  _pivotState.comp = a.state.comp || {tipo:null, base:null};
+  _pivotState.sort = a.state.sort || {col:null, dir:'asc'};
+  _pivotState._idAtual = id;
+  _pivotState._nomeAtual = a.nome;
+  // Atualiza select de comp
+  const compSel = document.getElementById('pv-comp');
+  if(compSel) compSel.value = _pivotState.comp.tipo || '';
+  _pvPersistir();
+  _pvSyncZonas();
+  _pvAtualizar();
+}
+
+async function _pvExcluirAnaliseUI(){
+  const sel = document.getElementById('pv-load-sel');
+  const id = sel.value;
+  if(!id) return;
+  const a = _pvAnalisesCache.find(function(x){return x.id === id;});
+  if(!a) return;
+  if(!a.ehMeu){
+    alert('Você só pode excluir análises que você criou.');
+    return;
+  }
+  if(!confirm('Excluir a análise "'+a.nome+'"? Essa ação não pode ser desfeita.')) return;
+  try {
+    if(window.fbAuth && window.fbAuth.currentUser){
+      await window.fbAuth.currentUser.getIdToken(true);
+    }
+  } catch(e){}
+  try {
+    await window.fbDb.collection('analises_pivot').doc(id).delete();
+    if(typeof _auditLog === 'function') _auditLog('analise_excluir', {id:id, nome:a.nome});
+    if(_pivotState._idAtual === id){
+      _pivotState._idAtual = null;
+      _pivotState._nomeAtual = null;
+    }
+    await _pvAtualizarListaSalvas();
+    document.getElementById('pv-delete').disabled = true;
+    alert('Análise excluída.');
+  } catch(e){
+    console.error('[pivot] erro ao excluir:', e);
+    alert('Erro ao excluir: '+(e.message||'desconhecido'));
+  }
+}
+
+// ────────────────────────────────────────────────────────────────────
+// GRÁFICO derivado da pivot
+// ────────────────────────────────────────────────────────────────────
+let _pvChart = null;
+
+function _pvRenderGrafico(){
+  const r = _pvCalcular();
+  const wrap = document.getElementById('pv-chart-wrap');
+  if(!wrap || wrap.style.display === 'none') return;
+  if(!r || r.erro){
+    if(_pvChart){ _pvChart.destroy(); _pvChart = null; }
+    return;
+  }
+  // Popular select de métricas com as válidas
+  const mSel = document.getElementById('pv-chart-metric');
+  if(mSel){
+    const cur = mSel.value;
+    mSel.innerHTML = r.vals.map(function(m){
+      return '<option value="'+esc(m)+'">'+esc(_CUBO_METRICAS[m].label)+'</option>';
+    }).join('');
+    if(cur && r.vals.indexOf(cur) >= 0) mSel.value = cur;
+  }
+  const tipo = (document.getElementById('pv-chart-type')||{}).value || 'bar';
+  const mCod = mSel.value || r.vals[0];
+  if(!mCod) return;
+
+  const canvas = document.getElementById('pv-chart-canvas');
+  if(!canvas) return;
+
+  // Constrói datasets a partir da matriz
+  // Se há colunas: cada coluna é um dataset, labels são rowKeys
+  // Se não há: 1 dataset, labels são rowKeys
+  const rowLabels = r.rowKeys.map(function(rk){
+    const parts = rk.split('|||');
+    return r.rows.map(function(d, i){return _pvLabelDim(d, parts[i]);}).join(' / ');
+  });
+  const PAL = ['#2E476F','#F58634','#109854','#7c3aed','#DC7529','#0891B2','#b45309','#94a3b8','#1E3558','#16a34a'];
+
+  if(_pvChart){ _pvChart.destroy(); _pvChart = null; }
+
+  let cfg;
+  if(tipo === 'pie'){
+    // Pizza: só faz sentido com 1 série; usa total da linha
+    const valores = r.rowKeys.map(function(rk){
+      let total = 0;
+      const colKeys = r.colKeys.length ? r.colKeys : [''];
+      colKeys.forEach(function(ck){
+        const cell = (r.matriz[rk]||{})[ck] || {};
+        total += (cell[mCod]||0);
+      });
+      return total;
+    });
+    // Top 10 + "Outros"
+    const idxs = valores.map(function(v,i){return {v:v,i:i};}).sort(function(a,b){return b.v-a.v;});
+    const topN = idxs.slice(0,10);
+    const outros = idxs.slice(10).reduce(function(s,x){return s+x.v;},0);
+    const finalLabels = topN.map(function(x){return rowLabels[x.i];});
+    const finalVals = topN.map(function(x){return x.v;});
+    if(outros > 0){ finalLabels.push('Outros'); finalVals.push(outros); }
+    cfg = {
+      type:'doughnut',
+      data:{labels:finalLabels, datasets:[{data:finalVals, backgroundColor:PAL, borderWidth:2, borderColor:'#fff'}]},
+      options:{responsive:true, maintainAspectRatio:false,
+        plugins:{legend:{position:'right', labels:{padding:6, font:{size:10}}},
+                 tooltip:{callbacks:{label:function(ctx){return ctx.label+': '+_pvFmtMetrica(mCod, ctx.raw);}}}}}
+    };
+  } else {
+    // Linhas / Colunas
+    const colKeys = r.colKeys.length ? r.colKeys : [''];
+    const datasets = colKeys.map(function(ck, idx){
+      const colVals = ck.split('|||');
+      const colLabel = ck === '' ? _CUBO_METRICAS[mCod].label : r.cols.map(function(d, i){
+        return _pvLabelDim(d, colVals[i]);
+      }).join(' / ');
+      const data = r.rowKeys.map(function(rk){
+        const cell = (r.matriz[rk]||{})[ck] || {};
+        return cell[mCod] || 0;
+      });
+      const cor = PAL[idx % PAL.length];
+      return {
+        label: colLabel,
+        data: data,
+        backgroundColor: tipo === 'bar' ? cor+'CC' : cor+'33',
+        borderColor: cor,
+        borderWidth: tipo === 'line' ? 2 : 1,
+        borderRadius: tipo === 'bar' ? 3 : 0,
+        tension: tipo === 'line' ? 0.3 : 0,
+        pointRadius: tipo === 'line' ? 3 : 0,
+        fill: tipo === 'line'
+      };
+    });
+    cfg = {
+      type: tipo,
+      data: {labels: rowLabels, datasets: datasets},
+      options:{responsive:true, maintainAspectRatio:false,
+        plugins:{legend:{position:'bottom', labels:{padding:8, usePointStyle:true, boxWidth:8, font:{size:10}}},
+                 tooltip:{callbacks:{label:function(ctx){return ctx.dataset.label+': '+_pvFmtMetrica(mCod, ctx.raw);}}}},
+        scales:{
+          y:{beginAtZero:true, ticks:{callback:function(v){return _CUBO_METRICAS[mCod].fmt==='p'?fP(v):fAbbr(v);}}},
+          x:{grid:{display:false}, ticks:{maxRotation:60, minRotation:rowLabels.length>8?45:0, font:{size:9}}}
+        }}
+    };
+  }
+  _pvChart = new Chart(canvas, cfg);
+}
+
+// ────────────────────────────────────────────────────────────────────
+// EXPORTAR pivot pra Excel (XLSX)
+// ────────────────────────────────────────────────────────────────────
+function _pvExportarXLSX(){
+  const r = _pvCalcular();
+  if(!r || r.erro){
+    alert('Configure a pivot antes de exportar.');
+    return;
+  }
+  if(typeof XLSX === 'undefined'){
+    alert('Biblioteca de exportação não disponível. Recarregue a página.');
+    return;
+  }
+  // Constrói matriz de células
+  const aoa = []; // array de arrays
+  const rows = r.rows;
+  const cols = r.cols;
+  const vals = r.vals;
+  const colKeys = r.colKeys.length ? r.colKeys : [''];
+
+  // Header 1: cols span métricas
+  if(cols.length){
+    const h1 = rows.map(function(d){return _CUBO_DIMS_INFO[d]?_CUBO_DIMS_INFO[d].label:d;});
+    colKeys.forEach(function(ck){
+      const colVals = ck.split('|||');
+      const colLabel = cols.map(function(d, i){return _pvLabelDim(d, colVals[i]);}).join(' / ');
+      h1.push(colLabel);
+      // Ocupa as outras células do colspan com vazio
+      for(let i = 1; i < vals.length; i++) h1.push('');
+    });
+    aoa.push(h1);
+    // Header 2: nome de cada métrica
+    const h2 = rows.map(function(){return '';});
+    colKeys.forEach(function(){
+      vals.forEach(function(m){ h2.push(_CUBO_METRICAS[m].label); });
+    });
+    aoa.push(h2);
+  } else {
+    const h = rows.map(function(d){return _CUBO_DIMS_INFO[d]?_CUBO_DIMS_INFO[d].label:d;});
+    vals.forEach(function(m){ h.push(_CUBO_METRICAS[m].label); });
+    aoa.push(h);
+  }
+
+  // Body
+  r.rowKeys.forEach(function(rk){
+    const parts = rk.split('|||');
+    const row = rows.map(function(d, i){return _pvLabelDim(d, parts[i]);});
+    colKeys.forEach(function(ck){
+      vals.forEach(function(m){
+        const cell = (r.matriz[rk]||{})[ck] || {};
+        const v = cell[m];
+        row.push(v == null ? '' : Number(v));
+      });
+    });
+    aoa.push(row);
+  });
+
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Pivot');
+  const fname = 'analise_pivot_' + new Date().toISOString().substring(0,10) + '.xlsx';
+  XLSX.writeFile(wb, fname);
+}
+
+
+
 function _dimLabel(d){
-  return {tempo:'Mês', loja:'Loja', supervisor:'Supervisor', vendedor:'Vendedor',
-          depto:'Departamento', categoria:'Categoria/Seção', fornecedor:'Fornecedor', sku_vendas:'SKU'}[d] || d;
+  return (_CUBO_DIMS_INFO[d] && _CUBO_DIMS_INFO[d].label) || d;
 }
 function _metricaLabel(m){
-  return {fat_brt:'Faturamento bruto', fat_liq:'Faturamento líquido', lucro:'Lucro', cmv:'CMV',
-          margem:'Margem %', qt_v:'Qtde vendida', nfs_v:'NFs vendidas', cli:'Clientes positivados',
-          tkt_med:'Ticket médio', devol:'Devolução'}[m] || m;
+  return (_CUBO_METRICAS[m] && _CUBO_METRICAS[m].label) || m;
 }
 
 // Helper: converte 'YYYY-MM' em 'Mmm/AA' (ex: 2026-04 → 'Abr/26')
@@ -1408,11 +2351,11 @@ function renderCV(){
   document.getElementById('kg-cv').innerHTML=kgHtml([
     {l:'Faturamento líquido',v:fK(tv),s:fP(tv>0?tl/tv*100:0)+' margem'},
     {l:'Compras líquidas',v:fK(tc_liq),s:fP(tv>0?tc_liq/tv*100:0)+' de cobertura',cls:tc_liq>tv?'dn':tc_liq/tv>0.80?'':'up'},
-    {l:'Pago',v:fK(tp),s:fP((tp+ta)>0?tp/(tp+ta)*100:0)+' do total',cls:'up'},
+    {l:'Pago',v:fK(tp),s:fP((tp+ta)>0?tp/(tp+ta)*100:0)+' do exigível (pago+aberto)',cls:'up'},
     {l:'Em aberto',v:fK(ta),s:'A pagar',cls:ta>0?'hl':''},
     {l:'Dev. cliente',v:fK(tdvc),s:fP(tv>0?tdvc/tv*100:0)+' do fat.',cls:tv>0&&tdvc/tv>0.01?'dn':''},
     {l:'Dev. fornecedor',v:fK(tdvf),s:'Subtraído das compras',cls:''},
-    {l:'Financiado forn.',v:fK(tc_liq-tp),s:'Comprado não pago'},
+    {l:'Financiado forn.',v:fK(tc_liq-tp),s:'Compras menos pago no período',cls:''},
     {l:'Lucro bruto',v:fK(tl),s:'Resultado operacional',cls:tl>0?'up':'dn'},
   ]);
 

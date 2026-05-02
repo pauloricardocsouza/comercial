@@ -216,7 +216,7 @@ const AUTH_MODE = 'firebase'; // 'mock' | 'firebase'
 // Convenção:
 //   X.x → alteração grande (quebra de compatibilidade, nova feature grande)
 //   x.X → alteração suave (fix, ajuste visual, pequeno refinamento)
-const APP_VERSION = '4.14-comercial';
+const APP_VERSION = '4.22-comercial';
 
 // ================================================================
 // HELPERS DE CHART.JS — compatíveis com Safari/iOS (sem spread ops)
@@ -1324,15 +1324,34 @@ function _normalizarCubo(c){
     // ATENÇÃO: este map afeta as chaves usadas pelo _agregarPivot
     const camposNorm = camposFv.map(function(cmp){ return mapCampos[cmp] || cmp; });
 
+    // Mapeia fato_compras se existir (CP tem este; ATP usa fatos.compras direto)
+    const fatos_out = {
+      vendas: {
+        campos: camposNorm,
+        linhas: fv.linhas || []
+      }
+    };
+    if(c.fato_compras && c.fato_compras.campos && c.fato_compras.linhas){
+      const camposComp = c.fato_compras.campos.map(function(cmp){
+        // Mapeamento adicional pra compras (CP usa 'valor', 'qt', 'nfs')
+        const mapComp = {
+          'filial':'lj',  // CP usa filial em vez de lj
+          'valor':'c_val', 'val':'c_val',
+          'qt':'c_qt', 'nfs':'c_nfs',
+          'fat_brt':'c_val', 'cnt':'c_nfs'
+        };
+        return mapCampos[cmp] || mapComp[cmp] || cmp;
+      });
+      fatos_out.compras = {
+        campos: camposComp,
+        linhas: c.fato_compras.linhas
+      };
+    }
+
     // Constrói o cubo normalizado
     return Object.assign({}, c, {
       dimensoes: dimensoes,
-      fatos: {
-        vendas: {
-          campos: camposNorm,
-          linhas: fv.linhas || []
-        }
-      },
+      fatos: fatos_out,
       _formato_origem: 'cp'
     });
   }
@@ -1844,6 +1863,14 @@ function _loadDadosModulares(baseSlug){
         }
         // Validar schema (não-bloqueante; apenas reporta no console)
         _schemaValidar(varName, j);
+        // Pré-calcular badge de alertas quando E (estoque) carrega
+        if(varName === 'E' && typeof _preCalcularBadgeAlertas === 'function'){
+          setTimeout(_preCalcularBadgeAlertas, 100);
+        }
+        // Atualizar freshness no header (qualquer JSON pode trazer data)
+        if(typeof _atualizarSnapshotHeader === 'function'){
+          setTimeout(_atualizarSnapshotHeader, 50);
+        }
         // Re-renderizar páginas dependentes se alguma estiver ativa
         const active = document.querySelector('.page.active');
         if(active && paginasQueDependem && paginasQueDependem.length){
@@ -1995,7 +2022,13 @@ function _renderSeletorFilial(){
 
   btn.addEventListener('click', function(e){
     e.stopPropagation();
-    dd.style.display = dd.style.display === 'none' ? 'block' : 'none';
+    const willOpen = dd.style.display === 'none';
+    dd.style.display = willOpen ? 'block' : 'none';
+    // Se abriu, fecha o dropdown de usuário (menu manager)
+    if(willOpen){
+      const ud = document.getElementById('userDrop');
+      if(ud) ud.style.display = 'none';
+    }
   });
 
   // Click fora fecha
@@ -2073,6 +2106,9 @@ function _renderUserWidget(){
     +'<div style="font-size:11px;color:#666;margin-top:2px;">'+emailEsc+'</div>'
     +'<div style="margin-top:6px;display:inline-block;background:#1a2f5c;color:white;padding:2px 8px;border-radius:4px;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;">'+perfilNomeEsc+'</div>'
     +'</div>'
+    +'<button onclick="_alterarSenhaUI()" style="width:100%;text-align:left;padding:11px 16px;background:transparent;border:none;cursor:pointer;font-size:13px;color:#1a1a1a;display:flex;align-items:center;gap:8px;font-family:inherit;border-bottom:1px solid #eee;" onmouseover="this.style.background=\'#f5f5f5\'" onmouseout="this.style.background=\'transparent\'">'
+    +'<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>'
+    +'Alterar senha</button>'
     +'<button onclick="_logout()" style="width:100%;text-align:left;padding:11px 16px;background:transparent;border:none;cursor:pointer;font-size:13px;color:#1a1a1a;display:flex;align-items:center;gap:8px;font-family:inherit;" onmouseover="this.style.background=\'#f5f5f5\'" onmouseout="this.style.background=\'transparent\'">'
     +'<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>'
     +'Sair</button>'
@@ -2083,7 +2119,13 @@ function _renderUserWidget(){
   document.getElementById('userMenuBtn').addEventListener('click', function(e){
     e.stopPropagation();
     const drp = document.getElementById('userDrop');
-    drp.style.display = drp.style.display === 'none' ? 'block' : 'none';
+    const willOpen = drp.style.display === 'none';
+    drp.style.display = willOpen ? 'block' : 'none';
+    // Se abriu, fecha o dropdown de filial (menu manager)
+    if(willOpen){
+      const fd = document.getElementById('filialDropdown');
+      if(fd) fd.style.display = 'none';
+    }
   });
   document.addEventListener('click', function(e){
     if(!e.target.closest('#userWidget')){
@@ -2393,6 +2435,13 @@ function mkC(id,cfg){
   if(!ctx)return null;
   if(CH[id])CH[id].destroy();
   CH[id]=new Chart(ctx,cfg);
+  // Força resize após o layout estabilizar — evita gráficos cortados
+  // (especialmente donuts/pizzas que dependem de medir o container).
+  // 2 ticks: um pro próximo frame, outro pra qualquer reflow tardio.
+  requestAnimationFrame(function(){
+    if(CH[id]) CH[id].resize();
+    setTimeout(function(){ if(CH[id]) CH[id].resize(); }, 100);
+  });
   return CH[id];
 }
 
@@ -4504,6 +4553,16 @@ function sumE(f){return getEvo().reduce(function(s,e){return s+(e[f]||0);}, 0);}
 function buildFilterBar(pageId){
   const bar=document.createElement('div');
   bar.className='pfb';
+  // Em modo modular D é null. Lista de deptos vem de V.deptos quando disponível.
+  let deptosList = [];
+  if(typeof D !== 'undefined' && D && D.meta && Array.isArray(D.meta.deptos)){
+    deptosList = D.meta.deptos;
+  } else if(typeof V !== 'undefined' && V && Array.isArray(V.deptos)){
+    // Extrai nomes únicos de deptos a partir do JSON modular
+    const set = new Set();
+    V.deptos.forEach(function(d){ if(d && d.nome && d.nome !== 'INATIVO') set.add(d.nome); });
+    deptosList = Array.from(set).sort();
+  }
   bar.innerHTML=`
     <div class="pfb-inner">
       <div class="pfb-label">Período</div>
@@ -4517,7 +4576,7 @@ function buildFilterBar(pageId){
       <div class="pfb-label">Departamento</div>
       <select class="pfb-dept">
         <option value="">Todos</option>
-        ${(D.meta.deptos||[]).map(d=>`<option value="${d}">${d}</option>`).join('')}
+        ${deptosList.map(d=>`<option value="${d}">${d}</option>`).join('')}
       </select>
       <button class="pfb-apply">Aplicar</button>
     </div>
@@ -4940,6 +4999,7 @@ async function renderProc(){
   PROC_RELATORIOS.forEach(rel => _procWireCard(rel));
 }
 
+
 // Conecta os eventos de um card (file input, drop zone, botão processar)
 function _procWireCard(rel){
   const id = _procCardId(rel.rotina);
@@ -5208,3 +5268,108 @@ window.TabelaPlus = TabelaPlus;
     setTimeout(reaplicar, 500);
   }
 })();
+
+// ================================================================
+// Badge de alertas no menu lateral · contagem dinâmica
+// ================================================================
+function _atualizarBadgeAlertas(total){
+  const el = document.getElementById('sb-cnt-alertas');
+  if(!el) return;
+  if(total && total > 0){
+    // Formato compacto: 9 → "9", 3878 → "3,9k"
+    let txt;
+    if(total >= 1000) txt = (total/1000).toFixed(1).replace(/\.0$/,'') + 'k';
+    else txt = String(total);
+    el.textContent = txt;
+    el.style.display = '';
+    el.title = total + ' alertas detectados';
+  } else {
+    el.textContent = '';
+    el.style.display = 'none';
+  }
+}
+window._atualizarBadgeAlertas = _atualizarBadgeAlertas;
+
+// Pré-calcula contagem de alertas quando E carrega (sem precisar entrar na página)
+async function _preCalcularBadgeAlertas(){
+  if(typeof E === 'undefined' || !E) return;
+  if(typeof _alertasCalcular !== 'function') return;
+  try {
+    const c = _alertasCalcular();
+    if(!c) return;
+    const tot = Object.keys(c.buckets).reduce(function(s,k){return s+c.buckets[k].length;},0);
+    _atualizarBadgeAlertas(tot);
+  } catch(e){
+    // Silencioso — alertas calcula on-demand quando user entrar na página
+  }
+}
+window._preCalcularBadgeAlertas = _preCalcularBadgeAlertas;
+
+// ================================================================
+// Indicador de freshness no header · "Snapshot: 29/04/2026"
+// ================================================================
+function _atualizarSnapshotHeader(){
+  const el = document.getElementById('snapshot-info');
+  if(!el) return;
+  // Tenta achar a data mais recente entre os JSONs carregados
+  let dataRef = null;
+  try {
+    if(typeof E !== 'undefined' && E && E.meta && E.meta.data_referencia) dataRef = E.meta.data_referencia;
+    else if(typeof E !== 'undefined' && E && E.resumo && E.resumo.data_ref) dataRef = E.resumo.data_ref;
+    else if(typeof F !== 'undefined' && F && F.meta && F.meta.data_referencia) dataRef = F.meta.data_referencia;
+    else if(typeof V !== 'undefined' && V && V.meta && V.meta.data_referencia) dataRef = V.meta.data_referencia;
+    else if(typeof V !== 'undefined' && V && V.meta && V.meta.geradoEm) dataRef = String(V.meta.geradoEm).substring(0,10);
+  } catch(e){ return; }
+  if(!dataRef) return;
+  // Formata YYYY-MM-DD → DD/MM/YYYY
+  let txt = dataRef;
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(dataRef);
+  if(m) txt = m[3]+'/'+m[2]+'/'+m[1];
+  el.textContent = '📅 ' + txt;
+  el.style.display = '';
+}
+window._atualizarSnapshotHeader = _atualizarSnapshotHeader;
+
+// ================================================================
+// Alterar senha · UI simples no menu do usuário
+// ================================================================
+async function _alterarSenhaUI(){
+  const drp = document.getElementById('userDrop');
+  if(drp) drp.style.display = 'none';
+  if(AUTH_MODE !== 'firebase' || !window.fbAuth || !window.fbAuth.currentUser){
+    alert('Alteração de senha disponível apenas no modo de autenticação Firebase.');
+    return;
+  }
+  const u = window.fbAuth.currentUser;
+  const novaSenha = prompt('Digite a nova senha (mínimo 6 caracteres):');
+  if(!novaSenha) return;
+  if(novaSenha.length < 6){
+    alert('A senha precisa ter pelo menos 6 caracteres.');
+    return;
+  }
+  const conf = prompt('Confirme a nova senha:');
+  if(novaSenha !== conf){
+    alert('As senhas não coincidem.');
+    return;
+  }
+  try {
+    await u.updatePassword(novaSenha);
+    // Marca senha_temp como false no Firestore
+    if(window.fbDb){
+      try {
+        await window.fbDb.collection('usuarios').doc(u.uid).update({
+          senha_temp: false,
+          ultimo_acesso: new Date().toISOString()
+        });
+      } catch(e){ /* não bloqueia se falhar */ }
+    }
+    alert('Senha alterada com sucesso.');
+  } catch(e){
+    if(e && e.code === 'auth/requires-recent-login'){
+      alert('Por segurança, faça logout e login novamente antes de alterar a senha.');
+    } else {
+      alert('Erro ao alterar senha: '+(e.message||e.code||'desconhecido'));
+    }
+  }
+}
+window._alterarSenhaUI = _alterarSenhaUI;

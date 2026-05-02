@@ -177,14 +177,144 @@ function renderEstoqueNovo(){
 // ════════════════════════════════════════════════════════════════════════
 // EXCESSO DE ESTOQUE NOVO · usa estoque_atp.json (E) · sub-etapa 4i
 // ════════════════════════════════════════════════════════════════════════
+// ════════════════════════════════════════════════════════════════════
+// Helper: cálculo de giro_dias pelo método "Maior mês de venda"
+// Lê meta.ultimo_mes_vendas {ym, aberto, dias_corridos} e produto.vendas_por_mes
+// Regra:
+//  1. Pega 3 últimos meses fechados + mês atual (se aberto)
+//  2. Vencedor = mês com maior qtde
+//  3. Se vencedor é fechado → giro = qt/30
+//  4. Se vencedor é mês atual → giro = qt/dias_corridos
+//  5. Se mês atual tem <5 dias, ignora ele
+// Retorna: {giro_dias, vencedor_ym, vencedor_qt, metodo} ou null se sem dados
+// ════════════════════════════════════════════════════════════════════
+function _calcularGiroMaiorMes(produto, ultimoMesInfo){
+  if(!produto || !produto.vendas_por_mes || !produto.vendas_por_mes.length) return null;
+  if(!ultimoMesInfo || !ultimoMesInfo.ym) return null;
+
+  const ultYm = ultimoMesInfo.ym;
+  const ultAberto = ultimoMesInfo.aberto !== false;
+  const diasCorr = Number(ultimoMesInfo.dias_corridos || 0);
+  // Calcula os 3 meses fechados anteriores (sequenciais ao último)
+  function ymPrev(ym, n){
+    const ano = parseInt(ym.substring(0,4), 10);
+    const mes = parseInt(ym.substring(5,7), 10);
+    let m = mes - n;
+    let a = ano;
+    while(m <= 0){ m += 12; a -= 1; }
+    return a + '-' + (m < 10 ? '0' : '') + m;
+  }
+
+  // Define os 3 fechados de referência:
+  // se últimoMes está aberto → fechados são (último - 1), (último - 2), (último - 3)
+  // se últimoMes está fechado → fechados são último, (último - 1), (último - 2)
+  const fechados = [];
+  if(ultAberto){
+    fechados.push(ymPrev(ultYm, 1));
+    fechados.push(ymPrev(ultYm, 2));
+    fechados.push(ymPrev(ultYm, 3));
+  } else {
+    fechados.push(ultYm);
+    fechados.push(ymPrev(ultYm, 1));
+    fechados.push(ymPrev(ultYm, 2));
+  }
+
+  const ignorarMesAtual = ultAberto && diasCorr < 5;
+
+  // Lookup rápido em vendas_por_mes
+  const mapVendas = new Map();
+  produto.vendas_por_mes.forEach(function(v){ mapVendas.set(v.ym, v.qt || 0); });
+
+  // Candidatos: mês atual (se aberto e não ignorado) + 3 fechados
+  const candidatos = [];
+  if(ultAberto && !ignorarMesAtual){
+    candidatos.push({ym:ultYm, qt:mapVendas.get(ultYm) || 0, aberto:true});
+  }
+  fechados.forEach(function(ym){
+    candidatos.push({ym:ym, qt:mapVendas.get(ym) || 0, aberto:false});
+  });
+
+  // Vencedor = maior qt
+  if(!candidatos.length) return null;
+  let vencedor = candidatos[0];
+  for(let i = 1; i < candidatos.length; i++){
+    if(candidatos[i].qt > vencedor.qt) vencedor = candidatos[i];
+  }
+
+  // Sem venda em nenhum dos meses → produto parado/morto, sem giro
+  if(!vencedor || vencedor.qt <= 0){
+    return {giro_dia:0, vencedor_ym:null, vencedor_qt:0, metodo:'sem_venda'};
+  }
+
+  // Calcula giro/dia conforme regra
+  const divisor = vencedor.aberto ? Math.max(1, diasCorr) : 30;
+  const giro_dia = vencedor.qt / divisor;
+
+  return {
+    giro_dia: giro_dia,
+    vencedor_ym: vencedor.ym,
+    vencedor_qt: vencedor.qt,
+    aberto: vencedor.aberto,
+    divisor: divisor,
+    metodo: vencedor.aberto ? 'mes_atual' : 'mes_fechado'
+  };
+}
+
+// Retorna o método de cálculo ativo (persistido em localStorage)
+function _getMetodoExcesso(){
+  try {
+    const v = localStorage.getItem('metodo_excesso_v1');
+    if(v === 'maior_mes' || v === 'winthor') return v;
+  } catch(e){}
+  return 'winthor'; // default
+}
+function _setMetodoExcesso(m){
+  try { localStorage.setItem('metodo_excesso_v1', m); } catch(e){}
+}
+
 function renderExcessoNovo(){
   const cont = document.getElementById('page-excesso');
   if(!cont || !E) return;
   const produtos = E.produtos || [];
+  const metodo = _getMetodoExcesso();
+  const ultimoMesInfo = (E.meta && E.meta.ultimo_mes_vendas) || null;
+
+  // Quando método é "maior_mes", recalcula giro_dia e status pra cada produto
+  // Não modifica o objeto original — cria campos auxiliares __giro_dia_novo, __status_novo
+  if(metodo === 'maior_mes'){
+    produtos.forEach(function(p){
+      const r = _calcularGiroMaiorMes(p, ultimoMesInfo);
+      if(!r){ p.__giro_dia_novo = p.giro_dias || 0; p.__status_novo = p.status; p.__calc_novo = null; return; }
+      p.__calc_novo = r;
+      // Calcula novo giro_dias (dias de cobertura): estoque_qt / giro_dia
+      const estQt = (p.estoque && p.estoque.qt) || 0;
+      if(r.giro_dia > 0){
+        p.__giro_dia_novo = estQt / r.giro_dia;
+      } else {
+        p.__giro_dia_novo = estQt > 0 ? 9999 : 0; // sem venda mas com estoque = morto
+      }
+      // Status pelo novo giro
+      const g = p.__giro_dia_novo;
+      if(estQt <= 0)            p.__status_novo = 'MORTO';
+      else if(g > 365)          p.__status_novo = 'MORTO';
+      else if(g > 180)          p.__status_novo = 'PARADO';
+      else if(g > 90)           p.__status_novo = 'CRITICO';
+      else                      p.__status_novo = 'ATIVO';
+    });
+  } else {
+    // Limpa cálculos antigos pra não confundir
+    produtos.forEach(function(p){ p.__giro_dia_novo = null; p.__status_novo = null; p.__calc_novo = null; });
+  }
+
+  // Função pra obter giro_dias e status conforme método
+  function _giro(p){ return metodo === 'maior_mes' ? (p.__giro_dia_novo||0) : (p.giro_dias||0); }
+  function _status(p){ return metodo === 'maior_mes' ? (p.__status_novo||p.status) : p.status; }
 
   const excessos = produtos.filter(function(p){
-    if(['PARADO','MORTO','CRITICO'].indexOf(p.status)>=0) return true;
-    if(p.giro_dias && p.giro_dias > 180) return true;
+    const st = _status(p);
+    if(['PARADO','MORTO','CRITICO'].indexOf(st)>=0) return true;
+    const g = _giro(p);
+    if(g && g > 180) return true;
     return false;
   });
 
@@ -193,19 +323,55 @@ function renderExcessoNovo(){
     if(p.estoque){ totVlCusto += p.estoque.vl_custo||0; totVlPreco += p.estoque.vl_preco||0; }
   });
   const skusTotal = E.resumo ? E.resumo.skus_total : 0;
-  const vlCustoTotal = E.resumo ? E.resumo.vl_custo : 1;
+  // Calcula vl_custo total do estoque. Se ausente no resumo (caso de cubos
+  // consolidados/CP), reconstrói a partir de por_status.
+  let vlCustoTotal = 0;
+  if(E.resumo && typeof E.resumo.vl_custo === 'number'){
+    vlCustoTotal = E.resumo.vl_custo;
+  } else if(E.resumo && E.resumo.por_status){
+    Object.values(E.resumo.por_status).forEach(function(s){
+      vlCustoTotal += (s && s.vl_custo) || 0;
+    });
+  }
 
   let html = '<div class="ph"><div class="pk">Compras</div><h2>Excesso de estoque · imobilizações sem giro</h2></div>'
            + '<div class="ph-sep"></div>'
            + '<div class="page-body">';
 
-  html += '<div style="background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:10px 14px;margin-bottom:14px;font-size:12px;color:var(--text-dim);">'
-       + '<strong>Critério:</strong> SKUs com status PARADO, MORTO, CRITICO, ou giro maior que 180 dias. '
-       + 'Snapshot de '+esc(E.meta?E.meta.data_referencia:'?')+'.'
-       + '</div>';
+  // Toggle de método de cálculo no topo
+  const ultMesTxt = ultimoMesInfo ? (_ymToLabel(ultimoMesInfo.ym) + (ultimoMesInfo.aberto ? ' aberto · '+ultimoMesInfo.dias_corridos+' dias' : ' fechado')) : '?';
+  const semDadosNovo = !ultimoMesInfo;
+  html += '<div style="background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:10px 14px;margin-bottom:14px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;">'
+       +   '<strong style="font-size:12px;">Método de cálculo:</strong>'
+       +   '<div role="group" style="display:inline-flex;border:1px solid var(--border);border-radius:5px;overflow:hidden;">'
+       +     '<button id="exc-met-w" data-met="winthor" style="padding:5px 12px;border:none;font-size:11.5px;cursor:pointer;'
+       +       (metodo==='winthor'?'background:var(--accent);color:white;':'background:var(--surface);color:var(--text);')+'">Cálculo Winthor</button>'
+       +     '<button id="exc-met-m" data-met="maior_mes" style="padding:5px 12px;border:none;font-size:11.5px;cursor:pointer;border-left:1px solid var(--border);'
+       +       (metodo==='maior_mes'?'background:var(--accent);color:white;':'background:var(--surface);color:var(--text);')
+       +       (semDadosNovo?'opacity:0.5;cursor:not-allowed;':'')+'"'
+       +       (semDadosNovo?' disabled title="Dados do ETL não disponíveis"':'')+'>Maior mês de venda</button>'
+       +   '</div>';
+  if(metodo === 'maior_mes'){
+    html += '<span style="font-size:11px;color:var(--text-muted);">Último mês: '+esc(ultMesTxt)+'</span>';
+  }
+  html += '</div>';
+
+  // Banner explicativo do método
+  if(metodo === 'maior_mes'){
+    html += '<div style="background:#eff6ff;border:1px solid #93c5fd;border-radius:8px;padding:10px 14px;margin-bottom:14px;font-size:11.5px;color:#1e3a8a;line-height:1.5;">'
+         +   '<strong>Como funciona:</strong> compara qtde vendida nos 3 últimos meses fechados com o mês atual e usa o <strong>maior</strong> como referência. '
+         +   'Se vencedor é mês fechado, divide por 30 dias. Se é o mês atual, divide pelos dias corridos. '
+         +   'Mês atual com menos de 5 dias é ignorado.'
+         + '</div>';
+  } else {
+    html += '<div style="background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:10px 14px;margin-bottom:14px;font-size:12px;color:var(--text-dim);">'
+         + '<strong>Critério:</strong> SKUs com status PARADO, MORTO, CRITICO, ou giro maior que 180 dias. '
+         + 'Snapshot de '+esc(E.meta?E.meta.data_referencia:'?')+'.'
+         + '</div>';
+  }
 
   const pctSku = skusTotal>0?(excessos.length/skusTotal*100):0;
-  const pctVl = vlCustoTotal>0?(totVlCusto/vlCustoTotal*100):0;
+  const pctVl = vlCustoTotal>0?(totVlCusto/vlCustoTotal*100):null;
   html += '<div class="kg" style="grid-template-columns:repeat(6,1fr);margin-bottom:14px;" id="kg-exc-novo"></div>';
 
   const top = excessos.slice().sort(function(a,b){return (b.estoque?b.estoque.vl_custo:0) - (a.estoque?a.estoque.vl_custo:0);}).slice(0, 50);
@@ -223,17 +389,25 @@ function renderExcessoNovo(){
        +    '</tr></thead><tbody>';
   top.forEach(function(p, i){
     const e = p.estoque || {};
-    const cls = p.status==='CRITICO'?'wn':p.status==='PARADO'?'wn':p.status==='MORTO'?'dn':'';
-    const giro = p.giro_dias!=null?p.giro_dias.toFixed(0):'-';
+    const stAtual = _status(p);
+    const giroAtual = _giro(p);
+    const cls = stAtual==='CRITICO'?'wn':stAtual==='PARADO'?'wn':stAtual==='MORTO'?'dn':'';
+    const giro = giroAtual!=null && giroAtual>0 ? giroAtual.toFixed(0) : '-';
+    // Tooltip com detalhe do cálculo se método é maior_mes
+    let giroTooltip = '';
+    if(metodo === 'maior_mes' && p.__calc_novo && p.__calc_novo.vencedor_ym){
+      const c = p.__calc_novo;
+      giroTooltip = ' title="Vencedor: '+c.vencedor_ym+' ('+fI(c.vencedor_qt)+' un · '+(c.aberto?'mês atual, '+c.divisor+'d':'mês fechado, 30d')+') → giro/dia: '+c.giro_dia.toFixed(2)+'"';
+    }
     html += '<tr>'
          +    '<td class="L" style="color:var(--text-muted);font-weight:700;">'+(i+1)+'</td>'
          +    '<td class="L"><strong>'+esc((p.desc||'').substring(0,40))+'</strong></td>'
          +    '<td>'+esc((p.depto&&p.depto.nome)||'-')+'</td>'
          +    '<td>'+fI(e.qt||0)+'</td>'
          +    '<td class="val-strong">'+fK(e.vl_custo||0)+'</td>'
-         +    '<td>'+giro+'</td>'
+         +    '<td'+giroTooltip+'>'+giro+'</td>'
          +    '<td>'+esc(e.dt_ult_entrada||'-')+'</td>'
-         +    '<td><span class="kg-tag '+cls+'">'+esc(p.status||'-')+'</span></td>'
+         +    '<td><span class="kg-tag '+cls+'">'+esc(stAtual||'-')+'</span></td>'
          +  '</tr>';
   });
   html += '</tbody></table></div></div>';
@@ -241,18 +415,30 @@ function renderExcessoNovo(){
   html += '</div>';
   cont.innerHTML = html;
 
+  // Bind toggle de método
+  document.querySelectorAll('#exc-met-w, #exc-met-m').forEach(function(btn){
+    btn.addEventListener('click', function(){
+      if(btn.disabled) return;
+      const m = btn.getAttribute('data-met');
+      if(m === metodo) return;
+      _setMetodoExcesso(m);
+      // Re-renderiza a página
+      renderExcessoNovo();
+    });
+  });
+
   document.getElementById('kg-exc-novo').innerHTML = kgHtml([
     {l:'SKUs em excesso',v:fI(excessos.length),s:fP(pctSku)+' do total cadastrado',cls:'dn'},
-    {l:'Vl imobilizado (custo)',v:fK(totVlCusto),s:fP(pctVl)+' do estoque total',cls:'dn'},
+    {l:'Vl imobilizado (custo)',v:fK(totVlCusto),s:(pctVl!==null?fP(pctVl)+' do estoque total':'estoque total não disponível'),cls:'dn'},
     {l:'Vl em preço de venda',v:fK(totVlPreco),s:'Se desovasse a preço cheio'},
-    {l:'Status PARADO',v:fI(excessos.filter(function(p){return p.status==='PARADO';}).length),s:'Sem venda > 90 dias',cls:'wn'},
-    {l:'Status MORTO',v:fI(excessos.filter(function(p){return p.status==='MORTO';}).length),s:'Sem venda > 180 dias',cls:'dn'},
-    {l:'Status CRÍTICO',v:fI(excessos.filter(function(p){return p.status==='CRITICO';}).length),s:'Risco iminente',cls:'wn'},
+    {l:'Status PARADO',v:fI(excessos.filter(function(p){return _status(p)==='PARADO';}).length),s:'Sem venda > 90 dias',cls:'wn'},
+    {l:'Status MORTO',v:fI(excessos.filter(function(p){return _status(p)==='MORTO';}).length),s:'Sem venda > 180 dias',cls:'dn'},
+    {l:'Status CRÍTICO',v:fI(excessos.filter(function(p){return _status(p)==='CRITICO';}).length),s:'Risco iminente',cls:'wn'},
   ]);
 
   const statusOrder = ['CRITICO','PARADO','MORTO'];
-  const stCounts = statusOrder.map(function(s){return excessos.filter(function(p){return p.status===s;}).length;});
-  const stVl = statusOrder.map(function(s){return excessos.filter(function(p){return p.status===s;}).reduce(function(t,p){return t+(p.estoque?p.estoque.vl_custo:0);},0);});
+  const stCounts = statusOrder.map(function(s){return excessos.filter(function(p){return _status(p)===s;}).length;});
+  const stVl = statusOrder.map(function(s){return excessos.filter(function(p){return _status(p)===s;}).reduce(function(t,p){return t+(p.estoque?p.estoque.vl_custo:0);},0);});
   mkC('c-exc-status',{type:'bar',
     data:{labels:statusOrder,datasets:[
       {label:'SKUs (qtde)',data:stCounts,backgroundColor:_PAL.ac+'CC',borderRadius:4,yAxisID:'yQt'},
@@ -1179,7 +1365,7 @@ function renderFinanceiroNovo(){
   document.getElementById('kg-fin-novo').innerHTML = kgHtml([
     {l:'Pago no período',v:fK(resPago.total||0),s:fI(resPago.titulos||0)+' títulos · '+fI(resPago.fornecedores||0)+' fornecedores'},
     {l:'A pagar (aberto)',v:fK(resAbr.total_pagar||0),s:fI(resAbr.titulos||0)+' títulos · '+fI(resAbr.fornecedores||0)+' fornecedores'},
-    {l:'Vencido hoje',v:fK(vencidoTotal),s:fI(vencidoTit)+' títulos · '+fP(pctVencido)+' do aberto',cls:vencidoTotal>0?'dn':''},
+    {l:'Vencido hoje',v:fK(vencidoTotal),s:fI(vencidoTit)+' títulos · '+fP(pctVencido)+' do aberto · inclui hoje + atrasados',cls:vencidoTotal>0?'dn':''},
     {l:'A vencer',v:fK(aVencer),s:fI((aging.A_VENCER||{titulos:0}).titulos)+' títulos no futuro'},
     {l:'Juros pagos',v:fK(resPago.juros||0),s:fP((resPago.total>0?resPago.juros/resPago.total*100:0))+' do total · custo de atraso',cls:resPago.juros>50000?'wn':''},
     {l:'Próximos 30 dias',v:fK(prox30.reduce(function(s,t){return s+t.valor;},0)),s:fI(prox30.length)+' títulos a vencer'},
@@ -1305,6 +1491,8 @@ function _deptosAgregar(){
   produtos.forEach(function(p){
     const dCod = (p.depto && p.depto.cod) || 0;
     const dNm  = (p.depto && p.depto.nome) || '?';
+    // Filtra depto INATIVO (cod 11) — mesmo critério de Vendas
+    if(dNm === 'INATIVO') return;
     const sCod = (p.secao && p.secao.cod) || 0;
     const sNm  = (p.secao && p.secao.nome) || '(sem seção)';
     const cCod = (p.categoria && p.categoria.cod) || 0;
@@ -1449,15 +1637,24 @@ function _deptosRender(){
     chartTitle2 = 'Margem · categorias de '+(_deptosPath.secaoNome||'?');
   }
 
-  // Atualiza textos
-  document.getElementById('dn-bc-txt').textContent = bcTxt;
-  document.getElementById('dn-chart-title-1').textContent = chartTitle1;
-  document.getElementById('dn-chart-title-2').textContent = chartTitle2;
+  // Atualiza textos (charts foram removidos, então ct1/ct2 podem ser null)
+  const bcEl = document.getElementById('dn-bc-txt');
+  if(!bcEl){
+    // HTML de página não foi renderizado ainda — abortar silenciosamente
+    return;
+  }
+  bcEl.textContent = bcTxt;
+  // Títulos dos charts são opcionais (charts foram removidos a pedido)
+  const ct1 = document.getElementById('dn-chart-title-1');
+  const ct2 = document.getElementById('dn-chart-title-2');
+  if(ct1) ct1.textContent = chartTitle1;
+  if(ct2) ct2.textContent = chartTitle2;
   const back = document.getElementById('dn-bc-back');
   if(back) back.style.display = (_deptosNivel === 'depto') ? 'none' : 'inline-block';
 
   // Tabela
   const tb = document.getElementById('tb-dn');
+  if(!tb) return;
   if(!items.length){
     tb.innerHTML = '<tr><td colspan="10" style="text-align:center;color:var(--text-muted);padding:14px;">Nenhum item neste nível.</td></tr>';
   } else {
@@ -1655,6 +1852,8 @@ function renderAlertasNovo(){
   // Banner com contadores agregados + filtro
   const c = _alertasCache;
   const totGeral = Object.keys(c.buckets).reduce(function(s,k){return s+c.buckets[k].length;},0);
+  // Atualiza o badge do menu lateral com contagem real
+  _atualizarBadgeAlertas(totGeral);
   const periodoComp = c.ymComp ? _ymToLabel(c.ymComp)+' vs '+_ymToLabel(c.ymPrev2)+'-'+_ymToLabel(c.ymPrev1) : 'sem comparativo';
   html += '<div style="background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:10px 14px;margin-bottom:14px;font-size:12px;color:var(--text-dim);display:flex;align-items:center;gap:14px;flex-wrap:wrap;">'
        +   '<div><strong>'+fI(totGeral)+'</strong> alertas detectados · análise de '+fI((E.produtos||[]).length)+' SKUs · comparativo de tendência: '+esc(periodoComp)+'</div>'
@@ -2733,6 +2932,17 @@ function renderFornGPCNovo(){
 }
 
 function renderPage(pg){
+  // Cleanup ao sair da Análise Dinâmica: destrói chart e cancela debounce
+  if(pg !== 'cubo'){
+    if(typeof _pvChart !== 'undefined' && _pvChart){
+      try { _pvChart.destroy(); } catch(e){}
+      _pvChart = null;
+    }
+    if(typeof _pvDebounceTimer !== 'undefined' && _pvDebounceTimer){
+      clearTimeout(_pvDebounceTimer);
+      _pvDebounceTimer = null;
+    }
+  }
   // ─── Páginas com dados modulares (V/C/E/F/R/Vb) ───
   // Se o JSON estiver carregado → render Novo. Senão → aviso de indisponibilidade.
   // (As versões legadas foram removidas em v4.2; o sistema agora opera só em modo modular.)

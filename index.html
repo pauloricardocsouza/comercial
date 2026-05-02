@@ -2,7 +2,8 @@
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<meta name="robots" content="noindex, nofollow">
 <title>Comercial GPC · R2 Soluções</title>
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='12' fill='%2330569f'/%3E%3Ctext x='32' y='44' font-family='Archivo,Arial,sans-serif' font-size='34' font-weight='800' fill='%23f58634' text-anchor='middle'%3EG%3C/text%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -742,10 +743,68 @@ table.t th.L { text-align:left; }
 table.t td { padding:8px 10px; border-bottom:1px solid var(--border); color:var(--text); text-align:right; white-space:nowrap; }
 table.t td.L { text-align:left; }
 table.t tr:hover td { background:var(--surface-2); cursor:pointer; }
-.tscroll { overflow:auto; max-height:560px; }
+.tscroll {
+  overflow:auto;
+  max-height:560px;
+  position:relative;
+  /* Gradientes laterais indicando que há scroll horizontal */
+  background:
+    linear-gradient(to right, var(--surface), transparent 8px) 0 0/100% 100% no-repeat,
+    linear-gradient(to left,  var(--surface), transparent 8px) 100% 0/100% 100% no-repeat,
+    linear-gradient(to right, rgba(0,0,0,.08), transparent 16px) 0 0/100% 100% no-repeat,
+    linear-gradient(to left,  rgba(0,0,0,.08), transparent 16px) 100% 0/100% 100% no-repeat;
+  background-attachment: local, local, scroll, scroll;
+}
 .bari { display:inline-flex; align-items:center; gap:5px; }
 .bari .bi { width:60px; height:5px; background:var(--surface-3); border-radius:2px; overflow:hidden; flex-shrink:0; }
 .bari .bf { height:100%; background:var(--accent); border-radius:2px; }
+
+/* Análise Dinâmica · pivot table */
+.pv-field, .pv-pill {
+  transition: transform .12s, box-shadow .12s, background .12s;
+}
+.pv-field:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 6px rgba(0,0,0,.08);
+}
+.pv-field:active, .pv-pill:active { cursor: grabbing; }
+.pv-pill:hover {
+  filter: brightness(0.97);
+}
+.pv-zone {
+  transition: background .15s, border-color .15s;
+}
+.pv-zone:hover {
+  border-color: var(--accent);
+}
+.pv-pill-x:hover {
+  background: rgba(0,0,0,.08) !important;
+  border-radius: 50%;
+}
+@media(max-width:900px){
+  /* Painel de drag em mobile vira full-width abaixo da pivot */
+  .pv-layout { grid-template-columns: 1fr !important; }
+  .pv-panel { position: relative !important; max-height: none !important; top: 0 !important; }
+}
+
+/* Acessibilidade · foco de teclado consistente */
+:focus-visible {
+  outline: 2px solid var(--highlight);
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: 2px solid var(--highlight);
+  outline-offset: 2px;
+}
+/* Foco em links da sidebar mantém compacto */
+.sb-link:focus-visible {
+  outline-offset: -2px;
+}
 
 /* ALERTAS */
 .al-card { background:var(--surface); border:1px solid var(--border); border-radius:12px; margin-bottom:12px; overflow:hidden; }
@@ -1362,7 +1421,7 @@ textarea.proc-inp{resize:vertical;min-height:44px}
 
 <header class="topbar">
   <div class="brand">
-    <button class="mob-btn" id="mobBtn"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12h18M3 6h18M3 18h18"/></svg></button>
+    <button class="mob-btn" id="mobBtn" aria-label="Abrir menu"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12h18M3 6h18M3 18h18"/></svg></button>
     <img class="brand-logo" src="data:image/png;base64,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" alt="GPC" style="height:42px;width:auto;display:block;" onerror="this.style.display='none'">
     <div class="brand-text" style="display:flex;align-items:center;padding-left:12px;border-left:1px solid rgba(255,255,255,.18);">
       <span style="font-weight:800;font-size:14px;letter-spacing:-.02em;color:#fff;white-space:nowrap;">Comercial GPC</span>
@@ -1370,10 +1429,11 @@ textarea.proc-inp{resize:vertical;min-height:44px}
   </div>
   <div style="display:flex;align-items:center;gap:10px;margin-left:auto;">
     <span id="fil-sum" style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#c9d0da;"></span>
+    <span id="snapshot-info" style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#c9d0da;display:none;" title="Data dos dados carregados"></span>
     <span class="base-badge">ATP · Filial 1</span>
     <div class="exp-btns">
-      <button class="ebtn xlsx" id="btn-xlsx"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>XLSX</button>
-      <button class="ebtn pdf" id="btn-pdf"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>PDF</button>
+      <button class="ebtn xlsx" id="btn-xlsx" aria-label="Exportar para Excel"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>XLSX</button>
+      <button class="ebtn pdf" id="btn-pdf" aria-label="Exportar para PDF"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>PDF</button>
     </div>
   </div>
 </header>
@@ -1382,7 +1442,7 @@ textarea.proc-inp{resize:vertical;min-height:44px}
   <div class="sb-sec">
     <div class="sb-sec-label" style="display:flex;align-items:center;justify-content:space-between;padding-right:4px;">
       <span>Início</span>
-      <button id="collapseBtn" title="Ocultar menu" onclick="document.querySelector('.app-body').classList.add('sidebar-collapsed');try{localStorage.setItem('sidebarCollapsed','1');}catch(e){}" style="background:transparent;border:none;color:var(--text-muted);cursor:pointer;padding:3px 5px;border-radius:5px;display:flex;align-items:center;transition:background .15s,color .15s;" onmouseenter="this.style.background='var(--surface-3)';this.style.color='var(--text)'" onmouseleave="this.style.background='transparent';this.style.color='var(--text-muted)'">
+      <button id="collapseBtn" title="Ocultar menu" aria-label="Recolher menu lateral" onclick="document.querySelector('.app-body').classList.add('sidebar-collapsed');try{localStorage.setItem('sidebarCollapsed','1');}catch(e){}" style="background:transparent;border:none;color:var(--text-muted);cursor:pointer;padding:3px 5px;border-radius:5px;display:flex;align-items:center;transition:background .15s,color .15s;" onmouseenter="this.style.background='var(--surface-3)';this.style.color='var(--text)'" onmouseleave="this.style.background='transparent';this.style.color='var(--text-muted)'">
         <span class="ico-open"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M11 19l-7-7 7-7"/><path d="M21 12H5" opacity=".5"/></svg></span>
         <span class="ico-close" style="display:none;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M13 5l7 7-7 7"/><path d="M3 12h16" opacity=".5"/></svg></span>
       </button>
@@ -1407,7 +1467,7 @@ textarea.proc-inp{resize:vertical;min-height:44px}
     <button class="sb-link" data-p="fornecedores"><span class="sbi"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/></svg></span>Fornecedores</button>
     <button class="sb-link" data-p="forn-gpc"><span class="sbi"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 21h18"/><path d="M5 21V7l8-4v18"/><path d="M19 21V11l-6-4"/><path d="M9 9v.01M9 12v.01M9 15v.01M9 18v.01"/></svg></span>GPC</button>
     <button class="sb-link" data-p="abc"><span class="sbi"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><path d="M7 12l4-4 4 6 5-7"/></svg></span>Curva ABC</button>
-    <button class="sb-link" data-p="alertas"><span class="sbi"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg></span>Alertas <span class="sb-cnt">9</span></button>
+    <button class="sb-link" data-p="alertas"><span class="sbi"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg></span>Alertas <span class="sb-cnt" id="sb-cnt-alertas" style="display:none;"></span></button>
     <button class="sb-link" data-p="diagnostico"><span class="sbi"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg></span>Diag. Produto</button>
     <button class="sb-link" data-p="diag-forn"><span class="sbi"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg></span>Diag. Fornecedor</button>
     </div>
@@ -1780,10 +1840,10 @@ textarea.proc-inp{resize:vertical;min-height:44px}
      JS principal · dividido em 5 arquivos pela auditoria v4.6
      Ordem importa: core declara as globais; render-* dependem de core.
      ════════════════════════════════════════════════════════════════════════════ -->
-<script src="js/core.js?v=4.14"></script>
-<script src="js/render-compras.js?v=4.14"></script>
-<script src="js/render-vendas.js?v=4.14"></script>
-<script src="js/render-outros.js?v=4.14"></script>
-<script src="js/admin.js?v=4.14"></script>
+<script src="js/core.js?v=4.22"></script>
+<script src="js/render-compras.js?v=4.22"></script>
+<script src="js/render-vendas.js?v=4.22"></script>
+<script src="js/render-outros.js?v=4.22"></script>
+<script src="js/admin.js?v=4.22"></script>
 </body>
 </html>
