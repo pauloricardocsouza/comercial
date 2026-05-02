@@ -145,7 +145,7 @@ const VENDAS_PANELS_STRUCTURE = {
       [{t:'🏆 Top 10 dias — GPC consolidado', s:'Maiores faturamentos'}, {t:'📉 10 menores dias — GPC consolidado', s:'Menores faturamentos'}],
       [{t:'Média diária por mês', s:'R$k/dia · Jan/24 – Mar/26'}, {t:'Variação YoY da média diária', s:'%'}],
       [{t:'Média de faturamento por dia da semana', s:'R$k'}, {t:'% do faturamento semanal por dia', s:'Distribuição'}],
-      [{t:'Ticket médio por dia da semana', s:'R$/transação'}, {t:'Média histórica por dia do mês', s:'R$k'}]
+      [{t:'Média histórica por dia do mês', s:'R$k'}]
     ],
     tables: [
       {t:'Top 10 dias', cols:['#','Data','Dia da semana','Faturamento']},
@@ -340,6 +340,24 @@ function _vendasJanMar(ano){
 function renderVVisaoGrupo(){
   const cont = document.getElementById('page-v-visao-grupo');
   if(!cont) return;
+
+  // Verifica se a base ativa é GRUPO. Se não for, mostra aviso.
+  // _filialAtual === null indica modo consolidado/grupo (definido em core.js).
+  if(typeof _filialAtual !== 'undefined' && _filialAtual){
+    const baseLabel = (_filialAtual.sigla || '').toUpperCase();
+    cont.innerHTML = '<div class="ph"><div class="pk">Vendas · Grupo</div><h2>Visão <em>Consolidada</em> GPC</h2></div>'
+      + '<div class="ph-sep"></div>'
+      + '<div class="page-body">'
+      + '<div style="background:#fef3c7;border:1px solid #d97706;border-radius:8px;padding:24px;text-align:center;color:#92400e;">'
+      +   '<div style="font-size:36px;margin-bottom:10px;">📊</div>'
+      +   '<div style="font-size:14px;font-weight:700;margin-bottom:8px;">Esta página mostra dados consolidados do grupo</div>'
+      +   '<div style="font-size:12px;line-height:1.5;margin-bottom:14px;">Você está na base <strong>'+esc(baseLabel)+'</strong>. A Visão Consolidada compara todas as lojas do GPC entre si e só faz sentido na base GRUPO.</div>'
+      +   '<button onclick="(function(){var s=document.querySelector(\'.fil-tab[data-cod=GRUPO]\')||document.querySelector(\'[data-base=GRUPO]\');if(s)s.click();else alert(\'Use o seletor de base no topo para escolher GRUPO.\');})()" '
+      +     'style="padding:8px 16px;background:#d97706;color:white;border:none;border-radius:6px;font-weight:700;cursor:pointer;font-size:12px;">Trocar para base GRUPO</button>'
+      + '</div>'
+      + '</div>';
+    return;
+  }
 
   const grupoAno = (V && V.resumo && V.resumo.grupo && V.resumo.grupo.por_ano) || {};
   const fat2024 = (grupoAno['2024'] && grupoAno['2024'].fat_liq) || 0;
@@ -573,6 +591,21 @@ function renderVEvolucao(){
        +    '<div style="height:340px;"><canvas id="c-vevo-multi"></canvas></div>'
        + '</div>';
 
+  // ── Comparativo: uma loja vs as outras ──
+  if(lojasDisp.length > 1){
+    html += '<div class="cc" style="margin-bottom:14px;">'
+         +    '<div class="cch">'
+         +      '<div><div class="cct">Comparativo · loja em destaque vs demais</div>'
+         +        '<div class="ccs">A loja escolhida aparece em destaque, todas as outras em cinza claro</div></div>'
+         +      '<select id="vevo-comp-select" style="padding:6px 10px;border:1px solid var(--border);border-radius:5px;font-size:12px;background:var(--surface);color:var(--text);">'
+         +        lojasDisp.map(function(l, i){return '<option value="'+esc(l)+'"'+(i===0?' selected':'')+'>'+esc(labelDe(l))+'</option>';}).join('')
+         +      '</select>'
+         +    '</div>'
+         +    '<div style="height:300px;margin-top:8px;"><canvas id="c-vevo-comp"></canvas></div>'
+         +    '<div id="tb-vevo-comp-resumo" style="margin-top:10px;font-size:11px;color:var(--text-dim);"></div>'
+         + '</div>';
+  }
+
   // ── Cards individuais (uma loja por card) ──
   html += '<div class="cct" style="margin:18px 0 8px;font-size:14px;">Por loja · faturamento mensal</div>';
   // grid responsivo: 3 colunas em telas largas, 2 em médias, 1 em pequenas
@@ -588,16 +621,11 @@ function renderVEvolucao(){
   html += '</div>';
 
   // ── Margem mensal (consolidada GRUPO) ──
-  html += '<div class="row2eq" style="margin-bottom:14px;">'
+  html += '<div style="margin-bottom:14px;">'
        +    '<div class="cc">'
        +      '<div class="cct">Margem mensal · GRUPO consolidado</div>'
        +      '<div class="ccs">% sobre faturamento líquido (todas as lojas)</div>'
        +      '<div style="height:240px;"><canvas id="c-vevo-marg"></canvas></div>'
-       +    '</div>'
-       +    '<div class="cc">'
-       +      '<div class="cct">Variação YoY · GRUPO</div>'
-       +      '<div class="ccs">% de variação 2026 vs 2025 (mesmo mês)</div>'
-       +      '<div style="height:240px;"><canvas id="c-vevo-yoy"></canvas></div>'
        +    '</div>'
        + '</div>';
 
@@ -711,6 +739,80 @@ function renderVEvolucao(){
     });
   });
 
+  // ── Comparativo: loja em destaque vs demais ──
+  if(lojasDisp.length > 1){
+    function _vevoCompRender(lojaDestaque){
+      const dsComp = [];
+      const dadosLojas = {};
+      lojasDisp.forEach(function(l){
+        const m = _vendasMensalPor(l);
+        dadosLojas[l] = m;
+      });
+      // Datasets: lojas não-destacadas em cinza claro fino, loja destaque colorida grossa
+      lojasDisp.forEach(function(l){
+        const m = dadosLojas[l];
+        const data = lblG.map(function(_, i){
+          const ym = grupo[i].ym;
+          const linha = m.find(function(x){return x.ym === ym;});
+          return linha ? linha.fat_liq : 0;
+        });
+        const ehDestaque = (l === lojaDestaque);
+        dsComp.push({
+          label: labelDe(l) + (ehDestaque ? ' (destaque)' : ''),
+          data: data,
+          borderColor: ehDestaque ? (cores[l] || '#1f2937') : '#cbd5e1',
+          backgroundColor: ehDestaque ? ((cores[l] || '#1f2937') + '20') : 'rgba(203,213,225,0.08)',
+          borderWidth: ehDestaque ? 3 : 1,
+          tension: 0.3,
+          fill: ehDestaque,
+          pointRadius: ehDestaque ? 4 : 0,
+          order: ehDestaque ? 1 : 2
+        });
+      });
+      mkC('c-vevo-comp', {
+        type: 'line',
+        data: {labels: lblG, datasets: dsComp},
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: {position: 'bottom', labels: {boxWidth: 10, font: {size: 10}, padding: 8}},
+            tooltip: {callbacks: {label: function(ctx){return ctx.dataset.label.replace(' (destaque)','') + ': ' + fK(ctx.raw);}}}
+          },
+          scales: {
+            y: {beginAtZero: true, ticks: {callback: function(v){return fAbbr(v);}}},
+            x: {grid: {display: false}, ticks: {font: {size: 10}}}
+          }
+        }
+      });
+
+      // Resumo numérico embaixo
+      const mDest = dadosLojas[lojaDestaque] || [];
+      const fatDest = mDest.reduce(function(s,r){return s+r.fat_liq;}, 0);
+      const fatTot  = grupo.reduce(function(s,r){return s+r.fat_liq;}, 0);
+      const pct = fatTot > 0 ? (fatDest/fatTot*100) : 0;
+      // Posição (ranking) por faturamento
+      const ranking = lojasDisp.map(function(l){
+        return {l:l, fat:(dadosLojas[l]||[]).reduce(function(s,r){return s+r.fat_liq;}, 0)};
+      }).sort(function(a,b){return b.fat - a.fat;});
+      const pos = ranking.findIndex(function(x){return x.l === lojaDestaque;}) + 1;
+      const resumoEl = document.getElementById('tb-vevo-comp-resumo');
+      if(resumoEl){
+        resumoEl.innerHTML = '<strong>'+esc(labelDe(lojaDestaque))+':</strong> '
+          + fK(fatDest) + ' acumulado · '
+          + fP(pct,1) + ' do grupo · '
+          + 'posição ' + pos + ' de ' + lojasDisp.length + ' lojas';
+      }
+    }
+    _vevoCompRender(lojasDisp[0]);
+    const compSel = document.getElementById('vevo-comp-select');
+    if(compSel){
+      compSel.addEventListener('change', function(){
+        _vevoCompRender(compSel.value);
+      });
+    }
+  }
+
   // ── Margem mensal consolidada ──
   mkC('c-vevo-marg', {type:'line', data:{labels:lblG, datasets:[{
     label:'Margem %',
@@ -720,28 +822,6 @@ function renderVEvolucao(){
   }]}, options:{responsive:true, maintainAspectRatio:false,
     plugins:{legend:{display:false}, tooltip:{callbacks:{label:function(ctx){return fP(ctx.raw,2);}}}},
     scales:{y:{beginAtZero:false, ticks:{callback:function(v){return fP(v);}}}, x:{grid:{display:false}}}}});
-
-  // ── YoY ──
-  const yoyData = [];
-  const yoyLbl = [];
-  grupo.forEach(function(r){
-    if(!r.ym.startsWith('2026-')) return;
-    const mes2025 = '2025-' + r.ym.substring(5,7);
-    const r25 = grupo.find(function(x){return x.ym === mes2025;});
-    if(r25 && r25.fat_liq > 0){
-      yoyLbl.push(_ymToLabel(r.ym));
-      yoyData.push((r.fat_liq/r25.fat_liq - 1)*100);
-    }
-  });
-  if(yoyData.length){
-    mkC('c-vevo-yoy', {type:'bar', data:{labels:yoyLbl,
-      datasets:[{label:'YoY %', data:yoyData,
-        backgroundColor: yoyData.map(function(v){return v>=0?_PAL.ok+'CC':_PAL.dn+'CC';}),
-        borderRadius:4}]},
-      options:{responsive:true, maintainAspectRatio:false,
-        plugins:{legend:{display:false}, tooltip:{callbacks:{label:function(ctx){return (ctx.raw>=0?'+':'')+fP(ctx.raw,1);}}}},
-        scales:{y:{ticks:{callback:function(v){return (v>=0?'+':'')+fP(v);}}}, x:{grid:{display:false}}}}});
-  }
 
   // ── Tabela mensal com seletor de loja ──
   function renderTabelaVevo(loja){
@@ -1832,7 +1912,7 @@ function renderExecutivo(){
     {l:'Compras líquidas',    v:fK(totalCompras), s:fP(cobPct)+' do fat. · '+labelPeriodo,    cls:cobCls},
     {l:'Vencidos',            v:fK(valorVencidos),s:fI(nVencidos)+' títulos · 1 dia ou mais',        cls:'dn'},
     {l:'Em aberto',           v:fK(totalAberto),  s:'Total a pagar', cls:'hl'},
-    {l:'Estoque (preço venda)',v:estoqueValorPV>0?fK(estoqueValorPV):'—',s:estoqueValorPV>0?'Snapshot '+dataEstoque:'sem dados', cls:'vio'},
+    {l:'Estoque (preço venda)',v:estoqueValorPV>0?fK(estoqueValorPV):'—',s:estoqueValorPV>0?'Retrato '+dataEstoque:'sem dados', cls:'vio'},
     {l:'SKUs com venda',      v:fI(skusComVenda), s:fI(skusComEstoque)+' c/ estoque atual'},
     {l:'NFs de entrada',      v:fI(totalNfs),     s:fI(totalForns)+' fornecedores'},
   ]);
@@ -2822,16 +2902,11 @@ function renderVDiarias(){
        + '</div>';
 
   // Linha 3: dia da semana
-  html += '<div class="row2eq" style="margin-bottom:14px;">'
+  html += '<div style="margin-bottom:14px;">'
        +    '<div class="cc">'
        +      '<div class="cct">Média por dia da semana</div>'
        +      '<div class="ccs">R$ médios por ocorrência do dia</div>'
        +      '<div style="height:260px;"><canvas id="c-vd-semana"></canvas></div>'
-       +    '</div>'
-       +    '<div class="cc">'
-       +      '<div class="cct">Ticket médio por dia da semana</div>'
-       +      '<div class="ccs">R$/transação · indica perfil do cliente</div>'
-       +      '<div style="height:260px;"><canvas id="c-vd-ticket"></canvas></div>'
        +    '</div>'
        + '</div>';
 
@@ -2915,17 +2990,6 @@ function renderVDiarias(){
                  return ['Média: '+fB(ctx.raw), p.count+' ocorrências', fP(pctSem)+' do total semanal'];
                }}}},
       scales:{y:{beginAtZero:true, ticks:{callback:function(v){return fAbbr(v);}}},
-              x:{grid:{display:false}}}}});
-
-  // Ticket médio por dia da semana
-  mkC('c-vd-ticket', {type:'bar',
-    data:{labels:porDiaSem.map(function(p){return p.abrev;}),
-      datasets:[{label:'Ticket', data:porDiaSem.map(function(p){return p.ticket_med;}),
-        backgroundColor:_PAL.hl+'CC', borderRadius:4}]},
-    options:{responsive:true, maintainAspectRatio:false,
-      plugins:{legend:{display:false},
-               tooltip:{callbacks:{label:function(ctx){return 'Ticket: '+fB(ctx.raw);}}}},
-      scales:{y:{beginAtZero:true, ticks:{callback:function(v){return fB(v,0);}}},
               x:{grid:{display:false}}}}});
 
   // ─── Tabelas top 10 e bottom 10 ───

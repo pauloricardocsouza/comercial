@@ -22,17 +22,29 @@ function renderRecebimentos(){
   // Aceita: ATP, CP1, CP3, CP5, CP40 ou _total_grupo (consolidado).
   // Antes era hardcoded em R.resumo.ATP — quebrava nas filiais CP.
   const _resumoTodo = R.resumo || {};
-  let resumo = {};
+  let _resumoBruto = {};
   // Prioriza não-_total_grupo se houver apenas uma chave principal
   const chavesResumo = Object.keys(_resumoTodo).filter(function(k){return !k.startsWith('_');});
   if(chavesResumo.length === 1){
-    resumo = _resumoTodo[chavesResumo[0]] || {};
+    _resumoBruto = _resumoTodo[chavesResumo[0]] || {};
   } else if(chavesResumo.length > 1){
     // Múltiplas filiais (cubo CP com CP1/CP3/CP5/CP40) → usa o agregado
-    resumo = _resumoTodo._total_grupo || _resumoTodo[chavesResumo[0]] || {};
+    _resumoBruto = _resumoTodo._total_grupo || _resumoTodo[chavesResumo[0]] || {};
   } else {
-    resumo = _resumoTodo._total_grupo || {};
+    _resumoBruto = _resumoTodo._total_grupo || {};
   }
+  // Normaliza schemas antigo (ATP) e novo (CP) num formato único
+  // ATP usa: total_atrasado, clientes_inadimplentes, rcas_envolvidos, dias_atraso_medio, dias_atraso_mediano
+  // CP usa:  valor,           inadimplentes,         rcas,             (sem dias)
+  const resumo = {
+    total_atrasado: _resumoBruto.total_atrasado != null ? _resumoBruto.total_atrasado : (_resumoBruto.valor || 0),
+    parcelas: _resumoBruto.parcelas || 0,
+    nfs: _resumoBruto.nfs || _resumoBruto.duplicatas || 0,
+    clientes_inadimplentes: _resumoBruto.clientes_inadimplentes != null ? _resumoBruto.clientes_inadimplentes : (_resumoBruto.inadimplentes || 0),
+    rcas_envolvidos: _resumoBruto.rcas_envolvidos != null ? _resumoBruto.rcas_envolvidos : (_resumoBruto.rcas || 0),
+    dias_atraso_medio: _resumoBruto.dias_atraso_medio || 0,
+    dias_atraso_mediano: _resumoBruto.dias_atraso_mediano || 0
+  };
   const aging = R.aging || {};
   const mensal = R.mensal || [];
   const clientes = R.por_cliente_top || [];
@@ -347,31 +359,55 @@ function renderRecebimentos(){
 // Consome /dados-modulares/verbas_atp.json
 // Verba = redução de custo (dedução do CMV); aumenta margem real do SKU
 // ────────────────────────────────────────────────────────────────────
+// Estado do filtro de mês para Verbas (sessão)
+let _verbasMesFiltro = null;
+
 function renderVerbas(){
   const cont = document.getElementById('page-verbas');
   if(!cont) return;
 
   if(!Vb){
-    cont.innerHTML = '<div class="ph"><div class="pk">Compras · Análise</div><h2><em>Verbas</em> e descontos comerciais</h2></div>'
+    cont.innerHTML = '<div class="ph"><div class="pk">Compras · Análise</div><h2>Verbas aplicadas em produtos</h2></div>'
       + '<div class="ph-sep"></div><div class="page-body">'
       + '<div class="cc" style="text-align:center;color:var(--text-muted);padding:30px;">Dados de verbas não carregados pra esta base.</div></div>';
     return;
   }
 
   const meta = Vb.meta || {};
-  const resumo = Vb.resumo || {};
-  const mensal = Vb.mensal || [];
-  const deptos = Vb.por_departamento || [];
-  const secoes = Vb.por_secao || [];
-  const forns  = Vb.por_fornecedor || [];
-  const prodTop = Vb.por_produto_top || [];
-  const conc   = Vb.concentracao || {};
-  const aplic  = Vb.aplicacoes || [];
-  const compl  = meta.completude || {};
+  // Coleta meses disponíveis a partir do mensal original
+  const mesesDisp = (Vb.mensal || []).map(function(m){ return m.ym; }).sort();
+
+  // Aplica filtro: se _verbasMesFiltro setado e válido, recalcula tudo a partir das aplicações desse mês.
+  // Caso contrário, usa os agregados originais (todos os meses).
+  let resumo, mensal, deptos, secoes, forns, prodTop, conc, aplic;
+  const filtroAtivo = _verbasMesFiltro && mesesDisp.indexOf(_verbasMesFiltro) >= 0;
+
+  if(filtroAtivo){
+    // Recalcula a partir das aplicações filtradas
+    aplic = (Vb.aplicacoes || []).filter(function(a){ return a.ym === _verbasMesFiltro; });
+    const calc = _verbasRecalcular(aplic, _verbasMesFiltro);
+    resumo = calc.resumo;
+    mensal = calc.mensal;
+    deptos = calc.por_departamento;
+    secoes = calc.por_secao;
+    forns = calc.por_fornecedor;
+    prodTop = calc.por_produto_top;
+    conc = calc.concentracao;
+  } else {
+    resumo = Vb.resumo || {};
+    mensal = Vb.mensal || [];
+    deptos = Vb.por_departamento || [];
+    secoes = Vb.por_secao || [];
+    forns = Vb.por_fornecedor || [];
+    prodTop = Vb.por_produto_top || [];
+    conc = Vb.concentracao || {};
+    aplic = Vb.aplicacoes || [];
+  }
+  const compl = meta.completude || {};
 
   // Sem dados (placeholder)
   if((meta.linhas_processadas||0) === 0){
-    cont.innerHTML = '<div class="ph"><div class="pk">Compras · Análise</div><h2><em>Verbas</em> e descontos comerciais</h2></div>'
+    cont.innerHTML = '<div class="ph"><div class="pk">Compras · Análise</div><h2>Verbas aplicadas em produtos</h2></div>'
       + '<div class="ph-sep"></div><div class="page-body">'
       + '<div class="cc" style="text-align:center;color:var(--text-muted);padding:30px;">'
       + (esc(meta.aviso || 'Sem dados de verba neste extrato pra esta base.'))
@@ -379,19 +415,26 @@ function renderVerbas(){
     return;
   }
 
-  let html = '<div class="ph"><div class="pk">Compras · Análise</div><h2><em>Verbas</em> e descontos comerciais</h2></div>';
+  let html = '<div class="ph"><div class="pk">Compras · Análise</div><h2>Verbas aplicadas em produtos</h2></div>';
   html += '<div class="ph-sep"></div>';
   html += '<div class="page-body">';
 
+  // ─── Filtro de mês ───
+  html += _filtroMesHTML('verbas-mes', mesesDisp, _verbasMesFiltro);
+
   // ─── Banner de escopo ───
   const periodo = meta.periodo || {};
-  const _perTxt2 = (periodo.inicio && periodo.fim)
-    ? esc(periodo.inicio)+' a '+esc(periodo.fim)
-    : '<span style="color:var(--text-muted);font-style:italic;">carregando…</span>';
+  let _perTxt2;
+  if(filtroAtivo){
+    _perTxt2 = _ymToLabel(_verbasMesFiltro);
+  } else {
+    _perTxt2 = (periodo.inicio && periodo.fim)
+      ? esc(periodo.inicio)+' a '+esc(periodo.fim)
+      : '<span style="color:var(--text-muted);font-style:italic;">carregando…</span>';
+  }
   html += '<div style="background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:10px 14px;margin-bottom:14px;font-size:12px;color:var(--text-dim);">'
-       +   '<strong>Modelo:</strong> '+esc(meta.modelo||'verba como redução de custo')+' · '
        +   '<strong>Período:</strong> '+_perTxt2+' · '
-       +   fI(meta.linhas_processadas||0)+' aplicações · '
+       +   fI(aplic.length)+' aplicações · '
        +   'gerado em '+esc((meta.gerado_em||'').substring(0,16).replace('T',' '))
        + '</div>';
 
@@ -403,9 +446,8 @@ function renderVerbas(){
          + '</div>';
   }
   if(compl && compl.tem_tipo_verba === 0){
-    html += '<div style="background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:8px 14px;margin-bottom:14px;font-size:11.5px;color:var(--text-muted);line-height:1.5;">'
-         +   '<strong>Limitação WinThor:</strong> coluna TIPO_VERBA vem 100% vazia, sem subclassificação por natureza.'
-         + '</div>';
+    // Subtítulo "Limitação WinThor" removido conforme pedido — mantém só o aviso de custo acima se aplicável
+    html += '<div style="margin-bottom:14px;"></div>';
   } else {
     html += '<div style="margin-bottom:14px;"></div>';
   }
@@ -643,7 +685,7 @@ function renderVerbas(){
     return '<tr>'
       + '<td class="L val-dim">'+(i+1)+'</td>'
       + '<td class="L val-dim">'+fI(f.cod||0)+'</td>'
-      + '<td class="L"><strong>'+esc(f.nome||'')+'</strong></td>'
+      + '<td class="L" data-forn-cod="'+esc(f.cod)+'" title="Clique para ver diagnóstico do fornecedor"><strong>'+esc(f.nome||'')+'</strong></td>'
       + '<td class="val-strong">'+fK(f.valor||0)+'</td>'
       + '<td class="val-dim">'+fP(f.valor/totalForn*100,1)+'</td>'
       + '<td class="val-dim">'+fI(f.aplicacoes||0)+'</td>'
@@ -659,7 +701,7 @@ function renderVerbas(){
     return '<tr>'
       + '<td class="L val-dim">'+(i+1)+'</td>'
       + '<td class="L val-dim">'+fI(p.cod||0)+'</td>'
-      + '<td class="L"><strong>'+esc(p.desc||'')+'</strong>'+(p.desc?'':'<span style="color:var(--text-muted);">cod '+fI(p.cod||0)+'</span>')+'</td>'
+      + '<td class="L" data-prod-cod="'+esc(p.cod)+'" title="Clique para ver diagnóstico do produto"><strong>'+esc(p.desc||'')+'</strong>'+(p.desc?'':'<span style="color:var(--text-muted);">cod '+fI(p.cod||0)+'</span>')+'</td>'
       + '<td class="L val-dim">'+esc((p.forn||'').substring(0,30))+'</td>'
       + '<td class="L val-dim">'+esc(p.dep||'')+'</td>'
       + '<td class="val-strong">'+fK(p.valor||0)+'</td>'
@@ -727,6 +769,160 @@ function renderVerbas(){
   }
 
   _vbRenderAplic();
+
+  // Bind do select de filtro de mês
+  _filtroMesBind('verbas-mes', function(novoMes){
+    _verbasMesFiltro = novoMes;
+    renderVerbas();
+  });
+}
+
+// Helper compartilhado: gera HTML do select de filtro de mês
+function _filtroMesHTML(elId, mesesDisp, valorAtual, opts){
+  opts = opts || {};
+  const labelTodos = opts.labelTodos || 'Todos os meses';
+  let html = '<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap;">';
+  html += '<label style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;font-weight:700;">Filtrar mês:</label>';
+  html += '<select id="'+elId+'" style="padding:5px 10px;border:1px solid var(--border);border-radius:5px;font-size:12px;background:var(--surface);color:var(--text);min-width:180px;">';
+  html += '<option value="">'+esc(labelTodos)+'</option>';
+  // Opções extras antes da lista, ex: "Total 2026"
+  if(opts.extras){
+    opts.extras.forEach(function(e){
+      const sel = (valorAtual === e.value) ? ' selected' : '';
+      html += '<option value="'+esc(e.value)+'"'+sel+'>'+esc(e.label)+'</option>';
+    });
+  }
+  // Lista de meses (mais recentes primeiro)
+  mesesDisp.slice().reverse().forEach(function(ym){
+    const sel = (valorAtual === ym) ? ' selected' : '';
+    html += '<option value="'+esc(ym)+'"'+sel+'>'+esc(_ymToLabel(ym))+'</option>';
+  });
+  html += '</select>';
+  if(valorAtual){
+    html += '<span style="font-size:10.5px;color:var(--text-muted);font-style:italic;">filtro ativo</span>';
+  }
+  html += '</div>';
+  return html;
+}
+
+// Helper compartilhado: bind do select de filtro de mês
+function _filtroMesBind(elId, callback){
+  const sel = document.getElementById(elId);
+  if(!sel) return;
+  sel.addEventListener('change', function(){
+    callback(sel.value || null);
+  });
+}
+
+// Recalcula agregados de Verbas a partir das aplicações filtradas por mês
+function _verbasRecalcular(aplic, mesYm){
+  // Resumo
+  const fornecedoresSet = new Set();
+  const produtosSet = new Set();
+  const verbasSet = new Set();
+  const deptosSet = new Set();
+  const secoesSet = new Set();
+  let totalAplicado = 0;
+  let custoAntesTotal = 0;
+  let custoDepoisTotal = 0;
+  let comCustoCount = 0;
+  aplic.forEach(function(a){
+    totalAplicado += a.vl_aplicado || 0;
+    if(a.cod_forn != null) fornecedoresSet.add(a.cod_forn);
+    if(a.cod_prod != null) produtosSet.add(a.cod_prod);
+    if(a.num_verba) verbasSet.add(a.num_verba);
+    if(a.cod_dep != null) deptosSet.add(a.cod_dep);
+    if(a.cod_sec != null) secoesSet.add(a.cod_sec);
+    if(a.custo_antes && a.custo_depois){
+      custoAntesTotal += a.custo_antes;
+      custoDepoisTotal += a.custo_depois;
+      comCustoCount++;
+    }
+  });
+  const reducaoPct = custoAntesTotal > 0
+    ? ((custoAntesTotal - custoDepoisTotal) / custoAntesTotal * 100)
+    : null;
+
+  const resumo = {
+    total_aplicado: totalAplicado,
+    aplicacoes: aplic.length,
+    verbas: verbasSet.size,
+    fornecedores: fornecedoresSet.size,
+    produtos: produtosSet.size,
+    departamentos: deptosSet.size,
+    secoes: secoesSet.size,
+    reducao_custo_total_pct: reducaoPct
+  };
+
+  // Mensal: só esse mês
+  const mensal = [{
+    ym: mesYm,
+    aplicacoes: aplic.length,
+    valor: totalAplicado,
+    verbas: verbasSet.size,
+    fornecedores: fornecedoresSet.size,
+    produtos: produtosSet.size,
+    reducao_custo_pct: reducaoPct
+  }];
+
+  // Agregar por dept/sec/forn/produto
+  function agruparPor(chave, nomeChave, idChave){
+    const map = new Map();
+    aplic.forEach(function(a){
+      const k = a[idChave];
+      if(k == null) return;
+      if(!map.has(k)){
+        map.set(k, {cod: k, nome: a[nomeChave] || ('#'+k), valor: 0, aplicacoes: 0, fornecedores: new Set(), produtos: new Set()});
+      }
+      const e = map.get(k);
+      e.valor += a.vl_aplicado || 0;
+      e.aplicacoes += 1;
+      if(a.cod_forn != null) e.fornecedores.add(a.cod_forn);
+      if(a.cod_prod != null) e.produtos.add(a.cod_prod);
+    });
+    return Array.from(map.values()).map(function(e){
+      return {
+        cod: e.cod,
+        nome: e.nome,
+        valor: e.valor,
+        aplicacoes: e.aplicacoes,
+        fornecedores: e.fornecedores.size,
+        produtos: e.produtos.size
+      };
+    }).sort(function(a,b){return b.valor - a.valor;});
+  }
+
+  const por_departamento = agruparPor('dep', 'dep', 'cod_dep');
+  const por_secao = agruparPor('sec', 'sec', 'cod_sec');
+  const por_fornecedor = agruparPor('forn', 'forn', 'cod_forn');
+  const por_produto_top = agruparPor('prod', 'prod', 'cod_prod').slice(0, 50);
+
+  // Concentração
+  function pctTop(lista, n){
+    const total = lista.reduce(function(s,e){return s + e.valor;}, 0);
+    if(total <= 0) return null;
+    const top = lista.slice(0, n).reduce(function(s,e){return s + e.valor;}, 0);
+    return top / total * 100;
+  }
+  const concentracao = {
+    top_1_fornecedor_pct: pctTop(por_fornecedor, 1),
+    top_3_fornecedores_pct: pctTop(por_fornecedor, 3),
+    top_5_fornecedores_pct: pctTop(por_fornecedor, 5),
+    top_10_fornecedores_pct: pctTop(por_fornecedor, 10),
+    top_1_dep_pct: pctTop(por_departamento, 1),
+    top_1_dep_nome: por_departamento[0] ? por_departamento[0].nome : null,
+    top_3_deps_pct: pctTop(por_departamento, 3)
+  };
+
+  return {
+    resumo: resumo,
+    mensal: mensal,
+    por_departamento: por_departamento,
+    por_secao: por_secao,
+    por_fornecedor: por_fornecedor,
+    por_produto_top: por_produto_top,
+    concentracao: concentracao
+  };
 }
 
 function _vbConcCard(label, val, sub){
@@ -792,8 +988,8 @@ function _vbRenderAplicPagina(){
       + '<td class="L val-dim">'+esc((a.filial||'').substring(0,18))+'</td>'
       + '<td class="L val-dim">'+esc(a.num_verba||'')+'</td>'
       + '<td class="L val-dim">'+fI(a.cod_prod||0)+'</td>'
-      + '<td class="L"><strong>'+esc(a.prod||'')+'</strong>'+(a.prod?'':' <span style="color:var(--text-muted);">sem descrição</span>')+(a.embalagem?' <span style="color:var(--text-muted);font-size:10px;">'+esc(a.embalagem)+'</span>':'')+'</td>'
-      + '<td class="L val-dim">'+esc((a.forn||'').substring(0,28))+'</td>'
+      + '<td class="L" data-prod-cod="'+esc(a.cod_prod||'')+'" title="Clique para ver diagnóstico do produto"><strong>'+esc(a.prod||'')+'</strong>'+(a.prod?'':' <span style="color:var(--text-muted);">sem descrição</span>')+(a.embalagem?' <span style="color:var(--text-muted);font-size:10px;">'+esc(a.embalagem)+'</span>':'')+'</td>'
+      + '<td class="L val-dim" data-forn-cod="'+esc(a.cod_forn||'')+'" title="Clique para ver diagnóstico do fornecedor">'+esc((a.forn||'').substring(0,28))+'</td>'
       + '<td class="L val-dim">'+esc(a.dep||'')+'</td>'
       + '<td class="val-dim">'+(ca==null?'—':fB(ca,2))+'</td>'
       + '<td class="val-strong">'+fB(a.vl_aplicado||0,2)+'</td>'

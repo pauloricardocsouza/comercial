@@ -216,7 +216,7 @@ const AUTH_MODE = 'firebase'; // 'mock' | 'firebase'
 // Convenção:
 //   X.x → alteração grande (quebra de compatibilidade, nova feature grande)
 //   x.X → alteração suave (fix, ajuste visual, pequeno refinamento)
-const APP_VERSION = '4.24-comercial';
+const APP_VERSION = '4.30-comercial';
 
 // ================================================================
 // HELPERS DE CHART.JS — compatíveis com Safari/iOS (sem spread ops)
@@ -715,7 +715,6 @@ const PAGINAS_CATALOGO = [
   {id:'v-vendas-diarias', nome:'Vendas Diárias',      grupo:'Vendas'},
   {id:'v-dias-cp',        nome:'Dias C & P',          grupo:'Vendas'},
   {id:'v-metas',          nome:'Metas',               grupo:'Vendas'},
-  {id:'v-drilldown',      nome:'Drill-Down Período',  grupo:'Vendas'},
   {id:'v-benchmarking',   nome:'RCA',        grupo:'Vendas'},
   {id:'v-ano2026',        nome:'Análise 2026',        grupo:'Vendas'},
   {id:'v-alertas',        nome:'Alertas Vendas',      grupo:'Vendas'},
@@ -1131,7 +1130,7 @@ let V = null;                 // dados de Vendas (null = não carregado/indispon
 // Carregamento eager (paralelo no boot): V, C, E, Dev, F, R, Vb
 // Carregamento lazy (sob demanda na página de Análise Dinâmica): Cu
 let C   = null;   // compras_<base>.json     · entradas WinThor
-let E   = null;   // estoque_<base>.json     · snapshot atual + vendas_por_mes
+let E   = null;   // estoque_<base>.json     · retrato atual + vendas_por_mes
 let Dev = null;   // devolucoes_<base>.json  · devoluções ao fornecedor
 let F   = null;   // financeiro_<base>.json  · contas pagas + a vencer + aging
 let R   = null;   // recebimentos_<base>.json · vendas a prazo (parcelas vencidas)
@@ -1463,7 +1462,7 @@ function _decidirOqueCarregar(){
     ? _filiaisDisponiveis
     : _filiaisDisponiveis.filter(f => perfil.filiaisPermitidas.includes(f.sigla));
 
-  // Snapshot tem prioridade absoluta
+  // Retrato tem prioridade absoluta
   const snapParam = urlParams.get('snapshot');
   if(snapParam && /^\d{4}-\d{2}-\d{2}$/.test(snapParam)){
     // Suporta ?snapshot=AAAA-MM-DD (genérico) e ?snapshot=AAAA-MM-DD&filial=sigla
@@ -1547,7 +1546,7 @@ async function _loadDados(){
   try {
     const t0 = performance.now();
     let labelMsg;
-    if(decisao.tipo === 'snapshot') labelMsg = 'Carregando snapshot de '+_snapshotCarregado.data+'...';
+    if(decisao.tipo === 'snapshot') labelMsg = 'Carregando retrato de '+_snapshotCarregado.data+'...';
     else if(decisao.tipo === 'filial') labelMsg = 'Carregando '+decisao.filial.nome+'...';
     else labelMsg = 'Carregando GPC consolidado...';
     if(dlMsg) dlMsg.textContent = labelMsg;
@@ -1609,7 +1608,7 @@ async function _loadDados(){
       let msgUsuario = 'Erro ao carregar dados';
       const errStr = String(err.message || '');
       if(/HTTP 404/.test(errStr)){
-        if(decisao.tipo === 'snapshot') msgUsuario = 'Snapshot não encontrado no servidor';
+        if(decisao.tipo === 'snapshot') msgUsuario = 'Retrato não encontrado no servidor';
         else if(decisao.tipo === 'filial') msgUsuario = 'Arquivo de dados da filial não encontrado';
         else msgUsuario = 'Arquivo consolidado.json não encontrado';
       } else if(/HTTP 5\d\d/.test(errStr)){
@@ -1907,7 +1906,7 @@ function _renderSnapshotBanner(){
     const banner = document.createElement('div');
     banner.id = 'snapBanner';
     banner.style.cssText = 'background:var(--warning);color:#1a1a1a;padding:6px 14px;font-size:11px;font-weight:700;text-align:center;font-family:JetBrains Mono,monospace;letter-spacing:.05em;display:flex;align-items:center;justify-content:center;gap:10px;z-index:60;position:relative;';
-    banner.innerHTML = '⚠ MODO SNAPSHOT · Visualizando dados de '+esc(_snapshotCarregado.data)+' &nbsp;·&nbsp; <a href="'+escUrl(window.location.pathname)+'" style="color:#1a1a1a;text-decoration:underline;">Voltar a versao atual</a>';
+    banner.innerHTML = '⚠ MODO RETRATO · Visualizando dados de '+esc(_snapshotCarregado.data)+' &nbsp;·&nbsp; <a href="'+escUrl(window.location.pathname)+'" style="color:#1a1a1a;text-decoration:underline;">Voltar a versao atual</a>';
     const topbar = document.querySelector('.topbar');
     if(topbar && topbar.parentNode){
       topbar.parentNode.insertBefore(banner, topbar);
@@ -2073,6 +2072,37 @@ if(document.readyState === 'loading'){
 } else {
   _bootstrapComAuth();
 }
+
+// ════════════════════════════════════════════════════════════════════════
+// Drill-through global · clique em elementos com data-prod-cod ou data-forn-cod
+// abre a página de diagnóstico correspondente. Funciona em qualquer tabela
+// ou card que marque o elemento com esses atributos.
+// Adicionado em v4.29 (etapa 6 da reformulação)
+// ════════════════════════════════════════════════════════════════════════
+document.addEventListener('click', function(e){
+  // Procura o ancestral mais próximo com data-prod-cod ou data-forn-cod
+  const elProd = e.target.closest('[data-prod-cod]');
+  const elForn = e.target.closest('[data-forn-cod]');
+  // Ignora se o elemento pai for um botão/link normal pra não interferir
+  if(elProd && typeof window._openProdNovo === 'function'){
+    const cod = parseInt(elProd.getAttribute('data-prod-cod'), 10);
+    if(cod){
+      e.preventDefault();
+      e.stopPropagation();
+      window._openProdNovo(cod);
+    }
+    return;
+  }
+  if(elForn && typeof window._openFornNovo === 'function'){
+    const cod = parseInt(elForn.getAttribute('data-forn-cod'), 10);
+    if(cod){
+      e.preventDefault();
+      e.stopPropagation();
+      window._openFornNovo(cod);
+    }
+    return;
+  }
+});
 
 
 // Renderiza widget de usuário/logout no canto direito do topbar
@@ -2466,11 +2496,11 @@ async function renderHistorico(){
     +'<div class="page-body">'
     +'<div style="background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:10px 14px;margin-top:10px;margin-bottom:14px;font-size:12px;color:var(--text-dim);display:flex;align-items:start;gap:10px;">'
     +'<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-top:2px;flex-shrink:0;"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>'
-    +'<div>Cada snapshot é uma fotografia dos dados em uma data específica. Clique em <strong>Carregar</strong> para navegar pelo sistema com os dados daquele dia. Para voltar à versão atual, clique em <strong>Voltar à versão atual</strong>.</div>'
+    +'<div>Cada retrato é uma fotografia dos dados em uma data específica. Clique em <strong>Carregar</strong> para navegar pelo sistema com os dados daquele dia. Para voltar à versão atual, clique em <strong>Voltar à versão atual</strong>.</div>'
     +'</div>'
     +'<div id="hist-loading" style="text-align:center;padding:40px;color:var(--text-muted);">'
     +'<div style="width:32px;height:32px;border:3px solid var(--surface-3);border-top-color:var(--accent);border-radius:50%;animation:dlSpin 0.8s linear infinite;margin:0 auto 12px;"></div>'
-    +'Buscando snapshots disponíveis...'
+    +'Buscando retratos disponíveis...'
     +'</div>'
     +'<div id="hist-content" style="display:none;"></div>'
     +'</div>';
@@ -2487,7 +2517,7 @@ async function renderHistorico(){
     let bannerSnap = '';
     if(_snapshotCarregado){
       bannerSnap = '<div style="background:var(--warning-bg);border:1px solid var(--warning);border-radius:8px;padding:14px 16px;margin-bottom:14px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;">'
-        +'<div style="font-size:13px;color:var(--warning);font-weight:600;">⚠ Você está visualizando o snapshot de <strong>'+_snapshotCarregado.data+'</strong></div>'
+        +'<div style="font-size:13px;color:var(--warning);font-weight:600;">⚠ Você está visualizando o retrato de <strong>'+_snapshotCarregado.data+'</strong></div>'
         +'<a href="'+escUrl(window.location.pathname)+'" class="ebtn" style="background:var(--accent);color:white;border:none;text-decoration:none;display:inline-flex;align-items:center;gap:6px;">'
         +'<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>'
         +'Voltar à versão atual</a></div>';
@@ -2521,7 +2551,7 @@ async function renderHistorico(){
       +'<div class="ds-ico" style="background:var(--accent-bg);color:var(--accent-text);">'
       +'<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>'
       +'</div><div>'
-      +'<div class="ds-title">Snapshots disponíveis</div>'
+      +'<div class="ds-title">Retratos disponíveis</div>'
       +'<div class="ds-sub">'+snaps.length+' versão'+(snaps.length===1?'':'es')+' salva'+(snaps.length===1?'':'s')+' · Índice atualizado em '+dataAtualizacao+'</div>'
       +'</div></div>'
       +'<div class="ds-body np"><div class="tscroll"><table class="t">'
@@ -2539,12 +2569,12 @@ async function renderHistorico(){
       inner.innerHTML = '<div style="background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:30px 24px;text-align:center;color:var(--text-muted);">'
         +'<svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="margin-bottom:12px;opacity:.5;"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>'
         +'<div style="font-size:14px;font-weight:600;color:var(--text);margin-bottom:6px;">Histórico em construção</div>'
-        +'<div style="font-size:12px;line-height:1.5;max-width:480px;margin:0 auto;">A funcionalidade de snapshots de versão ainda não está disponível para esta base. '
+        +'<div style="font-size:12px;line-height:1.5;max-width:480px;margin:0 auto;">A funcionalidade de retratos de versão ainda não está disponível para esta base. '
         +'Quando o ETL gerar fotografias periódicas dos dados, elas aparecerão aqui para você navegar entre versões.</div>'
         +'</div>';
     } else {
       inner.innerHTML = '<div style="background:var(--danger-bg);border:1px solid var(--danger-text);border-radius:8px;padding:14px 16px;color:var(--danger-text);font-size:13px;">'
-        +'<strong>Erro ao carregar snapshots.json</strong><br>'+esc(err.message)+'<br><br>'
+        +'<strong>Erro ao carregar retratos.json</strong><br>'+esc(err.message)+'<br><br>'
         +'Verifique se o arquivo <code>snapshots.json</code> está presente no servidor.</div>';
     }
   }
@@ -3771,7 +3801,7 @@ function renderAjuda(){
       {n:'Diagnóstico fornecedor',d:'Raio-X de um fornecedor: todos os SKUs vendidos, histórico de pagamento, score detalhado.'}
     ]},
     {grupo:'Configuração',pgs:[
-      {n:'Histórico',d:'Lista de snapshots disponíveis (versões antigas dos dados). Permite navegar pelo sistema com dados de uma data anterior.'},
+      {n:'Histórico',d:'Lista de retratos disponíveis (versões antigas dos dados). Permite navegar pelo sistema com dados de uma data anterior.'},
       {n:'Administração',d:'Gestão de usuários, perfis, configurações por base, auditoria e diagnóstico do sistema (apenas admins).'},
       {n:'Ajuda',d:'Esta página: glossário de KPIs, dúvidas frequentes e informações do sistema.'}
     ]}
@@ -3794,7 +3824,7 @@ function renderAjuda(){
     {q:'Onde fica o seletor de filial?',a:'No topo da tela, ao lado do logo "GPC". Aparece se você tem permissão para ver mais de 1 filial. Se você só tem acesso a 1, ela carrega direto.'},
     {q:'Como exporto os dados?',a:'Em qualquer página, use os botões XLSX (planilha Excel) ou PDF (impressão) no canto superior direito. O XLSX exporta toda a tabela visível; o PDF é a versão para impressão.'},
     {q:'Por que minha sessão expirou?',a:'Sessões duram 30 dias. Após esse período, é necessário fazer login novamente. Você também pode sair manualmente pelo menu do seu nome no topo.'},
-    {q:'Posso ver os dados de um dia anterior?',a:'Sim, na página Histórico (menu lateral, seção Configuração). Selecione um snapshot e o sistema inteiro passa a mostrar dados daquela data. Banner amarelo indica modo histórico.'},
+    {q:'Posso ver os dados de um dia anterior?',a:'Sim, na página Histórico (menu lateral, seção Configuração). Selecione um retrato e o sistema inteiro passa a mostrar dados daquela data. Banner amarelo indica modo histórico.'},
     {q:'Por que alguns KPIs estão diferentes do meu ERP?',a:'O sistema aplica decisões de cálculo específicas: compras sempre líquidas (descontando devoluções de fornecedor), % pago sem juros, vencidos só com 5+ dias de atraso. Veja a aba Glossário acima para detalhes.'},
     {q:'Quem pode alterar as configurações (SKUs ocultos, fornecedores GPC)?',a:'Apenas usuários com perfil Admin. Configurações são por base (ATP, Comercial Pinto). Mudanças no ATP não afetam Comercial Pinto.'},
     {q:'O sistema funciona offline?',a:'Não. Como os dados são carregados via fetch HTTP, é necessário conexão com a internet. Após carregado, navegação entre páginas funciona até a sessão expirar.'},
@@ -4770,7 +4800,7 @@ const PROC_RELATORIOS = [
   },
   {
     rotina: '105', nome: 'Posição do Estoque', escopo: 'filial', formato: 'xlsx',
-    finalidade: 'Snapshot do estoque com quantidade, custo unitário e preço de venda',
+    finalidade: 'Retrato do estoque com quantidade, custo unitário e preço de venda',
     periodo_obrigatorio: false,
     substitui: true,
     instrucoes: [
@@ -5306,7 +5336,7 @@ async function _preCalcularBadgeAlertas(){
 window._preCalcularBadgeAlertas = _preCalcularBadgeAlertas;
 
 // ================================================================
-// Indicador de freshness no header · "Snapshot: 29/04/2026"
+// Indicador de freshness no header · "Retrato: 29/04/2026"
 // ================================================================
 function _atualizarSnapshotHeader(){
   const el = document.getElementById('snapshot-info');
@@ -5373,3 +5403,47 @@ async function _alterarSenhaUI(){
   }
 }
 window._alterarSenhaUI = _alterarSenhaUI;
+
+// ────────────────────────────────────────────────────────────────────
+// DRILL-THROUGH GLOBAL · v4.29
+// Qualquer elemento com data-prod-cod ou data-forn-cod abre o diagnóstico.
+// Se cursor não estiver "pointer", também aplica.
+// ────────────────────────────────────────────────────────────────────
+document.addEventListener('click', function(e){
+  // Encontra ancestor com data-prod-cod ou data-forn-cod
+  const el = e.target.closest('[data-prod-cod], [data-forn-cod]');
+  if(!el) return;
+  // Não interferir com elementos interativos genuínos
+  if(e.target.matches('input, button, select, textarea, a[href]')) return;
+  // Não rouba clique se for um link/botão dentro
+  if(e.target.closest('a[href], button')) return;
+  // Não disparar se algum ancestor já tem handler onclick (fallback antigo)
+  let n = el;
+  while(n && n !== document.body){
+    if(n.hasAttribute && n.hasAttribute('onclick')) return;
+    n = n.parentElement;
+  }
+  e.preventDefault();
+  e.stopPropagation();
+  if(el.dataset.prodCod){
+    const cod = parseInt(el.dataset.prodCod, 10);
+    if(typeof window._openProdNovo === 'function'){
+      window._openProdNovo(cod);
+    }
+  } else if(el.dataset.fornCod){
+    const cod = parseInt(el.dataset.fornCod, 10);
+    if(typeof window._openFornNovo === 'function'){
+      window._openFornNovo(cod);
+    }
+  }
+});
+
+// CSS visual: elementos com data-prod-cod/data-forn-cod ganham hover sutil
+(function(){
+  const css = '[data-prod-cod], [data-forn-cod] { cursor: pointer; transition: background .12s; }'
+            + '[data-prod-cod]:hover, [data-forn-cod]:hover { background: rgba(245,134,52,.08) !important; }';
+  const st = document.createElement('style');
+  st.textContent = css;
+  document.head.appendChild(st);
+})();
+

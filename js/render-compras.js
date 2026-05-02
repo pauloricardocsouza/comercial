@@ -90,12 +90,12 @@ function renderEstoqueNovo(){
     pd = Object.values(acc).sort(function(a,b){return b.vl_custo - a.vl_custo;});
   }
 
-  let html = '<div class="ph"><div class="pk">Compras</div><h2>Estoque · snapshot atual</h2></div>'
+  let html = '<div class="ph"><div class="pk">Compras</div><h2>Estoque · retrato atual</h2></div>'
            + '<div class="ph-sep"></div>'
            + '<div class="page-body">';
 
   html += '<div style="background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:10px 14px;margin-bottom:14px;font-size:12px;color:var(--text-dim);">'
-       + '<strong>Snapshot:</strong> '+esc(meta.data_referencia||r.data_ref||'?')+' · '
+       + '<strong>Retrato:</strong> '+esc(meta.data_referencia||r.data_ref||'?')+' · '
        + '<strong>'+fI(r.skus_total||0)+'</strong> SKUs'
        + (r.markup_pct != null ? ' · Markup médio <strong>'+fP(r.markup_pct)+'</strong>' : '')
        + '</div>';
@@ -129,7 +129,7 @@ function renderEstoqueNovo(){
     const cls = p.status==='ATIVO'?'ok':p.status==='CRITICO'?'wn':p.status==='PARADO'?'wn':p.status==='MORTO'?'dn':'';
     html += '<tr>'
          +    '<td class="L" style="color:var(--text-muted);font-weight:700;">'+(i+1)+'</td>'
-         +    '<td class="L"><strong>'+esc((p.desc||'').substring(0,42))+'</strong></td>'
+         +    '<td class="L" data-prod-cod="'+esc(p.cod)+'" title="Clique para ver diagnóstico do produto"><strong>'+esc((p.desc||'').substring(0,42))+'</strong></td>'
          +    '<td>'+esc((p.depto&&p.depto.nome)||'-')+'</td>'
          +    '<td>'+fI(e.qt||0)+'</td>'
          +    '<td class="val-strong">'+fK(e.vl_custo||0)+'</td>'
@@ -293,13 +293,35 @@ function renderExcessoNovo(){
       } else {
         p.__giro_dia_novo = estQt > 0 ? 9999 : 0; // sem venda mas com estoque = morto
       }
-      // Status pelo novo giro
+      // Status: PARADO/MORTO dependem só de "vendeu ou não vendeu nos últimos N meses",
+      // independente do método de cálculo. CRÍTICO/ATIVO usam giro/cobertura.
+      // Verifica se houve venda nos últimos 90/180 dias usando vendas_por_mes
+      const vpm = p.vendas_por_mes || [];
+      const ultY = (ultimoMesInfo && ultimoMesInfo.ym) || '';
+      function ymPrevSimple(ym, n){
+        const ano = parseInt(ym.substring(0,4),10);
+        const mes = parseInt(ym.substring(5,7),10);
+        let m = mes - n; let a = ano;
+        while(m <= 0){ m += 12; a -= 1; }
+        return a + '-' + (m<10?'0':'') + m;
+      }
+      // Conjunto dos últimos 3 meses (≈90 dias) e dos últimos 6 (≈180 dias)
+      const ultimos3 = ultY ? new Set([ultY, ymPrevSimple(ultY,1), ymPrevSimple(ultY,2)]) : new Set();
+      const ultimos6 = ultY ? new Set([
+        ultY, ymPrevSimple(ultY,1), ymPrevSimple(ultY,2),
+        ymPrevSimple(ultY,3), ymPrevSimple(ultY,4), ymPrevSimple(ultY,5)
+      ]) : new Set();
+      let venda3 = 0, venda6 = 0;
+      vpm.forEach(function(v){
+        if(ultimos3.has(v.ym)) venda3 += v.qt || 0;
+        if(ultimos6.has(v.ym)) venda6 += v.qt || 0;
+      });
       const g = p.__giro_dia_novo;
-      if(estQt <= 0)            p.__status_novo = 'MORTO';
-      else if(g > 365)          p.__status_novo = 'MORTO';
-      else if(g > 180)          p.__status_novo = 'PARADO';
-      else if(g > 90)           p.__status_novo = 'CRITICO';
-      else                      p.__status_novo = 'ATIVO';
+      if(estQt <= 0)                       p.__status_novo = 'MORTO';
+      else if(venda6 <= 0)                 p.__status_novo = 'MORTO';   // sem venda em 180d
+      else if(venda3 <= 0)                 p.__status_novo = 'PARADO';  // sem venda em 90d
+      else if(g > 90)                      p.__status_novo = 'CRITICO'; // vende mas cobertura alta
+      else                                 p.__status_novo = 'ATIVO';
     });
   } else {
     // Limpa cálculos antigos pra não confundir
@@ -334,7 +356,7 @@ function renderExcessoNovo(){
     });
   }
 
-  let html = '<div class="ph"><div class="pk">Compras</div><h2>Excesso de estoque · imobilizações sem giro</h2></div>'
+  let html = '<div class="ph"><div class="pk">Compras</div><h2>Excesso de estoque</h2></div>'
            + '<div class="ph-sep"></div>'
            + '<div class="page-body">';
 
@@ -366,7 +388,7 @@ function renderExcessoNovo(){
   } else {
     html += '<div style="background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:10px 14px;margin-bottom:14px;font-size:12px;color:var(--text-dim);">'
          + '<strong>Critério:</strong> SKUs com status PARADO, MORTO, CRITICO, ou giro maior que 180 dias. '
-         + 'Snapshot de '+esc(E.meta?E.meta.data_referencia:'?')+'.'
+         + 'Retrato de '+esc(E.meta?E.meta.data_referencia:'?')+'.'
          + '</div>';
   }
 
@@ -374,8 +396,62 @@ function renderExcessoNovo(){
   const pctVl = vlCustoTotal>0?(totVlCusto/vlCustoTotal*100):null;
   html += '<div class="kg" style="grid-template-columns:repeat(6,1fr);margin-bottom:14px;" id="kg-exc-novo"></div>';
 
-  const top = excessos.slice().sort(function(a,b){return (b.estoque?b.estoque.vl_custo:0) - (a.estoque?a.estoque.vl_custo:0);}).slice(0, 50);
-  html += '<div class="cc"><div class="cct">Top 50 · maior valor imobilizado</div>'
+  // ── Excesso por fornecedor (top 50) ──
+  // Agrupa os SKUs em excesso por fornecedor, soma valor imobilizado e SKUs
+  const fornMap = new Map();
+  excessos.forEach(function(p){
+    const fCod = (p.fornecedor && p.fornecedor.cod) || 0;
+    const fNm = (p.fornecedor && p.fornecedor.nome) || '(sem fornecedor)';
+    if(!fornMap.has(fCod)){
+      fornMap.set(fCod, {cod:fCod, nome:fNm, skus:0, vl_custo:0, vl_preco:0, parados:0, mortos:0, criticos:0});
+    }
+    const e = fornMap.get(fCod);
+    e.skus += 1;
+    if(p.estoque){
+      e.vl_custo += p.estoque.vl_custo || 0;
+      e.vl_preco += p.estoque.vl_preco || 0;
+    }
+    const stP = _status(p);
+    if(stP === 'PARADO') e.parados += 1;
+    else if(stP === 'MORTO') e.mortos += 1;
+    else if(stP === 'CRITICO') e.criticos += 1;
+  });
+  const fornsExc = Array.from(fornMap.values())
+    .filter(function(f){return f.vl_custo > 0;})
+    .sort(function(a,b){return b.vl_custo - a.vl_custo;})
+    .slice(0, 50);
+
+  if(fornsExc.length){
+    html += '<div class="cc" style="margin-bottom:14px;">'
+         +    '<div class="cct">Excesso por fornecedor · top 50</div>'
+         +    '<div class="ccs">'+fI(fornMap.size)+' fornecedores com SKUs em excesso · ordenados por valor imobilizado</div>'
+         +    '<div class="tscroll" style="margin-top:8px;"><table class="t"><thead><tr>'
+         +      '<th class="L" style="width:24px;">#</th>'
+         +      '<th class="L">Fornecedor</th>'
+         +      '<th>SKUs em excesso</th>'
+         +      '<th>Vl imobilizado (custo)</th>'
+         +      '<th>Vl em preço de venda</th>'
+         +      '<th>Críticos</th>'
+         +      '<th>Parados</th>'
+         +      '<th>Mortos</th>'
+         +    '</tr></thead><tbody>';
+    fornsExc.forEach(function(f, i){
+      html += '<tr>'
+           +    '<td class="L" style="color:var(--text-muted);font-weight:700;">'+(i+1)+'</td>'
+           +    '<td class="L" data-forn-cod="'+esc(f.cod)+'" title="Clique para ver diagnóstico do fornecedor"><strong>'+esc((f.nome||'').substring(0,50))+'</strong></td>'
+           +    '<td>'+fI(f.skus)+'</td>'
+           +    '<td class="val-strong">'+fK(f.vl_custo)+'</td>'
+           +    '<td>'+fK(f.vl_preco)+'</td>'
+           +    '<td>'+(f.criticos>0?'<span class="kg-tag wn">'+fI(f.criticos)+'</span>':fI(f.criticos))+'</td>'
+           +    '<td>'+(f.parados>0?'<span class="kg-tag wn">'+fI(f.parados)+'</span>':fI(f.parados))+'</td>'
+           +    '<td>'+(f.mortos>0?'<span class="kg-tag dn">'+fI(f.mortos)+'</span>':fI(f.mortos))+'</td>'
+           +  '</tr>';
+    });
+    html += '</tbody></table></div></div>';
+  }
+
+  const top = excessos.slice().sort(function(a,b){return (b.estoque?b.estoque.vl_custo:0) - (a.estoque?a.estoque.vl_custo:0);}).slice(0, 100);
+  html += '<div class="cc"><div class="cct">Top 100 · maior valor imobilizado</div>'
        +    '<div class="ccs">'+fI(excessos.length)+' SKUs em excesso · '+fK(totVlCusto)+' a custo</div>'
        +    '<div class="tscroll" style="margin-top:8px;"><table class="t"><thead><tr>'
        +      '<th class="L" style="width:24px;">#</th>'
@@ -383,7 +459,7 @@ function renderExcessoNovo(){
        +      '<th>Depto</th>'
        +      '<th>Qt estoque</th>'
        +      '<th>Vl custo</th>'
-       +      '<th>Giro (d)</th>'
+       +      '<th title="Dias até esgotar o estoque atual no ritmo de venda">Dias p/ consumir</th>'
        +      '<th>Última entrada</th>'
        +      '<th>Status</th>'
        +    '</tr></thead><tbody>';
@@ -401,7 +477,7 @@ function renderExcessoNovo(){
     }
     html += '<tr>'
          +    '<td class="L" style="color:var(--text-muted);font-weight:700;">'+(i+1)+'</td>'
-         +    '<td class="L"><strong>'+esc((p.desc||'').substring(0,40))+'</strong></td>'
+         +    '<td class="L" data-prod-cod="'+esc(p.cod)+'" title="Clique para ver diagnóstico do produto"><strong>'+esc((p.desc||'').substring(0,40))+'</strong></td>'
          +    '<td>'+esc((p.depto&&p.depto.nome)||'-')+'</td>'
          +    '<td>'+fI(e.qt||0)+'</td>'
          +    '<td class="val-strong">'+fK(e.vl_custo||0)+'</td>'
@@ -523,7 +599,7 @@ function renderABCNovo(){
     const e = p.estoque || {};
     html += '<tr>'
          +    '<td class="L" style="color:var(--text-muted);font-weight:700;">'+(i+1)+'</td>'
-         +    '<td class="L"><strong>'+esc((p.desc||'').substring(0,40))+'</strong></td>'
+         +    '<td class="L" data-prod-cod="'+esc(p.cod)+'" title="Clique para ver diagnóstico do produto"><strong>'+esc((p.desc||'').substring(0,40))+'</strong></td>'
          +    '<td>'+esc((p.depto&&p.depto.nome)||'-')+'</td>'
          +    '<td class="val-strong">'+fK(p.vendas.valor||0)+'</td>'
          +    '<td>'+fP(p._pctAcum||0)+'</td>'
@@ -669,7 +745,7 @@ function renderFornecedoresNovo(){
        + '<strong>Período:</strong> compras 12 meses · vendas '+periodoCompra+' · '
        + '<strong>'+fI(fornAll.length)+'</strong> fornecedores cadastrados · '
        + '<strong>'+fI(fornAtivos.length)+'</strong> com compras no período · '
-       + 'Snapshot estoque: '+esc((E.meta&&E.meta.data_referencia)||'?')
+       + 'Retrato estoque: '+esc((E.meta&&E.meta.data_referencia)||'?')
        + '</div>';
 
   html += '<div id="kg-forn-novo"></div>';
@@ -700,7 +776,7 @@ function renderFornecedoresNovo(){
       const pctTxt = f.pct_devol > 999 ? '+999% ⚠' : fP(f.pct_devol);
       html += '<tr>'
            +    '<td class="L" style="color:var(--text-muted);font-weight:700;">'+(i+1)+'</td>'
-           +    '<td class="L"><strong>'+esc((f.nome||'').substring(0,42))+'</strong></td>'
+           +    '<td class="L" data-forn-cod="'+esc(f.cod)+'" title="Clique para ver diagnóstico do fornecedor"><strong>'+esc((f.nome||'').substring(0,42))+'</strong></td>'
            +    '<td class="val-strong">'+fK(f.dev_valor)+'</td>'
            +    '<td>'+fI(f.dev_qt||0)+'</td>'
            +    '<td>'+fI(f.dev_nfs||0)+'</td>'
@@ -817,7 +893,7 @@ function _fornRenderTabela(arr){
     const devCls  = f.pct_devol>5?'dn':f.pct_devol>2?'wn':'';
     html += '<tr>'
          +    '<td class="L" style="color:var(--text-muted);font-weight:700;">'+(i+1)+'</td>'
-         +    '<td class="L"><strong>'+esc((f.nome||'').substring(0,40))+'</strong></td>'
+         +    '<td class="L" data-forn-cod="'+esc(f.cod)+'" title="Clique para ver diagnóstico do fornecedor"><strong>'+esc((f.nome||'').substring(0,40))+'</strong></td>'
          +    '<td>'+fI(f.skus)+'</td>'
          +    '<td class="val-strong">'+fK(f.v_compra)+'</td>'
          +    '<td>'+fI(f.nfs_compra||0)+'</td>'
@@ -1206,17 +1282,86 @@ if(document.readyState === 'loading'){
 // FINANCEIRO NOVO · usa financeiro_atp.json (F) · sub-etapa 4l · 30/abr/2026
 // Cobre: pagas (mensal/grupo/conta/fornecedor/perf), aberto (aging/grupo/forn/dia/titulos)
 // ════════════════════════════════════════════════════════════════════════
+
+// Contas relacionadas a fornecedores de mercadorias (filtro fixo aplicado em
+// Posição Financeira e Vencidos a pagar)
+const _CONTAS_MERCADORIAS = ['10001', '99912'];
+
+function _ehContaMercadoria(c){
+  if(c == null) return false;
+  return _CONTAS_MERCADORIAS.indexOf(String(c)) >= 0;
+}
+
+// Recalcula aging a partir de uma lista de títulos abertos
+// Buckets: A_VENCER, HOJE, VENCIDO_1_7, VENCIDO_8_30, VENCIDO_31_90, VENCIDO_90_PLUS
+function _agingDeTitulos(titulos){
+  const hoje = new Date();
+  hoje.setHours(0,0,0,0);
+  const buckets = {
+    A_VENCER:        {valor:0, titulos:0},
+    HOJE:            {valor:0, titulos:0},
+    VENCIDO_1_7:     {valor:0, titulos:0},
+    VENCIDO_8_30:    {valor:0, titulos:0},
+    VENCIDO_31_90:   {valor:0, titulos:0},
+    VENCIDO_90_PLUS: {valor:0, titulos:0}
+  };
+  titulos.forEach(function(t){
+    if(!t.data_venc) return;
+    const dv = new Date(t.data_venc + 'T12:00:00');
+    const diffDias = Math.floor((dv - hoje) / (1000*60*60*24));
+    const v = t.valor || t.valor_dup || 0;
+    let b;
+    if(diffDias > 0)        b = 'A_VENCER';
+    else if(diffDias === 0) b = 'HOJE';
+    else if(diffDias >= -7) b = 'VENCIDO_1_7';
+    else if(diffDias >= -30) b = 'VENCIDO_8_30';
+    else if(diffDias >= -90) b = 'VENCIDO_31_90';
+    else                    b = 'VENCIDO_90_PLUS';
+    buckets[b].valor += v;
+    buckets[b].titulos += 1;
+  });
+  return buckets;
+}
+
+// Filtra os agregados de "pagas" (mensal, por_conta, por_fornecedor, etc)
+// pra que considerem só conta de mercadorias quando isso for possível.
+// Quando o agregado não tem mais o detalhe por conta (ex: mensal já é total),
+// retorna ele como veio. Os agregados detalhados são reconstruídos a partir
+// dos títulos pagos se disponíveis, ou simplesmente filtrados por código.
+function _filtrarPagasMercadorias(pagas){
+  const out = Object.assign({}, pagas);
+  // por_conta: filtra
+  if(Array.isArray(pagas.por_conta)){
+    out.por_conta = pagas.por_conta.filter(function(c){return _ehContaMercadoria(c.cod);});
+  }
+  // por_grupo: pode ter grupo 100 (CMV) e 999 (Multa/Juros). Mantém só esses.
+  // mas como eu não tenho certeza dos códigos do grupo, deixo todos pra evitar perda de dado.
+  // por_fornecedor: já é só fornecedor; se houver títulos pagos detalhados, pode
+  // ser filtrado por título.
+  return out;
+}
+
 function renderFinanceiroNovo(){
   const cont = document.getElementById('page-financeiro');
   if(!cont || !F) return;
   const meta = F.meta || {};
   const res  = F.resumo || {};
-  const pagas = F.pagas || {};
-  const abr   = F.aberto || {};
+  // F.aberto.titulos: filtra só conta 10001 e 99912
+  const _abrOriginal = F.aberto || {};
+  const titulosOrig = _abrOriginal.titulos || [];
+  const titulosFiltrados = titulosOrig.filter(function(t){return _ehContaMercadoria(t.conta);});
+  // Recalcula aging com os títulos filtrados
+  const aging = _agingDeTitulos(titulosFiltrados);
+  // Reconstrói abr com os filtrados pra que código posterior use
+  const abr = Object.assign({}, _abrOriginal, {titulos: titulosFiltrados, aging: aging});
+  // pagas: filtra apenas mensal/perfomance/por_conta/por_fornecedor que estiverem disponíveis
+  const pagas = _filtrarPagasMercadorias(F.pagas || {});
 
   const resPago = (res.pago||{}).ATP || (res.pago||{})._total_grupo || {};
-  const resAbr  = (res.aberto||{}).ATP || (res.aberto||{})._total_grupo || {};
-  const aging   = abr.aging || {};
+  // Recalcula resumo aberto a partir dos títulos filtrados
+  const totalPagar = titulosFiltrados.reduce(function(s,t){return s+(t.valor||t.valor_dup||0);}, 0);
+  const fornsAbr = new Set(); titulosFiltrados.forEach(function(t){if(t.parceiro&&t.parceiro.cod)fornsAbr.add(t.parceiro.cod);});
+  const resAbr  = {total_pagar: totalPagar, titulos: titulosFiltrados.length, fornecedores: fornsAbr.size};
   const perf    = pagas.performance_prazo || {};
 
   // Totais derivados
@@ -1236,6 +1381,12 @@ function renderFinanceiroNovo(){
            + '<div class="ph-sep"></div>'
            + '<div class="page-body">';
 
+  // Banner de filtro fixo
+  html += '<div style="background:#dbeafe;border:1px solid #93c5fd;border-radius:8px;padding:9px 14px;margin-bottom:10px;font-size:11.5px;color:#1e40af;">'
+       +   '<strong>Filtro ativo:</strong> mostrando apenas contas relacionadas a fornecedores de mercadorias '
+       +   '(10001 · COMPRA DE MERCADORIAS, 99912 · MULTA E JUROS DE MORA).'
+       + '</div>';
+
   // Banner explicativo
   const periodoIni = (meta.periodo&&meta.periodo.inicio) || '?';
   const periodoFim = (meta.periodo&&meta.periodo.fim)    || '?';
@@ -1243,7 +1394,7 @@ function renderFinanceiroNovo(){
        + '<strong>Pagas:</strong> '+esc(periodoIni)+' a '+esc(periodoFim)+' · '
        + '<strong>'+fI(resPago.titulos||0)+'</strong> títulos · '
        + '<strong>'+fI(resPago.fornecedores||0)+'</strong> fornecedores · '
-       + 'Snapshot a pagar gerado em '+esc((meta.geradoEm||'').substring(0,10))
+       + 'Retrato a pagar gerado em '+esc((meta.geradoEm||'').substring(0,10))
        + '</div>';
 
   // KPIs
@@ -1295,7 +1446,7 @@ function renderFinanceiroNovo(){
     else { dTxt='atrasado '+dias+'d'; dCls='dn'; }
     html += '<tr>'
          +    '<td class="L" style="color:var(--text-muted);font-weight:700;">'+(i+1)+'</td>'
-         +    '<td class="L"><strong>'+esc((f.nome||'').substring(0,42))+'</strong></td>'
+         +    '<td class="L" data-forn-cod="'+esc(f.cod)+'" title="Clique para ver diagnóstico do fornecedor"><strong>'+esc((f.nome||'').substring(0,42))+'</strong></td>'
          +    '<td>'+fI(f.titulos||0)+'</td>'
          +    '<td class="val-strong">'+fK(f.valor||0)+'</td>'
          +    '<td><span class="kg-tag '+dCls+'">'+esc(dTxt)+'</span></td>'
@@ -1565,6 +1716,15 @@ function renderDeptosNovo(){
        + 'Drill: clique no nome para ver seções → categorias'
        + '</div>';
 
+  // Legenda dos status
+  html += '<div style="display:flex;gap:14px;flex-wrap:wrap;font-size:11px;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:8px 12px;margin-bottom:14px;">'
+       +   '<span style="color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;font-weight:700;font-size:10px;">Legenda dos status:</span>'
+       +   '<span><span class="kg-tag" style="background:#dcfce7;color:#15803d;border:1px solid #86efac;">ATIVO</span> vende com boa rotação (cobertura ≤ 90d)</span>'
+       +   '<span><span class="kg-tag wn">CRÍTICO</span> vende mas com cobertura alta (&gt; 90d)</span>'
+       +   '<span><span class="kg-tag wn">PARADO</span> sem venda nos últimos 90 dias</span>'
+       +   '<span><span class="kg-tag dn">MORTO</span> sem venda nos últimos 180 dias ou sem estoque</span>'
+       + '</div>';
+
   // Charts removidos a pedido do usuário (mantida só a tabela com drill)
 
   // Tabela com drill
@@ -1583,7 +1743,6 @@ function renderDeptosNovo(){
        +          '<th>Lucro</th>'
        +          '<th>Margem %</th>'
        +          '<th>Estoque (custo)</th>'
-       +          '<th>Markup %</th>'
        +          '<th>Ativos</th>'
        +          '<th>Parados</th>'
        +          '<th>Mortos</th>'
@@ -1671,7 +1830,6 @@ function _deptosRender(){
            +    '<td>'+fK(it.lucro||0)+'</td>'
            +    '<td><span class="kg-tag '+margCls+'">'+fP(it.marg||0)+'</span></td>'
            +    '<td>'+fK(it.vl_est_custo||0)+'</td>'
-           +    '<td>'+fP(it.markup||0)+'</td>'
            +    '<td>'+fI(it.ativos||0)+'</td>'
            +    '<td>'+(it.parados>0?'<span class="kg-tag wn">'+fI(it.parados)+'</span>':fI(it.parados))+'</td>'
            +    '<td>'+(it.mortos>0?'<span class="kg-tag dn">'+fI(it.mortos)+'</span>':fI(it.mortos))+'</td>'
@@ -2138,10 +2296,30 @@ window._openFornNovo = function(cod){
        + '</div>';
 
   // KPIs
-  html += '<div class="kg c5" id="kp-diag-forn-novo"></div>';
+  html += '<div class="kg" style="grid-template-columns:repeat(6,1fr);" id="kp-diag-forn-novo"></div>';
 
-  // Histórico mensal de vendas
-  if(vpmYms.length > 0){
+  // Histórico mensal: vendas (R$) vs compras (R$) — usa cubo OLAP
+  const histVend = _diagFornVendasPorMes(cod);
+  const extratoComp = _diagFornExtratoCompras(cod);
+  const todosYms = new Set();
+  histVend.linhas.forEach(function(l){todosYms.add(l.ym);});
+  extratoComp.linhas.forEach(function(l){todosYms.add(l.ym);});
+  const ymsOrd = Array.from(todosYms).sort();
+
+  if(ymsOrd.length > 0){
+    html += '<div class="ds">'
+         +    '<div class="ds-hdr">'
+         +      '<div class="ds-ico" style="background:var(--accent-bg);color:var(--accent-text);">'
+         +        '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 17 9 11 13 15 21 7"/><polyline points="14 7 21 7 21 14"/></svg>'
+         +      '</div>'
+         +      '<div><div class="ds-title">Histórico mensal · vendas vs compras (R$)</div>'
+         +        '<div class="ds-sub">'+ymsOrd.length+' meses · vendas '+fK(histVend.totalValor)+' · compras '+fK(extratoComp.totalValor)+'</div>'
+         +      '</div>'
+         +    '</div>'
+         +    '<div class="ds-body" style="padding:14px;"><div style="height:260px;"><canvas id="c-df-hist"></canvas></div></div>'
+         + '</div>';
+  } else if(vpmYms.length > 0){
+    // Fallback: se cubo não tá carregado, mostra só qt como antes
     html += '<div class="ds">'
          +    '<div class="ds-hdr">'
          +      '<div class="ds-ico" style="background:var(--accent-bg);color:var(--accent-text);">'
@@ -2185,9 +2363,9 @@ window._openFornNovo = function(cod){
     const margCls = (vds.marg||0)<0?'dn':(vds.marg||0)<5?'wn':(vds.marg||0)<10?'':'ok';
     const stCls = p.status==='ATIVO'?'ok':p.status==='CRITICO'?'wn':p.status==='PARADO'?'wn':p.status==='MORTO'?'dn':'';
     const giro = p.giro_dias!=null ? p.giro_dias.toFixed(0) : '-';
-    html += '<tr style="cursor:pointer;" onclick="if(typeof openProd===\'function\')openProd('+p.cod+');">'
+    html += '<tr>'
          +    '<td class="L" style="color:var(--text-muted);font-weight:700;">'+(i+1)+'</td>'
-         +    '<td class="L"><strong>'+esc((p.desc||'').substring(0,40))+'</strong></td>'
+         +    '<td class="L" data-prod-cod="'+esc(p.cod)+'" title="Clique para ver diagnóstico do produto"><strong>'+esc((p.desc||'').substring(0,40))+'</strong></td>'
          +    '<td>'+esc((p.depto&&p.depto.nome)||'-')+'</td>'
          +    '<td class="val-strong">'+fK(vds.valor||0)+'</td>'
          +    '<td><span class="kg-tag '+margCls+'">'+fP(vds.marg||0)+'</span></td>'
@@ -2197,6 +2375,176 @@ window._openFornNovo = function(cod){
          +  '</tr>';
   });
   html += '</tbody></table></div></div>';
+
+  // ─── SEÇÃO: Itens em excesso ───
+  const skusExcesso = skus.filter(function(p){
+    const st = p.status;
+    return st === 'PARADO' || st === 'MORTO' || st === 'CRITICO';
+  }).sort(function(a,b){
+    return ((b.estoque&&b.estoque.vl_custo)||0) - ((a.estoque&&a.estoque.vl_custo)||0);
+  });
+  if(skusExcesso.length > 0){
+    const totExcesso = skusExcesso.reduce(function(s,p){return s + ((p.estoque&&p.estoque.vl_custo)||0);}, 0);
+    html += '<div class="cc" style="margin-top:14px;">'
+         +    '<div class="cct">⚠ Itens em excesso · '+fI(skusExcesso.length)+' SKUs</div>'
+         +    '<div class="ccs"><strong>'+fK(totExcesso)+'</strong> imobilizado em SKUs com status PARADO, MORTO ou CRÍTICO</div>'
+         +    '<div class="tscroll" style="margin-top:8px;max-height:320px;overflow-y:auto;">'
+         +      '<table class="t"><thead><tr>'
+         +        '<th class="L" style="width:24px;">#</th>'
+         +        '<th class="L">Produto</th>'
+         +        '<th>Qt estoque</th>'
+         +        '<th>Vl custo</th>'
+         +        '<th>Última entrada</th>'
+         +        '<th>Status</th>'
+         +      '</tr></thead><tbody>';
+    skusExcesso.slice(0, 50).forEach(function(p, i){
+      const e = p.estoque || {};
+      const stCls = p.status==='CRITICO'?'wn':p.status==='PARADO'?'wn':p.status==='MORTO'?'dn':'';
+      html += '<tr>'
+           +    '<td class="L" style="color:var(--text-muted);font-weight:700;">'+(i+1)+'</td>'
+           +    '<td class="L" data-prod-cod="'+esc(p.cod)+'" title="Clique para ver diagnóstico do produto"><strong>'+esc((p.desc||'').substring(0,40))+'</strong></td>'
+           +    '<td>'+fI(e.qt||0)+'</td>'
+           +    '<td class="val-strong">'+fK(e.vl_custo||0)+'</td>'
+           +    '<td>'+esc(e.dt_ult_entrada||'-')+'</td>'
+           +    '<td><span class="kg-tag '+stCls+'">'+esc(p.status||'-')+'</span></td>'
+           +  '</tr>';
+    });
+    if(skusExcesso.length > 50){
+      html += '<tr><td colspan="6" style="text-align:center;color:var(--text-muted);font-size:11px;padding:8px;">'
+           +  '... e mais '+fI(skusExcesso.length - 50)+' SKUs em excesso'
+           +  '</td></tr>';
+    }
+    html += '</tbody></table></div></div>';
+  }
+
+  // ─── SEÇÃO: Extrato de entradas (compras mensais via cubo) ───
+  const extrato = _diagFornExtratoCompras(cod);
+  if(extrato.linhas.length > 0){
+    html += '<div class="cc" style="margin-top:14px;">'
+         +    '<div class="cct">Extrato de entradas · compras mensais</div>'
+         +    '<div class="ccs">Movimento de compras detalhado por mês · <strong>'+fI(extrato.linhas.length)+'</strong> meses · <strong>'+fK(extrato.totalValor)+'</strong> em '+fI(extrato.totalNFs)+' NFs · prazo médio '+fI(extrato.prazoMedio)+'d</div>'
+         +    '<div class="tscroll" style="margin-top:8px;max-height:280px;overflow-y:auto;">'
+         +      '<table class="t"><thead><tr>'
+         +        '<th class="L">Mês</th>'
+         +        '<th>Valor</th>'
+         +        '<th>Quantidade</th>'
+         +        '<th>NFs</th>'
+         +        '<th>Prazo médio</th>'
+         +      '</tr></thead><tbody>';
+    extrato.linhas.forEach(function(l){
+      html += '<tr>'
+           +    '<td class="L"><strong>'+_ymToLabel(l.ym)+'</strong></td>'
+           +    '<td class="val-strong">'+fK(l.valor)+'</td>'
+           +    '<td>'+fI(l.qt)+'</td>'
+           +    '<td>'+fI(l.nfs)+'</td>'
+           +    '<td>'+(l.prazo>0?fI(l.prazo)+'d':'-')+'</td>'
+           +  '</tr>';
+    });
+    html += '</tbody></table></div></div>';
+  } else if(typeof Cu === 'undefined' || !Cu){
+    html += '<div class="cc" style="margin-top:14px;background:#fef3c7;border:1px solid #d97706;">'
+         +    '<div style="padding:14px;color:#92400e;font-size:12px;">'
+         +      '<strong>Extrato de entradas não disponível.</strong> O cubo OLAP não está carregado nesta sessão. '
+         +      'Visite a página <a href="javascript:void(0)" onclick="document.querySelector(\'.sb-link[data-p=cubo]\').click()" style="color:#92400e;text-decoration:underline;font-weight:700;">Análise Dinâmica</a> uma vez para carregar o cubo, depois volte aqui.'
+         +    '</div>'
+         + '</div>';
+  }
+
+  // ─── SEÇÃO: Posição financeira (títulos abertos) ───
+  const finPos = _diagFornFinanceiroPosicao(cod);
+  if(finPos.titulos.length > 0){
+    const buckets = ['A_VENCER','HOJE','VENCIDO_1_7','VENCIDO_8_30','VENCIDO_31_90','VENCIDO_90_PLUS'];
+    const bucketLbl = {
+      A_VENCER: 'A vencer', HOJE: 'Vence hoje',
+      VENCIDO_1_7: 'Atraso 1-7d', VENCIDO_8_30: 'Atraso 8-30d',
+      VENCIDO_31_90: 'Atraso 31-90d', VENCIDO_90_PLUS: 'Atraso 90+d'
+    };
+    const bucketCls = {
+      A_VENCER:'', HOJE:'wn',
+      VENCIDO_1_7:'wn', VENCIDO_8_30:'wn',
+      VENCIDO_31_90:'dn', VENCIDO_90_PLUS:'dn'
+    };
+    html += '<div class="cc" style="margin-top:14px;">'
+         +    '<div class="cct">Posição financeira · títulos em aberto</div>'
+         +    '<div class="ccs"><strong>'+fI(finPos.titulos.length)+'</strong> títulos · <strong>'+fK(finPos.total)+'</strong> em aberto · <strong>'+fK(finPos.vencido)+'</strong> vencidos</div>'
+         +    '<div style="display:grid;grid-template-columns:repeat(6,1fr);gap:6px;margin-top:10px;font-size:11px;">';
+    buckets.forEach(function(b){
+      const v = (finPos.aging[b] || {valor:0, titulos:0});
+      html += '<div style="background:var(--surface-2);border:1px solid var(--border);border-radius:5px;padding:8px;text-align:center;">'
+           +    '<div style="color:var(--text-muted);font-size:9.5px;text-transform:uppercase;letter-spacing:.05em;">'+bucketLbl[b]+'</div>'
+           +    '<div class="kg-tag '+bucketCls[b]+'" style="margin-top:4px;">'+fK(v.valor)+'</div>'
+           +    '<div style="color:var(--text-muted);font-size:10px;margin-top:3px;">'+fI(v.titulos)+' tít.</div>'
+           +  '</div>';
+    });
+    html += '</div>';
+    // Separa títulos em "a vencer" e "vencidos"
+    const titAVencer = finPos.titulos.filter(function(t){return (t.dias_atraso||0) <= 0;});
+    const titVencidos = finPos.titulos.filter(function(t){return (t.dias_atraso||0) > 0;});
+
+    function renderTabelaTit(titulos, titulo, max){
+      if(!titulos.length) return '';
+      let h = '<div style="margin-top:10px;">';
+      h += '<div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;font-weight:700;margin-bottom:6px;">'+esc(titulo)+' · '+fI(titulos.length)+' NFs</div>';
+      h += '<div class="tscroll" style="max-height:240px;overflow-y:auto;">'
+        +    '<table class="t"><thead><tr>'
+        +      '<th class="L">Vencimento</th>'
+        +      '<th class="L">NF</th>'
+        +      '<th>Valor</th>'
+        +      '<th>'+(titulo.indexOf('Venc')>=0?'Atraso':'Prazo')+'</th>'
+        +      '<th class="L">Conta</th>'
+        +    '</tr></thead><tbody>';
+      titulos.slice(0, max).forEach(function(t){
+        const da = t.dias_atraso || 0;
+        const dCls = da > 30 ? 'dn' : da > 0 ? 'wn' : '';
+        const dTxt = da > 0 ? '+'+fI(da)+'d' : (da < 0 ? fI(Math.abs(da))+'d' : 'hoje');
+        h += '<tr>'
+          +    '<td class="L">'+esc(t.data_venc||'-')+'</td>'
+          +    '<td class="L">'+esc(t.num_nota||'-')+'</td>'
+          +    '<td class="val-strong">'+fK(t.valor||t.valor_dup||0)+'</td>'
+          +    '<td><span class="kg-tag '+dCls+'">'+esc(dTxt)+'</span></td>'
+          +    '<td class="L"><span style="font-size:10px;color:var(--text-muted);">'+esc(t.conta||'')+(t.conta_desc?' · '+esc(t.conta_desc):'')+'</span></td>'
+          +  '</tr>';
+      });
+      if(titulos.length > max){
+        h += '<tr><td colspan="5" style="text-align:center;color:var(--text-muted);font-size:11px;padding:8px;">'
+          +  '... e mais '+fI(titulos.length - max)+' NFs'
+          +  '</td></tr>';
+      }
+      h += '</tbody></table></div></div>';
+      return h;
+    }
+
+    html += renderTabelaTit(titVencidos, '⚠ NFs vencidas', 50);
+    html += renderTabelaTit(titAVencer, '📅 NFs a vencer', 50);
+    html += '</div>';
+  }
+
+  // ─── SEÇÃO: Notas pagas (resumo do que foi pago) ───
+  const finPagas = _diagFornFinanceiroPagas(cod);
+  if(finPagas){
+    html += '<div class="cc" style="margin-top:14px;">'
+         +    '<div class="cct">Notas pagas · resumo</div>'
+         +    '<div class="ccs">Total já pago para este fornecedor no período coberto pelo extrato financeiro</div>'
+         +    '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:10px;">'
+         +      '<div style="background:var(--surface-2);border:1px solid var(--border);border-radius:5px;padding:10px;">'
+         +        '<div style="color:var(--text-muted);font-size:10px;text-transform:uppercase;letter-spacing:.05em;">Total pago</div>'
+         +        '<div style="font-size:18px;font-weight:700;color:var(--text);margin-top:4px;">'+fK(finPagas.pago||0)+'</div>'
+         +      '</div>'
+         +      '<div style="background:var(--surface-2);border:1px solid var(--border);border-radius:5px;padding:10px;">'
+         +        '<div style="color:var(--text-muted);font-size:10px;text-transform:uppercase;letter-spacing:.05em;">Títulos pagos</div>'
+         +        '<div style="font-size:18px;font-weight:700;color:var(--text);margin-top:4px;">'+fI(finPagas.titulos||0)+'</div>'
+         +      '</div>'
+         +      '<div style="background:var(--surface-2);border:1px solid var(--border);border-radius:5px;padding:10px;">'
+         +        '<div style="color:var(--text-muted);font-size:10px;text-transform:uppercase;letter-spacing:.05em;">Juros pagos</div>'
+         +        '<div style="font-size:18px;font-weight:700;color:'+(finPagas.juros>0?'#dc2626':'var(--text)')+';margin-top:4px;">'+fK(finPagas.juros||0)+'</div>'
+         +      '</div>'
+         +      '<div style="background:var(--surface-2);border:1px solid var(--border);border-radius:5px;padding:10px;">'
+         +        '<div style="color:var(--text-muted);font-size:10px;text-transform:uppercase;letter-spacing:.05em;">Descontos obtidos</div>'
+         +        '<div style="font-size:18px;font-weight:700;color:'+(finPagas.desc>0?'#15803d':'var(--text)')+';margin-top:4px;">'+fK(finPagas.desc||0)+'</div>'
+         +      '</div>'
+         +    '</div>'
+         + '</div>';
+  }
 
   // Observações automáticas
   const obs = _diagFornGerarObservacoes(f, skus);
@@ -2219,16 +2567,48 @@ window._openFornNovo = function(cod){
   cont.innerHTML = html;
 
   // KPIs
+  const prazoMedioCompras = extratoComp.prazoMedio || 0;
   document.getElementById('kp-diag-forn-novo').innerHTML = kgHtml([
     {l:'SKUs cadastrados', v:fI(f.skus||0), s:fI(skus.filter(function(p){return p.status==='ATIVO';}).length)+' ativos'},
     {l:'Compras 12m', v:fK(f.v_compra||0), s:fI(f.nfs_compra||0)+' NFs'},
     {l:'Vendas', v:fK(f.v_venda||0), s:'No período coberto pelo cubo'},
     {l:'Lucro', v:fK(f.lucro||0), s:'Margem '+fP(f.marg||0), cls:f.marg>10?'ok':f.marg<5?'wn':''},
     {l:'Devoluções', v:fK(f.dev_valor||0), s:f.dev_valor>0?fP(f.pct_devol||0)+' das compras':'Nenhuma 2026', cls:f.dev_valor>5000?'dn':''},
+    {l:'Prazo médio compra', v:prazoMedioCompras>0?fI(prazoMedioCompras)+'d':'—', s:prazoMedioCompras>0?'média ponderada por NF':'sem dado de prazo no cubo'}
   ]);
 
-  // Chart histórico mensal
-  if(vpmYms.length > 0){
+  // Chart histórico mensal: vendas R$ vs compras R$ (ou qt como fallback)
+  if(ymsOrd.length > 0){
+    const vendasMap = {};
+    histVend.linhas.forEach(function(l){vendasMap[l.ym] = l.valor;});
+    const comprasMap = {};
+    extratoComp.linhas.forEach(function(l){comprasMap[l.ym] = l.valor;});
+    mkC('c-df-hist', {
+      type: 'bar',
+      data: {
+        labels: ymsOrd.map(function(ym){return _ymToLabel(ym);}),
+        datasets: [
+          {label:'Vendas (R$)', data: ymsOrd.map(function(ym){return vendasMap[ym] || 0;}),
+            backgroundColor: _PAL.ok+'CC', borderRadius: 3, order: 2},
+          {label:'Compras (R$)', data: ymsOrd.map(function(ym){return comprasMap[ym] || 0;}),
+            backgroundColor: _PAL.ac+'80', borderColor: _PAL.ac, borderWidth: 1.5,
+            type: 'line', tension: 0.3, fill: false, pointRadius: 3, order: 1}
+        ]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: {
+          legend: {position: 'top', labels: {boxWidth: 12, font: {size: 10}, padding: 8}},
+          tooltip: {callbacks: {label: function(ctx){return ctx.dataset.label + ': ' + fK(ctx.raw);}}}
+        },
+        scales: {
+          x: {grid: {display: false}, ticks: {font: {size: 10}}},
+          y: {ticks: {callback: function(v){return fAbbr(v);}}}
+        }
+      }
+    });
+  } else if(vpmYms.length > 0){
+    // Fallback: histórico só de qt (cubo não carregado)
     mkC('c-df-hist', {type:'bar',
       data:{labels:vpmYms.map(function(ym){return _ymToLabel(ym);}),
             datasets:[{label:'Qtde vendida', data:vpmYms.map(function(ym){return vpmAcc[ym];}),
@@ -2255,7 +2635,162 @@ window._openFornNovo = function(cod){
 
   cont.scrollTop = 0;
   window.scrollTo({top:0, behavior:'smooth'});
+
+  // Se o cubo ainda não está carregado, dispara em background e re-renderiza ao chegar.
+  // Assim o extrato de entradas aparece automaticamente sem precisar visitar Análise Dinâmica.
+  if((typeof Cu === 'undefined' || !Cu) && typeof _carregarCuboLazy === 'function'){
+    _carregarCuboLazy().then(function(){
+      // Re-renderiza só se ainda estamos na mesma tela
+      const stillHere = document.getElementById('page-diag-forn');
+      if(stillHere && stillHere.classList.contains('active')){
+        window._openFornNovo(cod);
+      }
+    }).catch(function(e){
+      console.warn('[_openFornNovo] cubo não pôde ser carregado:', e.message);
+    });
+  }
 };
+
+// ─── Helpers do diagnóstico de fornecedor ──────────────────
+// Extrato de entradas: agrega compras do cubo por mês
+// Vendas mensais em valor para um fornecedor (cruza com fato_vendas do cubo)
+function _diagFornVendasPorMes(fornCod){
+  const result = {linhas:[], totalValor:0, totalLucro:0, totalQt:0};
+  if(typeof Cu === 'undefined' || !Cu) return result;
+  let vendasFato = null;
+  let campos = null;
+  if(Cu.fatos && Cu.fatos.vendas){
+    vendasFato = Cu.fatos.vendas.linhas || [];
+    campos = Cu.fatos.vendas.campos || [];
+  } else if(Cu.fato_vendas){
+    vendasFato = Cu.fato_vendas.linhas || Cu.fato_vendas || [];
+    campos = (Cu.fato_vendas.campos || []);
+  }
+  if(!vendasFato || !vendasFato.length) return result;
+
+  const idxYm = campos.indexOf('ym');
+  const idxForn = campos.indexOf('forn');
+  const idxLiq = campos.indexOf('v_liq') >= 0 ? campos.indexOf('v_liq') : campos.indexOf('valor');
+  const idxLuc = campos.indexOf('v_luc') >= 0 ? campos.indexOf('v_luc') : campos.indexOf('lucro');
+  const idxQt = campos.indexOf('v_qt') >= 0 ? campos.indexOf('v_qt') : campos.indexOf('qt');
+  if(idxForn < 0 || idxYm < 0) return result;
+
+  const map = new Map();
+  vendasFato.forEach(function(linha){
+    if(linha[idxForn] !== fornCod) return;
+    const ym = linha[idxYm];
+    const valor = idxLiq >= 0 ? (linha[idxLiq] || 0) : 0;
+    const lucro = idxLuc >= 0 ? (linha[idxLuc] || 0) : 0;
+    const qt = idxQt >= 0 ? (linha[idxQt] || 0) : 0;
+    if(!map.has(ym)) map.set(ym, {ym:ym, valor:0, lucro:0, qt:0});
+    const e = map.get(ym);
+    e.valor += valor;
+    e.lucro += lucro;
+    e.qt += qt;
+    result.totalValor += valor;
+    result.totalLucro += lucro;
+    result.totalQt += qt;
+  });
+  result.linhas = Array.from(map.values()).sort(function(a,b){return a.ym.localeCompare(b.ym);});
+  return result;
+}
+
+function _diagFornExtratoCompras(fornCod){
+  const result = {linhas:[], totalValor:0, totalNFs:0, prazoMedio:0};
+  if(typeof Cu === 'undefined' || !Cu) return result;
+  // Cu pode ser cubo_atp ou cubo_cp; estrutura varia. Tenta extrair compras.
+  let comprasFato = null;
+  let campos = null;
+  if(Cu.fatos && Cu.fatos.compras){
+    comprasFato = Cu.fatos.compras.linhas || [];
+    campos = Cu.fatos.compras.campos || [];
+  } else if(Cu.fato_compras){
+    comprasFato = Cu.fato_compras.linhas || Cu.fato_compras || [];
+    campos = (Cu.fato_compras.campos || ['filial','ym','forn','valor','qt','nfs']);
+  }
+  if(!comprasFato || !comprasFato.length) return result;
+
+  // Acha índices dos campos relevantes
+  const idxYm = campos.indexOf('ym');
+  const idxForn = campos.indexOf('forn');
+  const idxValor = campos.indexOf('c_val') >= 0 ? campos.indexOf('c_val') : campos.indexOf('valor');
+  const idxQt = campos.indexOf('c_qt') >= 0 ? campos.indexOf('c_qt') : campos.indexOf('qt');
+  const idxNfs = campos.indexOf('c_nfs') >= 0 ? campos.indexOf('c_nfs') : campos.indexOf('nfs');
+  const idxPrz = campos.indexOf('c_prz');
+  if(idxForn < 0 || idxYm < 0) return result;
+
+  // Agrega por mês
+  const map = new Map();
+  let totalPrz = 0;
+  let totalPrzNFs = 0;
+  comprasFato.forEach(function(linha){
+    if(linha[idxForn] !== fornCod) return;
+    const ym = linha[idxYm];
+    const valor = idxValor >= 0 ? (linha[idxValor]||0) : 0;
+    const qt = idxQt >= 0 ? (linha[idxQt]||0) : 0;
+    const nfs = idxNfs >= 0 ? (linha[idxNfs]||0) : 0;
+    const prazo = idxPrz >= 0 ? (linha[idxPrz]||0) : 0;
+    if(!map.has(ym)){
+      map.set(ym, {ym:ym, valor:0, qt:0, nfs:0, prazo:0, prazoSum:0, prazoCount:0});
+    }
+    const e = map.get(ym);
+    e.valor += valor;
+    e.qt += qt;
+    e.nfs += nfs;
+    if(prazo > 0 && nfs > 0){
+      e.prazoSum += prazo * nfs;
+      e.prazoCount += nfs;
+      totalPrz += prazo * nfs;
+      totalPrzNFs += nfs;
+    }
+    result.totalValor += valor;
+    result.totalNFs += nfs;
+  });
+  // Finaliza prazo médio por mês e geral
+  result.linhas = Array.from(map.values()).map(function(e){
+    if(e.prazoCount > 0) e.prazo = e.prazoSum / e.prazoCount;
+    return e;
+  }).sort(function(a,b){return b.ym.localeCompare(a.ym);});
+  result.prazoMedio = totalPrzNFs > 0 ? (totalPrz / totalPrzNFs) : 0;
+  return result;
+}
+
+// Posição financeira do fornecedor: títulos abertos + aging
+function _diagFornFinanceiroPosicao(fornCod){
+  const result = {titulos:[], total:0, vencido:0, aging:{}};
+  if(typeof F === 'undefined' || !F) return result;
+  const titulosAll = (F.aberto && F.aberto.titulos) || [];
+  // Filtra só conta de mercadorias e do fornecedor escolhido
+  const titulos = titulosAll.filter(function(t){
+    if(typeof _ehContaMercadoria === 'function' && !_ehContaMercadoria(t.conta)) return false;
+    if(!t.parceiro) return false;
+    // cod pode vir como string em F e number em E
+    return String(t.parceiro.cod) === String(fornCod);
+  });
+  titulos.sort(function(a,b){
+    return (a.data_venc||'').localeCompare(b.data_venc||'');
+  });
+  result.titulos = titulos;
+  result.total = titulos.reduce(function(s,t){return s+(t.valor||t.valor_dup||0);}, 0);
+  result.vencido = titulos.reduce(function(s,t){
+    const v = t.valor || t.valor_dup || 0;
+    return (t.dias_atraso||0) > 0 ? s+v : s;
+  }, 0);
+  // Aging
+  if(typeof _agingDeTitulos === 'function'){
+    result.aging = _agingDeTitulos(titulos);
+  }
+  return result;
+}
+
+// Resumo de notas pagas do fornecedor
+function _diagFornFinanceiroPagas(fornCod){
+  if(typeof F === 'undefined' || !F) return null;
+  const porForn = (F.pagas && F.pagas.por_fornecedor) || [];
+  // cod string vs number — comparar como string
+  const f = porForn.find(function(p){return String(p.cod) === String(fornCod);});
+  return f || null;
+}
 
 function _diagFornGerarObservacoes(f, skus){
   const obs = [];
@@ -2344,7 +2879,9 @@ let _vencFiltros = {aging:'todos', grupo:'todos', forn:''};
 
 function _vencCalcular(){
   if(_vencCache) return _vencCache;
-  const titulos = (F && F.aberto && F.aberto.titulos) || [];
+  const titulosAll = (F && F.aberto && F.aberto.titulos) || [];
+  // Filtra só conta de mercadorias (10001 + 99912)
+  const titulos = titulosAll.filter(function(t){return _ehContaMercadoria(t.conta);});
   const hojeStr = new Date().toISOString().substring(0,10);
 
   const vencidos = [];
@@ -2355,17 +2892,14 @@ function _vencCalcular(){
     else futuros.push(t);
   });
 
-  // Lista única de grupos e fornecedores nos vencidos
-  const setG = new Set();
+  // Lista única de fornecedores nos vencidos (grupos não é mais necessário porque já vem filtrado)
   const setF = new Set();
   vencidos.forEach(function(t){
-    if(t.grupo_desc) setG.add(t.grupo_desc);
     if(t.parceiro && t.parceiro.nome) setF.add(t.parceiro.nome);
   });
-  const grupos = Array.from(setG).sort();
   const forns = Array.from(setF).sort();
 
-  _vencCache = {vencidos:vencidos, futuros:futuros, grupos:grupos, forns:forns};
+  _vencCache = {vencidos:vencidos, futuros:futuros, grupos:[], forns:forns};
   return _vencCache;
 }
 
@@ -2383,8 +2917,7 @@ function _vencAplicarFiltros(){
       if(f.aging === '31-90' && (da < 31 || da > 90)) return false;
       if(f.aging === '91+'   && da < 91) return false;
     }
-    // Grupo
-    if(f.grupo !== 'todos' && t.grupo_desc !== f.grupo) return false;
+    // Filtro de grupo removido (já vem filtrado por conta de mercadorias)
     // Fornecedor
     if(fornQ){
       const nm = ((t.parceiro && t.parceiro.nome) || '').toLowerCase();
@@ -2411,6 +2944,12 @@ function renderVencidosNovo(){
            + '<div class="ph-sep"></div>'
            + '<div class="page-body">';
 
+  // Banner de filtro fixo
+  html += '<div style="background:#dbeafe;border:1px solid #93c5fd;border-radius:8px;padding:9px 14px;margin-bottom:10px;font-size:11.5px;color:#1e40af;">'
+       +   '<strong>Filtro ativo:</strong> mostrando apenas contas relacionadas a fornecedores de mercadorias '
+       +   '(10001 · COMPRA DE MERCADORIAS, 99912 · MULTA E JUROS DE MORA).'
+       + '</div>';
+
   // Banner
   const hojeStr = new Date().toISOString().substring(0,10);
   html += '<div style="background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:10px 14px;margin-bottom:14px;font-size:12px;color:var(--text-dim);">'
@@ -2434,13 +2973,6 @@ function renderVencidosNovo(){
                     return '<button class="vn-chip'+(k==='todos'?' active':'')+'" data-k="'+k+'" style="padding:5px 12px;border:1px solid var(--border-strong);background:'+(k==='todos'?'var(--accent)':'#fff')+';color:'+(k==='todos'?'#fff':'var(--text)')+';border-radius:14px;cursor:pointer;font-size:11px;font-weight:600;">'+lbl+'</button>';
                   }).join('')
        +        '</div>'
-       +      '</div>'
-       +      '<div style="min-width:240px;">'
-       +        '<label style="display:block;font-size:11px;color:var(--text-muted);margin-bottom:4px;">Grupo de despesa</label>'
-       +        '<select id="vn-grupo-sel" style="width:100%;padding:6px 8px;border:1px solid var(--border-strong);border-radius:6px;font-size:12px;background:#fff;">'
-       +          '<option value="todos">Todos os grupos</option>'
-       +          c.grupos.map(function(g){return '<option value="'+escAttr(g)+'">'+esc(g.length>40?g.substring(0,40)+'…':g)+'</option>';}).join('')
-       +        '</select>'
        +      '</div>'
        +      '<div style="min-width:240px;flex:1;">'
        +        '<label style="display:block;font-size:11px;color:var(--text-muted);margin-bottom:4px;">Buscar fornecedor</label>'
@@ -2516,10 +3048,6 @@ function renderVencidosNovo(){
       _vencRender();
     });
   });
-  document.getElementById('vn-grupo-sel').addEventListener('change', function(e){
-    _vencFiltros.grupo = e.target.value || 'todos';
-    _vencRender();
-  });
   let timerSrch = null;
   document.getElementById('vn-forn-srch').addEventListener('input', function(e){
     clearTimeout(timerSrch);
@@ -2530,7 +3058,6 @@ function renderVencidosNovo(){
   });
   document.getElementById('vn-clear').addEventListener('click', function(){
     _vencFiltros = {aging:'todos', grupo:'todos', forn:''};
-    document.getElementById('vn-grupo-sel').value = 'todos';
     document.getElementById('vn-forn-srch').value = '';
     document.querySelectorAll('.vn-chip').forEach(function(x){
       const active = x.dataset.k === 'todos';
@@ -2844,8 +3371,8 @@ function renderFornGPCNovo(){
     }
     const margCls = f.marg<0?'dn':f.marg<5?'wn':f.marg<10?'':'ok';
     const vcCls = vc > 100000 ? 'dn' : vc > 0 ? 'wn' : '';
-    html += '<tr style="cursor:pointer;" onclick="if(typeof window._openFornNovo===\'function\')window._openFornNovo('+f.cod+');">'
-         +    '<td class="L"><strong>'+esc((f.nome||'').substring(0,42))+'</strong></td>'
+    html += '<tr>'
+         +    '<td class="L" data-forn-cod="'+esc(f.cod)+'" title="Clique para ver diagnóstico do fornecedor"><strong>'+esc((f.nome||'').substring(0,42))+'</strong></td>'
          +    '<td>'+fI(f.skus)+'</td>'
          +    '<td>'+fK(f.v_compra)+'</td>'
          +    '<td class="val-strong">'+fK(f.v_venda)+'</td>'

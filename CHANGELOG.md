@@ -4,6 +4,286 @@ Lista das melhorias do sistema de BI da R2 Soluções para o Grupo Pinto Cerquei
 
 ---
 
+## v4.30 · 02/mai/2026
+
+**Etapa 7 · Diagnóstico de fornecedor expandido**
+
+Página de diagnóstico de fornecedor recebeu três adições importantes. Boa parte do que você pediu (extrato de entradas, posição financeira com aging, notas pagas, itens em excesso) já existia na versão anterior, mas estava parcialmente coberta. Agora está mais completa.
+
+**Nota honesta sobre escopo**
+
+Você mencionou que tinha feito uma versão mais completa em outro chat. Eu não tenho acesso àquela conversa (cada chat é isolado), então construí com o que tenho disponível nos JSONs atuais. Pode não ficar idêntico ao que você lembra. Se faltar algo específico, me diga o que.
+
+**Mudanças desta versão**
+
+1. **Histórico mensal redesenhado · vendas vs compras (R\$)**
+
+A versão antiga mostrava apenas quantidade vendida por mês (em barras). Agora mostra dois conjuntos no mesmo gráfico: vendas em valor (barras verdes) e compras em valor (linha laranja). Permite ver visualmente se o fornecedor está com saída maior ou menor que entrada — indicador de pressão de estoque ou ruptura. Cabeçalho mostra os totais de vendas e compras no período.
+
+Quando o cubo OLAP não está carregado, a página cai no comportamento antigo (só qt vendida), com aviso pra abrir Análise Dinâmica primeiro.
+
+2. **KPI novo · Prazo médio de compra**
+
+Adicionado um sexto KPI no header da página: "Prazo médio compra", calculado como média ponderada por NF dos prazos das entradas no período. Indicador útil pra comparar fornecedores e negociar condições.
+
+3. **NFs em aberto separadas em "vencidas" e "a vencer"**
+
+Antes a tabela de títulos abertos misturava os dois. Agora aparecem em duas tabelas distintas, com cabeçalho contextual e até 50 linhas em cada. Vencidas aparecem primeiro com ícone ⚠.
+
+**O que a página mostra hoje (lista completa)**
+
+- Hero com tags automáticas (margem negativa, devoluções altas, fornecedor estratégico, etc.)
+- 6 KPIs (SKUs, Compras 12m, Vendas, Lucro, Devoluções, Prazo médio compra)
+- Histórico mensal vendas vs compras
+- Top 12 SKUs por faturamento (gráfico)
+- Tabela completa de SKUs do fornecedor
+- Itens em excesso (subset visual com top 50)
+- Extrato de entradas mensal (do cubo OLAP)
+- Posição financeira com aging em 6 buckets
+- NFs vencidas (separadas)
+- NFs a vencer (separadas)
+- Notas pagas · resumo (total pago, juros, descontos)
+- Observações automáticas (margem, devoluções, paralisação, concentração)
+
+**Limitação dos dados**
+
+O ETL não exporta extrato detalhado nota a nota — só agregados mensais e o `compras_12m` resumido por SKU. Pra reconstruir nota a nota teria que mudar o ETL pra exportar uma tabela de NFs de entrada por fornecedor com data, valor, quantidade, prazo.
+
+---
+
+## v4.30 · 02/mai/2026
+
+**Etapa 7 · Diagnóstico de fornecedor expandido**
+
+A página de Diagnóstico de Fornecedor ganhou 4 seções novas que tornam ela um painel completo do relacionamento com cada fornecedor.
+
+**Itens em excesso · novo bloco**
+
+Lista todos os SKUs do fornecedor com status PARADO, MORTO ou CRÍTICO, ordenados por valor imobilizado. Mostra: produto, quantidade em estoque, valor a custo, data da última entrada e status. Cada produto é clicável (drill direto pro diagnóstico do produto). Limite de 50 itens visíveis com aviso quando há mais.
+
+**Extrato de entradas · novo bloco**
+
+Tabela mensal de compras do fornecedor com valor, quantidade, NFs e prazo médio de pagamento por mês. Os dados vêm do cubo OLAP. Se o cubo ainda não estiver carregado quando você abrir o diagnóstico, o sistema dispara o carregamento em background e re-renderiza automaticamente quando chega — você não precisa visitar a Análise Dinâmica antes.
+
+**Posição financeira · novo bloco**
+
+Mostra todos os títulos do fornecedor que ainda não foram pagos, com:
+- 6 cards de aging (A vencer, Hoje, 1-7d, 8-30d, 31-90d, 90+d) com valor e contagem de títulos em cada faixa
+- Tabela detalhada com vencimento, NF, valor, dias de atraso e conta contábil
+- Filtra apenas contas relacionadas a fornecedores de mercadorias (10001 e 99912), consistente com o resto do sistema
+
+**Notas pagas · novo bloco**
+
+4 cards com o resumo do que já foi pago para o fornecedor:
+- Total pago
+- Quantidade de títulos pagos
+- Juros pagos (em vermelho se > 0, indicando atrasos custosos)
+- Descontos obtidos (em verde se > 0, indicando bom relacionamento comercial)
+
+**Ressalva**
+
+Versão construída do zero baseada nos dados disponíveis no sistema atual (estoque, cubo OLAP, financeiro). Pode diferir da versão anterior do projeto compras.solucoesr2.com.br que foi mencionada — sem acesso àquele código, fui pelas seções que fazem sentido com os dados que tenho.
+
+---
+
+## v4.29 · 02/mai/2026
+
+**Etapa 6 · Drill-through · clique abre diagnóstico**
+
+Implementei um sistema global de drill-through. Qualquer elemento marcado com `data-prod-cod` ou `data-forn-cod` em qualquer página do sistema agora vira clicável e abre a página de diagnóstico correspondente — produto ou fornecedor.
+
+**Como funciona**
+
+Adicionei um listener delegado no `document.body` que intercepta cliques. Quando o usuário clica numa célula marcada, o sistema abre `_openProdNovo(cod)` ou `_openFornNovo(cod)` automaticamente. Isso evita ter que atribuir handlers manuais em cada tabela.
+
+**Visual**
+
+Células clicáveis ganham:
+- Cursor `pointer`
+- Hover sutil em laranja (rgba(245,134,52,.08))
+- Tooltip "Clique para ver diagnóstico do produto/fornecedor"
+
+**Onde já está ativo**
+
+- Excesso de estoque · top 100 (produto)
+- Excesso de estoque · por fornecedor (fornecedor)
+- Análise de fornecedores · ranking (fornecedor)
+- Fornecedores GPC · listas (fornecedor)
+- Verbas · top fornecedores (fornecedor)
+- Verbas · top produtos (produto)
+- Verbas · aplicações detalhadas (ambos)
+- Análise por departamento · drill em níveis (categoria/seção)
+- Estoque · top SKUs (produto)
+- Outras tabelas que já tinham `onclick` nativo continuam funcionando
+
+**Compatibilidade**
+
+A delegação não interfere com handlers `onclick` existentes — quando há um onclick num ancestor, a delegação cede a vez. Tabelas que tinham `<tr onclick="openProd(123)">` continuam funcionando idêntico.
+
+---
+
+## v4.29 · 02/mai/2026
+
+**Etapa 6 · Drill-through · clique em fornecedor/produto**
+
+Agora qualquer fornecedor ou produto exibido nas tabelas leva direto para a página de diagnóstico correspondente quando clicado. Antes era preciso navegar até "Diagnóstico de Produto" ou "Diagnóstico de Fornecedor" e buscar manualmente.
+
+**Como funciona**
+
+Adicionado um listener global de cliques que detecta elementos marcados com `data-prod-cod="X"` ou `data-forn-cod="X"`. Ao clicar, abre a página de diagnóstico daquele item. Cursor vira pointer no hover, fundo da célula fica laranja claro e o texto vira cor de destaque pra deixar claro que é clicável.
+
+**Tabelas marcadas nesta versão**
+
+- Excesso de Estoque · top 100 produtos
+- Excesso de Estoque · excesso por fornecedor (novo quadro)
+- Curva ABC · top 100 produtos
+- Análise de Fornecedores · tabela principal
+- Análise de Fornecedores · top 10 devoluções
+- Posição Financeira · top fornecedores em aberto
+- Fornecedores GPC · tabela principal
+
+Mais tabelas serão marcadas conforme uso real revelar onde os usuários esperam clicar.
+
+**Outras tabelas e listas com produto/fornecedor que não foram marcadas**
+
+Algumas listas em gráficos (top X em barras horizontais por exemplo) não foram marcadas porque envolvem elementos do Chart.js, não do DOM da tabela. Pra fazer isso precisaria de handlers customizados de clique no canvas — pode ser uma evolução futura.
+
+---
+
+## v4.28 · 02/mai/2026
+
+**Etapa 5 · Visão consolidada, Evolução mensal e Recebimentos**
+
+**Visão Consolidada · aviso quando base não é GRUPO**
+
+Quando o usuário trocava a base ativa para uma loja específica (ATP, CP1, etc), a Visão Consolidada ficava em branco porque o JSON daquela loja não tem dados consolidados de todas as lojas. Agora aparece um aviso amarelo claro com botão "Trocar para base GRUPO" pra evitar confusão.
+
+**Evolução mensal · novo gráfico comparativo**
+
+Adicionado um novo bloco "Comparativo · loja em destaque vs demais" abaixo do gráfico multi-linha existente. O usuário escolhe uma loja num seletor, e o gráfico destaca essa loja (linha grossa colorida com área preenchida) enquanto as outras aparecem em cinza claro como referência. Abaixo do gráfico, um resumo numérico mostra:
+- Faturamento acumulado da loja
+- % do grupo
+- Posição no ranking de faturamento
+
+**Recebimentos · normalização de schema entre ATP e CP**
+
+Bug crítico identificado: a página Recebimentos estava quebrada para todas as bases CP (CP1, CP3, CP5, CP40) e parcialmente para o consolidado. Causa: o ETL gera dois schemas diferentes:
+
+- ATP usa `total_atrasado`, `clientes_inadimplentes`, `rcas_envolvidos`, `dias_atraso_medio`
+- CP usa `valor`, `inadimplentes`, `rcas`, sem dias
+
+O código antigo só conhecia o schema ATP, então nas bases CP os KPIs apareciam zerados. Agora o código detecta e normaliza ambos para um formato único antes de renderizar.
+
+**Limitações conhecidas (problema do ETL)**
+
+Os JSONs CP não trazem `dias_atraso_medio` nem `dias_atraso_mediano`, então esses KPIs aparecem como "0d" nas bases CP. Pra resolver, o ETL precisa ser ajustado para gerar esses campos também na visão CP. O `_total_grupo` também não tem `rcas`, então o KPI "RCAs envolvidos" fica como 0 no consolidado.
+
+Em alguns clientes do CP1, o campo `faixas` traz contagem de parcelas em vez de valor monetário — isso também é problema de ETL, não de frontend.
+
+---
+
+## v4.27 · 02/mai/2026
+
+**Etapa 3 · Excesso de estoque**
+
+**Status PARADO/MORTO agora são estáveis entre métodos de cálculo**
+
+Antes: PARADO/MORTO eram definidos pela cobertura de estoque (giro_dias > 180 ou > 365). Quando o usuário trocava entre "Cálculo Winthor" e "Maior mês de venda", o número de itens em cada status mudava porque o cálculo de cobertura mudava — confuso.
+
+Agora: PARADO e MORTO são definidos pela ausência de venda nos últimos meses, independente do método. CRÍTICO e ATIVO continuam usando cobertura.
+
+- **MORTO**: sem estoque OU sem venda nos últimos 180 dias
+- **PARADO**: sem venda nos últimos 90 dias
+- **CRÍTICO**: vende, mas com cobertura > 90 dias
+- **ATIVO**: vende com cobertura ≤ 90 dias
+
+A legenda da Análise por Departamento foi atualizada com as novas definições.
+
+**Coluna "Dias p/ consumir"**
+
+A coluna "Giro (d)" da tabela de excesso foi renomeada para "Dias p/ consumir" — nome mais claro, com tooltip explicando "Dias até esgotar o estoque atual no ritmo de venda".
+
+**Top 100**
+
+A tabela "Top 50 · maior valor imobilizado" virou "Top 100", mostrando o dobro de SKUs em excesso.
+
+**Excesso de estoque por fornecedor**
+
+Novo quadro acima da tabela de top 100. Lista os top 50 fornecedores com SKUs em excesso, ordenados por valor imobilizado. Mostra: SKUs em excesso, valor a custo, valor em preço de venda, e contagem de status críticos/parados/mortos por fornecedor.
+
+---
+
+**Etapa 4 · Financeiro filtrado por contas de mercadorias**
+
+**Posição financeira e Vencidos a pagar**
+
+Ambas páginas agora mostram apenas contas relacionadas a fornecedores de mercadorias:
+- `10001` · COMPRA DE MERCADORIAS
+- `99912` · MULTA E JUROS DE MORA
+
+Banner azul no topo das duas páginas avisa explicitamente do filtro ativo. Os agregados (KPIs, aging, totais) são todos recalculados a partir dos títulos filtrados — não mostram mais valores de salários, impostos, fretes, energia etc.
+
+**Vencidos: filtro de grupo removido**
+
+Como já vem filtrado por conta, o seletor "Grupo de despesa" virou redundante e foi removido da página Vencidos. Os filtros restantes são: Faixa de atraso e Buscar fornecedor.
+
+---
+
+## v4.26 · 02/mai/2026
+
+**Etapa 2 (parcial) · Filtros de mês + ajustes em departamento**
+
+**Verbas com filtro de mês**
+
+Na página Verbas aplicadas em produtos agora existe um seletor de mês acima do banner. Selecionando um mês específico, todos os agregados são recalculados a partir das aplicações daquele mês: KPIs, gráficos, tabelas de departamento, seção, fornecedor, produto e concentração. Voltar para "Todos os meses" restaura o comportamento original. A escolha não é persistida entre sessões — toda vez que entra na página, começa em "Todos os meses".
+
+**Análise por departamento**
+
+- Adicionada legenda explicativa dos status (ATIVO, CRÍTICO, PARADO, MORTO) acima da tabela.
+- Removida coluna "Markup %" da tabela. A coluna "Margem %" foi mantida.
+- Estados PARADO e MORTO recebem destaque visual (badges coloridas) na contagem.
+
+**Páginas que NÃO receberam filtro de mês**
+
+Os JSONs gerados pelo ETL exportam apenas o total acumulado nas chaves `vendas.valor`, `vendas.lucro` etc., e o desdobramento mensal (`vendas_por_mes`) traz somente quantidade vendida, não valor nem lucro. Por isso, as seguintes páginas precisariam de mudança no ETL antes de receber filtro de mês:
+
+- Curva ABC
+- Análise de fornecedores
+- Fornecedores GPC
+- Análise por departamento
+
+Pra implementar filtro de mês nessas páginas, o ETL precisa exportar `vendas_por_mes` com `valor` e `lucro` (não só `qt`).
+
+---
+
+## v4.25 · 02/mai/2026
+
+**Etapa 1 da reformulação · 8 itens**
+
+Primeira leva de melhorias da nova lista de demandas. Mudanças pequenas e mecânicas, com baixo risco.
+
+**Linguagem**
+- "Snapshot" virou "Retrato" em toda a interface visível ao usuário (banners, tooltips, listas, mensagens). URLs (`?snapshot=`) e código interno foram preservados pra não quebrar links salvos.
+
+**Excesso de Estoque**
+- Título: removido "imobilizações sem giro". Fica só "Excesso de estoque".
+
+**Verbas**
+- Título mudado de "Verbas e descontos comerciais" para "Verbas aplicadas em produtos".
+- Removido subtítulo "Modelo: verba como redução de custo".
+- Removido aviso "Limitação WinThor: coluna TIPO_VERBA vem 100% vazia".
+
+**Limpeza de gráficos**
+- Removido "Variação YoY · GRUPO" da Evolução Mensal (era um gráfico de barras com % vs ano anterior).
+- Removido "Ticket médio por dia da semana" da página Vendas Diárias.
+- Página Drill-Down removida do menu (a section HTML continua escondida pra preservar histórico de URLs).
+
+**Mobile**
+- Zoom de pinça travado novamente (`maximum-scale=1.0,user-scalable=no`). Trade-off conhecido: perde-se acessibilidade pra usuários com baixa visão, mas ganha-se UX em interações de toque.
+- Avatar do menu de usuário encolheu: 30px no desktop, 26px em telas até 768px, 24px até 560px, 22px até 380px. Não vaza mais do cabeçalho em iPhone SE e similares.
+
+---
+
 ## v4.24 · 02/mai/2026
 
 **Análise Dinâmica · novo layout de configuração**

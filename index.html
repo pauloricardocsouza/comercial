@@ -2,7 +2,7 @@
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no">
 <meta name="robots" content="noindex, nofollow">
 <title>Comercial GPC · R2 Soluções</title>
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='12' fill='%2330569f'/%3E%3Ctext x='32' y='44' font-family='Archivo,Arial,sans-serif' font-size='34' font-weight='800' fill='%23f58634' text-anchor='middle'%3EG%3C/text%3E%3C/svg%3E">
@@ -544,11 +544,18 @@ table.data tbody td .cod {
   .page-head h1 { font-size: 26px; }
   .tab-pane { padding: 18px 16px 30px; }
   /* Botão do usuário compacto no mobile (esconde nome+perfil, mantém avatar) */
-  #userWidget { margin-left: 6px !important; padding-left: 6px !important; flex-shrink: 0 !important; }
+  #userWidget { margin-left: 4px !important; padding-left: 6px !important; flex-shrink: 0 !important; border-left-width: 0 !important; }
+  #userWidget #userMenuBtn { padding: 2px !important; gap: 4px !important; }
   #userWidget #userMenuBtn > div:nth-child(2) { display: none !important; }
   #userWidget #userMenuBtn > svg { display: none !important; }
+  /* Avatar compacto */
+  #userWidget #userMenuBtn > div:first-child {
+    width: 26px !important;
+    height: 26px !important;
+    font-size: 11px !important;
+  }
   /* Garante que a topbar prioriza mostrar o widget de usuário */
-  .topbar > div:last-child { flex-wrap: nowrap; gap: 6px !important; min-width: 0; }
+  .topbar > div:last-child { flex-wrap: nowrap; gap: 4px !important; min-width: 0; }
   .base-badge { font-size: 9px !important; padding: 3px 5px !important; }
   #fil-sum { display: none !important; }
 }
@@ -556,6 +563,24 @@ table.data tbody td .cod {
   .kpi-grid { grid-template-columns: 1fr; gap: 10px; }
   .kpi .value { font-size: 20px; }
   .page-head h1 { font-size: 22px; }
+  /* Topbar ainda mais compacta */
+  .base-badge { font-size: 8px !important; padding: 2px 4px !important; }
+  #userWidget { margin-left: 2px !important; padding-left: 4px !important; }
+  #userWidget #userMenuBtn > div:first-child {
+    width: 24px !important;
+    height: 24px !important;
+    font-size: 10px !important;
+  }
+  /* Esconde título da topbar se necessário */
+  .topbar > div:first-child { min-width: 0; flex-shrink: 1; }
+}
+@media (max-width: 380px) {
+  /* Avatar mínimo em telas muito estreitas */
+  #userWidget #userMenuBtn > div:first-child {
+    width: 22px !important;
+    height: 22px !important;
+    font-size: 9px !important;
+  }
 }
 ::-webkit-scrollbar { width: 10px; height: 10px; }
 ::-webkit-scrollbar-track { background: var(--surface-2); }
@@ -788,6 +813,19 @@ table.t tr:hover td { background:var(--surface-2); cursor:pointer; }
   .pv-zones-grid { grid-template-columns: 1fr !important; }
   .pv-acoes { flex-wrap: wrap; }
   .pv-acoes select, .pv-acoes button { flex: 1 1 auto; }
+}
+
+/* Drill-through · elementos com data-prod-cod ou data-forn-cod */
+[data-prod-cod], [data-forn-cod] {
+  cursor: pointer;
+  transition: background-color .15s, color .15s;
+}
+[data-prod-cod]:hover, [data-forn-cod]:hover {
+  background-color: rgba(245, 134, 52, 0.12);
+  color: var(--accent);
+}
+[data-prod-cod]:hover strong, [data-forn-cod]:hover strong {
+  color: var(--accent);
 }
 
 /* Acessibilidade · foco de teclado consistente */
@@ -1489,7 +1527,6 @@ textarea.proc-inp{resize:vertical;min-height:44px}
     <button class="sb-link" data-p="v-dias-cp"><span class="sbi"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M3 12h12M3 18h15"/></svg></span>Dias C &amp; P</button>
     <button class="sb-link" data-p="v-metas"><span class="sbi"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 19V12m4 7V8m4 11V4m4 15v-9m4 9V8"/></svg></span>Metas</button>
     <button class="sb-link" data-p="recebimentos"><span class="sbi"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 10 12 15 7 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></span>Recebimentos</button>
-    <button class="sb-link" data-p="v-drilldown"><span class="sbi"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="4" rx="1"/><rect x="3" y="10" width="14" height="4" rx="1"/><rect x="3" y="17" width="10" height="4" rx="1"/></svg></span>Drill-Down</button>
     <button class="sb-link" data-p="v-benchmarking"><span class="sbi"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="11" width="5" height="10" rx="1"/><rect x="9" y="7" width="5" height="14" rx="1"/><rect x="16" y="3" width="5" height="18" rx="1"/></svg></span>RCA</button>
     <button class="sb-link" data-p="v-ano2026"><span class="sbi"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 3"/></svg></span>Análise 2026</button>
     <button class="sb-link" data-p="v-alertas"><span class="sbi"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg></span>Alertas Vendas</button>
@@ -1570,7 +1607,7 @@ textarea.proc-inp{resize:vertical;min-height:44px}
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2" style="flex-shrink:0;margin-top:2px;"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
           <div>
             <div style="font-weight:700;font-size:12px;color:var(--text);">Histórico</div>
-            <div style="font-size:11px;color:var(--text-muted);line-height:1.4;">Snapshots de versões anteriores dos dados</div>
+            <div style="font-size:11px;color:var(--text-muted);line-height:1.4;">Retratos de versões anteriores dos dados</div>
           </div>
         </div>
         <div style="display:flex;gap:10px;padding:10px 12px;background:var(--surface-2);border-radius:8px;">
@@ -1818,7 +1855,7 @@ textarea.proc-inp{resize:vertical;min-height:44px}
 <section class="page" id="page-v-vendas-diarias"></section>
 <section class="page" id="page-v-dias-cp"></section>
 <section class="page" id="page-v-metas"></section>
-<section class="page" id="page-v-drilldown"></section>
+<section class="page" id="page-v-drilldown" style="display:none;"></section>
 <section class="page" id="page-v-benchmarking"></section>
 <section class="page" id="page-v-ano2026"></section>
 <section class="page" id="page-v-alertas"></section>
@@ -1843,10 +1880,10 @@ textarea.proc-inp{resize:vertical;min-height:44px}
      JS principal · dividido em 5 arquivos pela auditoria v4.6
      Ordem importa: core declara as globais; render-* dependem de core.
      ════════════════════════════════════════════════════════════════════════════ -->
-<script src="js/core.js?v=4.24"></script>
-<script src="js/render-compras.js?v=4.24"></script>
-<script src="js/render-vendas.js?v=4.24"></script>
-<script src="js/render-outros.js?v=4.24"></script>
-<script src="js/admin.js?v=4.24"></script>
+<script src="js/core.js?v=4.30"></script>
+<script src="js/render-compras.js?v=4.30"></script>
+<script src="js/render-vendas.js?v=4.30"></script>
+<script src="js/render-outros.js?v=4.30"></script>
+<script src="js/admin.js?v=4.30"></script>
 </body>
 </html>
