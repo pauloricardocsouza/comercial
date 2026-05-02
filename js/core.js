@@ -216,7 +216,7 @@ const AUTH_MODE = 'firebase'; // 'mock' | 'firebase'
 // Convenção:
 //   X.x → alteração grande (quebra de compatibilidade, nova feature grande)
 //   x.X → alteração suave (fix, ajuste visual, pequeno refinamento)
-const APP_VERSION = '4.40-comercial';
+const APP_VERSION = '4.42-comercial';
 
 // ================================================================
 // HELPERS DE CHART.JS — compatíveis com Safari/iOS (sem spread ops)
@@ -311,40 +311,37 @@ function _auditLog(tipo, detalhes, identidadeOverride){
 //
 // Páginas com `aplicaFiltro: false` aparecem no admin pra você poder pré-configurar
 // caso o comportamento da página mude no futuro. Hoje, marcar supervisor ali não muda nada.
+//
+// A ORDEM aqui segue a ordem do menu lateral (index.html). Mantenha sincronizado.
 const _SUP_IGN_PAGINAS_CATALOGO = [
-  // Vendas
-  {id:'v-visao-grupo',  label:'Visão Grupo',            grupo:'Vendas',       aplicaFiltro:false},
-  {id:'v-evolucao',     label:'Evolução',               grupo:'Vendas',       aplicaFiltro:false},
-  {id:'v-ano2026',      label:'Ano 2026',               grupo:'Vendas',       aplicaFiltro:false},
-  {id:'v-drilldown',    label:'Drill-Down por Vendedor',grupo:'Vendas',       aplicaFiltro:true},
-  {id:'v-benchmarking', label:'Benchmarking',           grupo:'Vendas',       aplicaFiltro:true},
-  {id:'v-itens',        label:'Itens vendidos',         grupo:'Vendas',       aplicaFiltro:false},
-  {id:'v-vendas-diarias',label:'Vendas Diárias',        grupo:'Vendas',       aplicaFiltro:false},
-  {id:'v-dias-cp',      label:'Dias C&P',               grupo:'Vendas',       aplicaFiltro:false},
-  {id:'v-metas',        label:'Metas',                  grupo:'Vendas',       aplicaFiltro:false},
-  {id:'v-alertas',      label:'Alertas',                grupo:'Vendas',       aplicaFiltro:true},
-  {id:'v-atp-varejo',   label:'ATP Varejo',             grupo:'Vendas/Loja',  aplicaFiltro:false},
-  {id:'v-atp-atacado',  label:'ATP Atacado',            grupo:'Vendas/Loja',  aplicaFiltro:false},
-  {id:'v-cestao',       label:'Cestão Loja 1',          grupo:'Vendas/Loja',  aplicaFiltro:false},
-  {id:'v-inhambupe',    label:'Cestão Inhambupe',       grupo:'Vendas/Loja',  aplicaFiltro:false},
-  // Executivo
-  {id:'executivo',      label:'Visão Executiva',        grupo:'Executivo',    aplicaFiltro:false},
-  // Compras
+  // Topo
+  {id:'executivo',      label:'Visão Executiva',        grupo:'Visão',        aplicaFiltro:false},
+  // Compras (ordem do menu)
+  {id:'cv',             label:'Compras × Vendas',       grupo:'Compras',      aplicaFiltro:false},
+  {id:'deptos',         label:'Departamentos',          grupo:'Compras',      aplicaFiltro:false},
   {id:'estoque',        label:'Estoque',                grupo:'Compras',      aplicaFiltro:false},
   {id:'excesso',        label:'Excesso de estoque',     grupo:'Compras',      aplicaFiltro:false},
-  {id:'abc',            label:'Curva ABC',              grupo:'Compras',      aplicaFiltro:false},
+  {id:'financeiro',     label:'Financeiro',             grupo:'Compras',      aplicaFiltro:false},
+  {id:'vencidos',       label:'Vencidos',               grupo:'Compras',      aplicaFiltro:false},
+  {id:'verbas',         label:'Verbas',                 grupo:'Compras',      aplicaFiltro:false},
   {id:'fornecedores',   label:'Fornecedores',           grupo:'Compras',      aplicaFiltro:false},
-  {id:'deptos',         label:'Departamentos',          grupo:'Compras',      aplicaFiltro:false},
   {id:'forn-gpc',       label:'Fornecedores GPC',       grupo:'Compras',      aplicaFiltro:false},
-  {id:'cv',             label:'Compras × Vendas',       grupo:'Compras',      aplicaFiltro:false},
-  // Diagnósticos
-  {id:'diagnostico',    label:'Diagnóstico produto',    grupo:'Diagnóstico',  aplicaFiltro:false},
-  {id:'diag-forn',      label:'Diagnóstico fornecedor', grupo:'Diagnóstico',  aplicaFiltro:false},
-  // Financeiro
-  {id:'financeiro',     label:'Financeiro',             grupo:'Financeiro',   aplicaFiltro:false},
-  {id:'vencidos',       label:'Vencidos',               grupo:'Financeiro',   aplicaFiltro:false},
-  {id:'recebimentos',   label:'Recebimentos',           grupo:'Financeiro',   aplicaFiltro:true},
-  {id:'verbas',         label:'Verbas',                 grupo:'Financeiro',   aplicaFiltro:false},
+  {id:'abc',            label:'Curva ABC',              grupo:'Compras',      aplicaFiltro:false},
+  {id:'alertas',        label:'Alertas (compras)',      grupo:'Compras',      aplicaFiltro:false},
+  {id:'diagnostico',    label:'Diag. Produto',          grupo:'Compras',      aplicaFiltro:false},
+  {id:'diag-forn',      label:'Diag. Fornecedor',       grupo:'Compras',      aplicaFiltro:false},
+  // Vendas (ordem do menu)
+  {id:'v-visao-grupo',  label:'Visão Consolidada',      grupo:'Vendas',       aplicaFiltro:false},
+  {id:'v-evolucao',     label:'Evolução Mensal',        grupo:'Vendas',       aplicaFiltro:false},
+  {id:'v-itens',        label:'Itens & Deptos',         grupo:'Vendas',       aplicaFiltro:false},
+  {id:'v-vendas-diarias',label:'Vendas Diárias',        grupo:'Vendas',       aplicaFiltro:false},
+  {id:'v-dias-cp',      label:'Dias C & P',             grupo:'Vendas',       aplicaFiltro:false},
+  {id:'v-metas',        label:'Metas',                  grupo:'Vendas',       aplicaFiltro:false},
+  {id:'recebimentos',   label:'Recebimentos',           grupo:'Vendas',       aplicaFiltro:true},
+  {id:'v-benchmarking', label:'RCA',                    grupo:'Vendas',       aplicaFiltro:true},
+  {id:'v-ano2026',      label:'Análise 2026',           grupo:'Vendas',       aplicaFiltro:false},
+  {id:'v-alertas',      label:'Alertas Vendas',         grupo:'Vendas',       aplicaFiltro:true},
+  {id:'v-drilldown',    label:'Drill-Down por Vendedor',grupo:'Vendas',       aplicaFiltro:true},
   // Análise
   {id:'cubo',           label:'Análise Dinâmica',       grupo:'Análise',      aplicaFiltro:false},
 ];
@@ -474,6 +471,58 @@ function _getSupervisoresPorLoja(){
       .sort(function(a,b){ return a.cod - b.cod; });
   });
   return out;
+}
+
+/** Igual _getSupervisoresPorLoja mas carrega vendas_grupo.json (todas as bases)
+ *  pra retornar supervisores de TODAS as filiais (ATP-V, ATP-A, CP1, CP3, CP5, CP40),
+ *  independente da base atual da sessão.
+ *  Cacheia em _supLojaCompletoCache.
+ *  Usado pela UI de supervisores ignorados em Administração.
+ */
+let _supLojaCompletoCache = null;
+let _supLojaCompletoLoading = null;
+async function _getSupervisoresPorLojaCompleto(){
+  if(_supLojaCompletoCache) return _supLojaCompletoCache;
+  if(_supLojaCompletoLoading) return _supLojaCompletoLoading;
+
+  _supLojaCompletoLoading = (async function(){
+    // Tenta carregar vendas_grupo.json (consolidado de todas as bases)
+    let cad = null;
+    try {
+      const data = await _fetchJsonComGz('vendas_grupo.json');
+      if(data && data.vendedores && data.vendedores.cadastro){
+        cad = data.vendedores.cadastro;
+      }
+    } catch(e){
+      console.warn('[supervisores] vendas_grupo.json não disponível, caindo no V atual:', e.message);
+    }
+
+    // Fallback: usa V atual se vendas_grupo não estiver disponível
+    if(!cad && V && V.vendedores && V.vendedores.cadastro){
+      cad = V.vendedores.cadastro;
+    }
+    if(!cad){
+      _supLojaCompletoCache = {};
+      return _supLojaCompletoCache;
+    }
+
+    const por_loja = {};
+    cad.forEach(function(v){
+      if(!v.loja || v.cod_supervisor == null) return;
+      if(!por_loja[v.loja]) por_loja[v.loja] = new Map();
+      por_loja[v.loja].set(Number(v.cod_supervisor), v.supervisor || '');
+    });
+    const out = {};
+    Object.keys(por_loja).forEach(function(l){
+      out[l] = Array.from(por_loja[l].entries())
+        .map(function(e){ return {cod: e[0], nome: e[1]}; })
+        .sort(function(a,b){ return a.cod - b.cod; });
+    });
+    _supLojaCompletoCache = out;
+    return _supLojaCompletoCache;
+  })();
+
+  return _supLojaCompletoLoading;
 }
 
 // ================================================================

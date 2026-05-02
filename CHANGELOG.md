@@ -4,6 +4,85 @@ Lista das melhorias do sistema de BI da R2 Soluções para o Grupo Pinto Cerquei
 
 ---
 
+## v4.42 · 02/mai/2026
+
+**ATP reprocessado · entradas, saídas e devoluções 2026**
+
+A partir dos arquivos enviados (4 CSVs de vendas + 1 xlsx de entradas + 1 xlsx de devoluções), reprocessei tudo de 2026 mantendo 2025 do JSON anterior intacto.
+
+Vendas (16 meses cobertos: 2025-01 a 2026-04)
+
+- 2026 reprocessado a partir dos CSVs novos (1.044.117 linhas)
+- 2025 preservado do JSON antigo (estatísticas mensais, diárias, vendedores, deptos, categorias, fornecedores, produtos)
+- Total ATP 2026: R$ 29,89M de faturamento, R$ 4,13M de lucro, margem 13,83%
+
+Supervisores ATP atualizados
+
+- ATP-V cod=1 VAREJO → 111 vendedores
+- ATP-A cod=4 ATACADO BALCÃO → 3 vendedores
+- ATP-V cod=3 GPC (INTRAGRUPO) → 1 vendedor (NOVO!)
+
+O supervisor 3 (GPC INTRAGRUPO) é um caso especial: ele aparece a partir de 2026 e tem comportamento diferente. As vendas dele NÃO entram nos cálculos mensais regulares — vão para um bloco `intragrupo` separado pra não distorcer as métricas. Mas o vendedor aparece normalmente no cadastro e na configuração de supervisores ignorados em Administração.
+
+Total intragrupo 2026: R$ 1,79M de faturamento (com prejuízo de R$ 122k, margem -6,81%).
+
+Compras (entradas) 2026
+
+- 18.532 linhas processadas
+- 5.744 SKUs com compra atualizados
+- Atualização do `compras_12m` por SKU em estoque_atp.json
+- Atualização do `fato_compras` no cubo_atp.json (12.152 linhas com ym × forn × sku)
+
+Total compras ATP 2026:
+
+- jan/26: R$ 7,19M
+- fev/26: R$ 7,92M
+- mar/26: R$ 9,13M
+- abr/26: R$ 7,77M
+
+Devoluções 2026
+
+- 320 linhas processadas
+- 55 fornecedores receberam devoluções
+- Total: R$ 686k em 205 NFs
+
+Top fornecedores em devolução: A P CERQUEIRA (R$ 268k), COMERCIAL PINTO DE CERQUEIRA (R$ 248k), INDUSTRIA DE LATICINIOS PALMEIRA DOS INDIOS (R$ 58k).
+
+vendas_grupo atualizado
+
+O arquivo consolidado `vendas_grupo.json` (usado no admin pra listar supervisores de todas as bases) também foi atualizado pra incluir o novo supervisor 3 (GPC INTRAGRUPO) em ATP-V. Total: 13 combinações supervisor×loja, 293 vendedores cadastrados.
+
+Limitação importante
+
+Para `vendas_por_sku` (agregado total por produto), foi necessário zerar fat_liq e lucro de 2025 e somar só 2026. O JSON antigo tinha o agregado total mas não tinha como decompor entre 2025 e 2026 sem dados originais. Os sparklines de quantidade por mês (`por_mes`) preservaram 2025 corretamente. Quando você enviar os dados de 2025 esse problema some — basta reprocessar tudo do zero.
+
+---
+
+## v4.41 · 02/mai/2026
+
+**Supervisores ignorados · ordem do menu e supervisores de todas as bases**
+
+Mudanças no admin de supervisores ignorados:
+
+1. **Ordem do menu:** o dropdown "Configurar página" agora segue a ordem exata em que as páginas aparecem no menu lateral. Visão Executiva primeiro, depois grupo Compras (Compras × Vendas, Departamentos, Estoque, ...), depois Vendas (Visão Consolidada, Evolução, ...), depois Análise Dinâmica.
+
+2. **Supervisores de todas as bases:** antes a lista de supervisores nas caixas de cada loja vinha só da base atual da sessão. Se você estivesse em ATP, só aparecia ATP-V e ATP-A no admin (mesmo que CP1, CP3, etc também tivessem supervisores). Agora o admin carrega `vendas_grupo.json` automaticamente e mostra TODAS as 6 lojas com seus supervisores reais, independente da base atual.
+
+3. **Sobre a quantidade de supervisores em ATP:** ATP-V tem só 1 supervisor cadastrado no WinThor (#1 VAREJO, com 111 vendedores) e ATP-A tem só 1 (#4 ATACADO BALCÃO, com 3 vendedores). Isso reflete o cadastro real do ERP — não é limitação do sistema. Se você precisar de mais supervisores em ATP, o cadastro precisa ser feito no WinThor primeiro.
+
+Para referência, supervisores cadastrados hoje:
+
+- ATP-V: #1 VAREJO
+- ATP-A: #4 ATACADO BALCÃO
+- CP1: #2 LICITAÇÃO, #3 GPC INTRAGRUPO, #4 VENDA BALCAO, #9 INATIVOS, #10 ALMIR PINHEIRO, #11 NEGOCIAÇÕES ESPECIAIS
+- CP3: #1 CESTAO 01 IRARA, #4 VENDA BALCAO
+- CP5: #17 CESTAO 04 INHAMBUPE
+- CP40: #9 INATIVOS
+
+Total: 12 supervisores em 6 lojas.
+
+---
+
 ## v4.40 · 02/mai/2026
 
 **Análise Dinâmica · GRUPO agora carrega CP + ATP juntos**

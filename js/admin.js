@@ -1752,9 +1752,13 @@ function _renderSupIgnUI(){
   const cont = document.getElementById('adm-sup-list');
   if(!cont) return;
 
-  // Garante que cache foi carregado
-  _carregarSupervisoresIgnorados().then(function(cfg){
-    const supPorLoja = _getSupervisoresPorLoja();
+  // Carrega config + supervisores de todas as bases em paralelo
+  Promise.all([
+    _carregarSupervisoresIgnorados(),
+    _getSupervisoresPorLojaCompleto()
+  ]).then(function(arr){
+    const cfg = arr[0];
+    const supPorLoja = arr[1];
     const lojas = Object.keys(supPorLoja).sort(function(a,b){
       const ordem = ['ATP-V','ATP-A','CP1','CP3','CP5','CP40'];
       const ia = ordem.indexOf(a), ib = ordem.indexOf(b);
@@ -1791,29 +1795,27 @@ function _renderSupIgnUI(){
 
     let html = '';
 
-    // Seletor de página (dropdown)
+    // Seletor de página (dropdown) — segue a ordem do catálogo (que é a ordem do menu)
     html += '<div style="margin-bottom:14px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;">';
     html += '<div style="flex:1;min-width:240px;">';
     html += '<label style="display:block;font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;font-weight:700;margin-bottom:4px;">Configurar página:</label>';
     html += '<select id="adm-sup-pagina" style="width:100%;padding:8px 10px;border:1px solid var(--border-strong);border-radius:5px;font-size:12.5px;background:var(--surface);">';
-    // Agrupa por grupo
-    const porGrupo = {};
-    catalogo.forEach(function(p){
-      if(!porGrupo[p.grupo]) porGrupo[p.grupo] = [];
-      porGrupo[p.grupo].push(p);
+    // Agrupa MANTENDO ordem do catálogo: novo optgroup quando o grupo muda
+    let grupoAtual = null;
+    catalogo.forEach(function(p, i){
+      if(p.grupo !== grupoAtual){
+        if(grupoAtual !== null) html += '</optgroup>';
+        html += '<optgroup label="'+esc(p.grupo)+'">';
+        grupoAtual = p.grupo;
+      }
+      const cfgEsta = (cfg.paginas && cfg.paginas[p.id]) || {};
+      const totIgn = Object.keys(cfgEsta).reduce(function(s,l){return s + (cfgEsta[l]||[]).length;}, 0);
+      const marca = p.aplicaFiltro ? '✓ ' : '○ ';
+      html += '<option value="'+escAttr(p.id)+'"'+(p.id===paginaSel?' selected':'')+'>'
+        + marca + esc(p.label) + (totIgn>0 ? ' · '+totIgn+' ignorado(s)' : '')
+        + '</option>';
     });
-    Object.keys(porGrupo).forEach(function(g){
-      html += '<optgroup label="'+esc(g)+'">';
-      porGrupo[g].forEach(function(p){
-        const cfgEsta = (cfg.paginas && cfg.paginas[p.id]) || {};
-        const totIgn = Object.keys(cfgEsta).reduce(function(s,l){return s + (cfgEsta[l]||[]).length;}, 0);
-        const marca = p.aplicaFiltro ? '✓ ' : '○ ';
-        html += '<option value="'+escAttr(p.id)+'"'+(p.id===paginaSel?' selected':'')+'>'
-          + marca + esc(p.label) + (totIgn>0 ? ' · '+totIgn+' ignorado(s)' : '')
-          + '</option>';
-      });
-      html += '</optgroup>';
-    });
+    if(grupoAtual !== null) html += '</optgroup>';
     html += '</select>';
     html += '<div style="font-size:10px;color:var(--text-muted);margin-top:4px;">'
       +    '<strong>✓</strong> aplica o filtro · '
