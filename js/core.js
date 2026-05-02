@@ -216,7 +216,7 @@ const AUTH_MODE = 'firebase'; // 'mock' | 'firebase'
 // Convenção:
 //   X.x → alteração grande (quebra de compatibilidade, nova feature grande)
 //   x.X → alteração suave (fix, ajuste visual, pequeno refinamento)
-const APP_VERSION = '4.12-comercial';
+const APP_VERSION = '4.14-comercial';
 
 // ================================================================
 // HELPERS DE CHART.JS — compatíveis com Safari/iOS (sem spread ops)
@@ -340,6 +340,16 @@ async function _salvarSupervisoresIgnorados(novoMapa){
   try { localStorage.setItem(SUP_IGN_LS_KEY, JSON.stringify(_supIgnoradosCache)); } catch(e){}
   // Firestore se disponível
   if(AUTH_MODE === 'firebase' && window.fbDb){
+    // Força refresh do token antes de salvar pra garantir que as regras
+    // mais recentes valham (token velho pode trazer decisões obsoletas).
+    try {
+      if(window.fbAuth && window.fbAuth.currentUser){
+        await window.fbAuth.currentUser.getIdToken(true);
+      }
+    } catch(eRefresh){
+      // Falha no refresh não impede a tentativa — apenas log
+      console.warn('[supIgn] aviso: falha ao refrescar token, segue com token atual:', eRefresh.message);
+    }
     try {
       await window.fbDb.collection('config').doc('supervisores_loja').set({
         ignorados: _supIgnoradosCache,
@@ -349,6 +359,22 @@ async function _salvarSupervisoresIgnorados(novoMapa){
       _auditLog('config_save', {tipo:'supervisores_loja', mapa:_supIgnoradosCache});
       return {ok:true};
     } catch(e){
+      // Se erro de permissão, tenta forçar reload do token uma vez e refazer
+      if(e && e.code === 'permission-denied' && window.fbAuth && window.fbAuth.currentUser){
+        try {
+          await window.fbAuth.currentUser.getIdToken(true);
+          await window.fbDb.collection('config').doc('supervisores_loja').set({
+            ignorados: _supIgnoradosCache,
+            atualizado_em: new Date().toISOString(),
+            atualizado_por: (_getSessao() || {}).email || 'desconhecido'
+          });
+          _auditLog('config_save', {tipo:'supervisores_loja', mapa:_supIgnoradosCache, retry:true});
+          return {ok:true, retry:true};
+        } catch(e2){
+          console.error('[supIgn] erro ao salvar no Firestore (após retry):', e2);
+          return {ok:false, erro:e2.message+' (token foi refrescado e ainda assim falhou — verifique as regras Firestore)'};
+        }
+      }
       console.error('[supIgn] erro ao salvar no Firestore:', e);
       return {ok:false, erro:e.message};
     }
@@ -684,16 +710,13 @@ const PAGINAS_CATALOGO = [
   {id:'diag-forn',    nome:'Diag. Fornecedor',    grupo:'Compras'},
   {id:'v-visao-grupo',    nome:'Visão Consolidada',   grupo:'Vendas'},
   {id:'v-evolucao',       nome:'Evolução Mensal',     grupo:'Vendas'},
-  {id:'v-atp-varejo',     nome:'ATP - Varejo',        grupo:'Vendas'},
-  {id:'v-atp-atacado',    nome:'ATP - Atacado',       grupo:'Vendas'},
-  {id:'v-cestao',         nome:'Cestão Loja 1',       grupo:'Vendas'},
-  {id:'v-inh',            nome:'Cestão Inhambupe',    grupo:'Vendas'},
+  // [removido em v4.13] páginas individuais de loja (v-atp-varejo, v-atp-atacado, v-cestao, v-inh)
   {id:'v-itens',          nome:'Itens & Deptos',      grupo:'Vendas'},
   {id:'v-vendas-diarias', nome:'Vendas Diárias',      grupo:'Vendas'},
   {id:'v-dias-cp',        nome:'Dias C & P',          grupo:'Vendas'},
   {id:'v-metas',          nome:'Metas',               grupo:'Vendas'},
   {id:'v-drilldown',      nome:'Drill-Down Período',  grupo:'Vendas'},
-  {id:'v-benchmarking',   nome:'Benchmarking',        grupo:'Vendas'},
+  {id:'v-benchmarking',   nome:'RCA',        grupo:'Vendas'},
   {id:'v-ano2026',        nome:'Análise 2026',        grupo:'Vendas'},
   {id:'v-alertas',        nome:'Alertas Vendas',      grupo:'Vendas'},
   {id:'cubo',             nome:'Análise Dinâmica',    grupo:'Análise'},
@@ -5052,3 +5075,136 @@ async function _procRenderHist(id, rel, base){
 }
 
 
+
+// ================================================================
+// TabelaPlus · sort + filtro automático em qualquer <table class="t">
+// ================================================================
+// Click no <th> ordena ASC/DESC. Detecta tipo (número/R$/%/texto) auto.
+// Filtro: input acima de tabelas com 6+ linhas; busca em todas colunas.
+
+const TabelaPlus = {
+  _instalada: new WeakSet(),
+
+  _parseValor: function(s){
+    if(s == null) return 0;
+    const t = String(s).trim();
+    if(!t || t === '—' || t === '-') return -Infinity;
+    let n = t.replace(/R\$\s*/g,'').replace(/%/g,'').replace(/\s/g,'');
+    if(/^-?\d{1,3}(\.\d{3})*(,\d+)?$/.test(n) || /,\d+$/.test(n)){
+      n = n.replace(/\./g,'').replace(',', '.');
+    }
+    const num = parseFloat(n);
+    return isNaN(num) ? -Infinity : num;
+  },
+
+  _ehNumerico: function(s){
+    if(!s) return false;
+    const t = String(s).trim().replace(/[R$%\s]/g,'');
+    return /^-?[\d.,]+$/.test(t);
+  },
+
+  aplicar: function(table){
+    if(!table || TabelaPlus._instalada.has(table)) return;
+    TabelaPlus._instalada.add(table);
+    const tbody = table.querySelector('tbody');
+    if(!tbody) return;
+    const headerRow = table.querySelector('thead tr');
+    if(!headerRow) return;
+    const headers = Array.from(headerRow.children);
+    if(!headers.length) return;
+
+    // Filtro
+    const linhas = tbody.querySelectorAll('tr');
+    if(linhas.length >= 6){
+      const scrollEl = table.closest('.tscroll');
+      const refEl = scrollEl || table;
+      const anchorParent = refEl.parentElement;
+      if(anchorParent && !anchorParent.querySelector('.tplus-filter')){
+        const inp = document.createElement('input');
+        inp.className = 'tplus-filter';
+        inp.type = 'text';
+        inp.placeholder = '🔍 Filtrar (busca em todas as colunas)…';
+        inp.style.cssText = 'width:100%;max-width:340px;padding:6px 10px;border:1px solid var(--border);border-radius:5px;font-size:12px;background:var(--surface);color:var(--text);margin-bottom:8px;font-family:inherit;display:block;';
+        inp.addEventListener('input', function(){
+          const termo = inp.value.toLowerCase().trim();
+          tbody.querySelectorAll('tr').forEach(function(tr){
+            if(!termo){ tr.style.display = ''; return; }
+            tr.style.display = tr.textContent.toLowerCase().indexOf(termo) >= 0 ? '' : 'none';
+          });
+        });
+        anchorParent.insertBefore(inp, refEl);
+      }
+    }
+
+    // Sort
+    headers.forEach(function(th, idx){
+      const txtTh = (th.textContent || '').trim();
+      if(txtTh === '#') return;
+      th.style.cursor = 'pointer';
+      th.style.userSelect = 'none';
+      if(!th.querySelector('.tplus-sort-arrow')){
+        const span = document.createElement('span');
+        span.className = 'tplus-sort-arrow';
+        span.style.cssText = 'opacity:.3;margin-left:4px;font-size:9px;';
+        span.textContent = '⇅';
+        th.appendChild(span);
+      }
+      let asc = true;
+      th.addEventListener('click', function(){
+        const linhas2 = Array.from(tbody.querySelectorAll('tr'));
+        if(!linhas2.length) return;
+        let ehNum = false;
+        for(let i = 0; i < Math.min(5, linhas2.length); i++){
+          const cel = linhas2[i].children[idx];
+          if(cel && cel.textContent.trim()){
+            ehNum = TabelaPlus._ehNumerico(cel.textContent);
+            break;
+          }
+        }
+        linhas2.sort(function(a, b){
+          const ca = (a.children[idx] && a.children[idx].textContent) || '';
+          const cb = (b.children[idx] && b.children[idx].textContent) || '';
+          if(ehNum){
+            return asc ? (TabelaPlus._parseValor(ca) - TabelaPlus._parseValor(cb))
+                       : (TabelaPlus._parseValor(cb) - TabelaPlus._parseValor(ca));
+          }
+          return asc ? ca.localeCompare(cb, 'pt-BR') : cb.localeCompare(ca, 'pt-BR');
+        });
+        linhas2.forEach(function(tr){ tbody.appendChild(tr); });
+        headers.forEach(function(h){
+          const a = h.querySelector('.tplus-sort-arrow');
+          if(a){ a.textContent = '⇅'; a.style.opacity = '.3'; }
+        });
+        const arr = th.querySelector('.tplus-sort-arrow');
+        if(arr){ arr.textContent = asc ? '▲' : '▼'; arr.style.opacity = '1'; }
+        asc = !asc;
+      });
+    });
+  },
+
+  aplicarTodas: function(){
+    const ativa = document.querySelector('.page.active');
+    if(!ativa) return;
+    ativa.querySelectorAll('table.t').forEach(function(t){
+      TabelaPlus.aplicar(t);
+    });
+  }
+};
+window.TabelaPlus = TabelaPlus;
+
+// Reaplica TabelaPlus a cada troca de página
+(function(){
+  const reaplicar = function(){
+    setTimeout(function(){ TabelaPlus.aplicarTodas(); }, 150);
+  };
+  document.addEventListener('click', function(e){
+    if(e.target && e.target.closest && e.target.closest('.sb-link[data-p]')){
+      reaplicar();
+    }
+  });
+  if(document.readyState === 'loading'){
+    document.addEventListener('DOMContentLoaded', reaplicar);
+  } else {
+    setTimeout(reaplicar, 500);
+  }
+})();

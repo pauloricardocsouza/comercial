@@ -18,7 +18,21 @@ function renderRecebimentos(){
   }
 
   const meta = R.meta || {};
-  const resumo = (R.resumo && R.resumo.ATP) || {};
+  // Detecta automaticamente qual chave do resumo usar baseado na base ativa.
+  // Aceita: ATP, CP1, CP3, CP5, CP40 ou _total_grupo (consolidado).
+  // Antes era hardcoded em R.resumo.ATP — quebrava nas filiais CP.
+  const _resumoTodo = R.resumo || {};
+  let resumo = {};
+  // Prioriza não-_total_grupo se houver apenas uma chave principal
+  const chavesResumo = Object.keys(_resumoTodo).filter(function(k){return !k.startsWith('_');});
+  if(chavesResumo.length === 1){
+    resumo = _resumoTodo[chavesResumo[0]] || {};
+  } else if(chavesResumo.length > 1){
+    // Múltiplas filiais (cubo CP com CP1/CP3/CP5/CP40) → usa o agregado
+    resumo = _resumoTodo._total_grupo || _resumoTodo[chavesResumo[0]] || {};
+  } else {
+    resumo = _resumoTodo._total_grupo || {};
+  }
   const aging = R.aging || {};
   const mensal = R.mensal || [];
   const clientes = R.por_cliente_top || [];
@@ -205,9 +219,19 @@ function renderRecebimentos(){
   });
 
   // Pré-calcular supervisores de cada cliente
+  // Heurística pra excluir RCAs internos do GPC (intragrupo) das análises:
+  function _rcaNomeEhGpcInterno(nome){
+    const n = (nome||'').toUpperCase();
+    if(!n) return false;
+    if(/\bGPC\b/.test(n)) return true;
+    if(/INTRA[\s-]?GRUPO/.test(n)) return true;
+    return false;
+  }
   const clientesEnriquecidos = clientes.map(function(c){
     const supsSet = new Map(); // cod → nome
     (c.rcas || []).forEach(function(rNome){
+      // Pula RCAs internos do GPC (não interessam pra análise de inadimplência)
+      if(_rcaNomeEhGpcInterno(rNome)) return;
       const k = (rNome||'').trim().toUpperCase();
       const info = supPorNomeRca.get(k);
       if(info && info.cod != null){
@@ -283,7 +307,18 @@ function renderRecebimentos(){
   }
 
   // ─── Tabela RCAs ───
-  const rcaSorted = rcas.slice().sort(function(a,b){return b.valor - a.valor;});
+  // Filtra RCAs que são da operação GPC interna (intragrupo) — esses não devem
+  // aparecer em análises de inadimplência por fazer parte de operações entre lojas
+  // do próprio grupo. Heurística: nome contém "GPC" ou "INTRAGRUPO" ou "INTRA GRUPO".
+  function _rcaEhGpcInterno(r){
+    const n = ((r && r.nome) || '').toUpperCase();
+    if(!n) return false;
+    if(/\bGPC\b/.test(n)) return true;
+    if(/INTRA[\s-]?GRUPO/.test(n)) return true;
+    return false;
+  }
+  const rcaSorted = rcas.filter(function(r){ return !_rcaEhGpcInterno(r); })
+                        .slice().sort(function(a,b){return b.valor - a.valor;});
   document.getElementById('tb-rec-rca').innerHTML = rcaSorted.slice(0, 20).map(function(r, i){
     return '<tr>'
       + '<td class="L" style="color:var(--text-muted);font-weight:700;">'+(i+1)+'</td>'

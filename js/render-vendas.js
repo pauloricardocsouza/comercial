@@ -222,7 +222,7 @@ const VENDAS_PANELS_STRUCTURE = {
   },
   'v-benchmarking': {
     pk: 'Vendas · Análise',
-    h2: '<em>Benchmarking</em> entre Lojas',
+    h2: '<em>RCA</em> · Análise por Vendedor',
     desc: 'Comparativo de representatividade de departamentos por unidade',
     kpis: [],
     rows: [
@@ -1251,8 +1251,6 @@ function renderVendasReal(pg){
     case 'v-visao-grupo':    return renderVVisaoGrupo();
     case 'v-evolucao':       return renderVEvolucao();
     case 'v-ano2026':        return renderVAno2026();
-    case 'v-atp-varejo':     return renderVATPVarejo();
-    case 'v-atp-atacado':    return renderVATPAtacado();
     case 'v-drilldown':      return renderVDrilldown();
     case 'v-benchmarking':   return renderVBenchmarking();
     case 'v-itens':          return renderVItens();
@@ -1260,17 +1258,7 @@ function renderVendasReal(pg){
     case 'v-dias-cp':        return renderVDiasCP();
     case 'v-metas':          return renderVMetas();
     case 'v-alertas':        return renderVAlertas();
-    case 'v-cestao':         return renderVCestao();
-    case 'v-inh':            return renderVInhambupe();
-    // case 'v-cestao':          return renderVCestao();
-    // case 'v-inh':             return renderVInhambupe();
-    // case 'v-itens':           return renderVItens();
-    // case 'v-vendas-diarias':  return renderVDiarias();
-    // case 'v-dias-cp':         return renderVDiasCP();
-    // case 'v-metas':           return renderVMetas();
-    // case 'v-drilldown':       return renderVDrilldown();
-    // case 'v-benchmarking':    return renderVBenchmarking();
-    // case 'v-alertas':         return renderVAlertas();
+    // [removido em v4.13] cases de loja: v-atp-varejo, v-atp-atacado, v-cestao, v-inh
   }
   // Página ainda sem implementação real → cai no placeholder
   return renderVendasStruct(pg);
@@ -2282,7 +2270,7 @@ function renderVBenchmarking(){
   const mensalV = mensalVorig.filter(function(r){return codsValidos.has(r.cod);});
 
   if(!cad.length || !mensalV.length){
-    cont.innerHTML = '<div class="ph"><div class="pk">Vendas · Análise</div><h2><em>Benchmarking</em> entre Vendedores</h2></div>'
+    cont.innerHTML = '<div class="ph"><div class="pk">Vendas · Análise</div><h2><em>RCA</em> · Análise por Vendedor</h2></div>'
       + '<div class="ph-sep"></div><div class="page-body">'
       + '<div class="cc" style="text-align:center;color:var(--text-muted);padding:30px;">Sem dados de vendedores</div></div>';
     return;
@@ -2342,7 +2330,7 @@ function renderVBenchmarking(){
   const topMargem = ativos26Filt.slice().sort(function(a,b){return b.marg26 - a.marg26;}).slice(0, 10);
   const topTicket = ativos26Filt.slice().sort(function(a,b){return b.ticket26 - a.ticket26;}).slice(0, 10);
 
-  let html = '<div class="ph"><div class="pk">Vendas · Análise</div><h2><em>Benchmarking</em> entre Vendedores</h2></div>';
+  let html = '<div class="ph"><div class="pk">Vendas · Análise</div><h2><em>RCA</em> · Análise por Vendedor</h2></div>';
   html += '<div class="ph-sep"></div>';
   html += '<div class="page-body">';
 
@@ -2354,19 +2342,7 @@ function renderVBenchmarking(){
   // KPIs
   html += '<div class="kg" style="grid-template-columns:repeat(4,1fr);margin-bottom:14px;" id="kg-vbm"></div>';
 
-  // Linha 1: top 10 crescimento + top 10 queda (gráficos lado a lado)
-  html += '<div class="row2eq" style="margin-bottom:14px;">'
-       +   '<div class="cc">'
-       +     '<div class="cct">Top 10 maiores crescimentos</div>'
-       +     '<div class="ccs">% jan-mar 2026 vs jan-mar 2025</div>'
-       +     '<div style="height:280px;"><canvas id="c-vbm-cresce"></canvas></div>'
-       +   '</div>'
-       +   '<div class="cc">'
-       +     '<div class="cct">Top 10 maiores quedas</div>'
-       +     '<div class="ccs">% jan-mar 2026 vs jan-mar 2025</div>'
-       +     '<div style="height:280px;"><canvas id="c-vbm-cai"></canvas></div>'
-       +   '</div>'
-       + '</div>';
+  // [removido em v4.13] Top 10 crescimentos e quedas removidos a pedido do usuário
 
   // Scatter de distribuição removido a pedido do usuário
 
@@ -2414,35 +2390,7 @@ function renderVBenchmarking(){
     {l:'Δ Faturamento total', v:(totFat26-totFat25>=0?'+':'')+fK(totFat26-totFat25), s:'jan-mar/26 vs jan-mar/25', cls:totFat26>totFat25?'up':'dn'},
   ]);
 
-  // ─── Chart: Top 10 crescimento (barras horizontais) ───
-  if(topCresce.length){
-    mkC('c-vbm-cresce', {type:'bar',
-      data:{labels:topCresce.map(function(x){return (x.nome||'?').substring(0,22);}),
-        datasets:[{label:'Δ %', data:topCresce.map(function(x){return x.cresce;}),
-          backgroundColor:_PAL.ok+'CC', borderRadius:3}]},
-      options:{indexAxis:'y', responsive:true, maintainAspectRatio:false,
-        plugins:{legend:{display:false}, tooltip:{callbacks:{label:function(ctx){
-          const v = topCresce[ctx.dataIndex];
-          return [(ctx.raw>=0?'+':'')+fP(ctx.raw), 'Fat 25: '+fK(v.fat25), 'Fat 26: '+fK(v.fat26)];
-        }}}},
-        scales:{x:{ticks:{callback:function(v){return (v>=0?'+':'')+fP(v);}}},
-                y:{ticks:{font:{size:10}}}}}});
-  }
-
-  // Chart: Top 10 quedas
-  if(topCai.length){
-    mkC('c-vbm-cai', {type:'bar',
-      data:{labels:topCai.map(function(x){return (x.nome||'?').substring(0,22);}),
-        datasets:[{label:'Δ %', data:topCai.map(function(x){return x.cresce;}),
-          backgroundColor:_PAL.dn+'CC', borderRadius:3}]},
-      options:{indexAxis:'y', responsive:true, maintainAspectRatio:false,
-        plugins:{legend:{display:false}, tooltip:{callbacks:{label:function(ctx){
-          const v = topCai[ctx.dataIndex];
-          return [(ctx.raw>=0?'+':'')+fP(ctx.raw), 'Fat 25: '+fK(v.fat25), 'Fat 26: '+fK(v.fat26)];
-        }}}},
-        scales:{x:{ticks:{callback:function(v){return (v>=0?'+':'')+fP(v);}}},
-                y:{ticks:{font:{size:10}}}}}});
-  }
+  // [removido em v4.13] Charts de top crescimentos e quedas removidos a pedido do usuário
 
   // ─── Chart: scatter ───
   // Apenas RCAs com fat 2026 > 0
@@ -2607,12 +2555,7 @@ function renderVItens(){
        +    '</div>'
        + '</div>';
 
-  // Linha 2: faturamento × preço médio (scatter por depto)
-  html += '<div class="cc" style="margin-bottom:14px;">'
-       +    '<div class="cct">Faturamento × Preço médio por departamento</div>'
-       +    '<div class="ccs">Cada bolha = 1 depto · tamanho ∝ qt vendida · cor por margem (verde > 15%, vermelho < 5%)</div>'
-       +    '<div style="height:320px;"><canvas id="c-vit-scatter"></canvas></div>'
-       + '</div>';
+  // [removido em v4.13] Scatter "Faturamento × Preço médio por departamento"
 
   // Tabela departamentos
   html += '<div class="cc" style="margin-bottom:12px;">'
@@ -2692,28 +2635,7 @@ function renderVItens(){
       scales:{y:{beginAtZero:true, ticks:{callback:function(v){return fAbbr(v);}}},
               x:{grid:{display:false}, ticks:{maxRotation:60, minRotation:45, font:{size:9}}}}}});
 
-  // ─── Scatter: fat × preço médio por depto ───
-  const scatterData = deptoArr.map(function(d){
-    let cor;
-    if(d.marg > 15) cor = _PAL.ok;
-    else if(d.marg < 5) cor = _PAL.dn;
-    else cor = _PAL.ac;
-    return {
-      x: d.preco_medio, y: d.fat_liq, r: Math.min(40, Math.max(8, Math.sqrt(d.qt)/100)),
-      backgroundColor: cor+'AA', borderColor: cor, borderWidth: 2,
-      _nome: d.nome, _qt: d.qt, _marg: d.marg,
-    };
-  });
-  mkC('c-vit-scatter', {type:'bubble',
-    data:{datasets:[{label:'Departamentos', data:scatterData}]},
-    options:{responsive:true, maintainAspectRatio:false,
-      plugins:{legend:{display:false},
-               tooltip:{callbacks:{label:function(ctx){
-                 const p = ctx.raw;
-                 return [p._nome, 'Fat: '+fK(p.y), 'Preço médio: '+fB(p.x), 'QT: '+fI(p._qt), 'Margem: '+fP(p._marg)];
-               }}}},
-      scales:{x:{title:{display:true,text:'Preço médio (R$/unidade ou KG)'}, ticks:{callback:function(v){return 'R$'+v.toFixed(2);}}},
-              y:{title:{display:true,text:'Faturamento total (R$)'}, ticks:{callback:function(v){return fAbbr(v);}}}}}});
+  // [removido em v4.13] Scatter fat × preço médio por depto
 
   // ─── Tabela departamentos ───
   document.getElementById('tb-vit-dept').innerHTML = deptoArr.map(function(d, i){
@@ -2736,6 +2658,17 @@ function renderVItens(){
     const fltCod = document.getElementById('flt-vit-dept').value;
     let rows = cats.slice();
 
+    // Aplicar filtro de departamento: cod da categoria começa com cod do depto.
+    // Ex: depto 7 (MERCEARIA) → categorias com cod 7XXXX (71303, 70205, etc).
+    // Validado: cobre 100% das categorias do JSON ATP.
+    if(fltCod){
+      const fltStr = String(fltCod);
+      rows = rows.filter(function(r){
+        const cs = String(r.cod || '');
+        return cs.indexOf(fltStr) === 0;
+      });
+    }
+
     // Agregar por categoria (todos meses/lojas)
     const catAgg = new Map();
     rows.forEach(function(r){
@@ -2747,11 +2680,6 @@ function renderVItens(){
       x.qt      += r.qt||0;
     });
     let catArr = Array.from(catAgg.values());
-
-    // Se filtro depto ativo, precisa cruzar com produtos_top pra pegar deptos das categorias
-    // Como o JSON não tem cod_dep nas categorias, vou usar um proxy: filtrar pelas categorias que aparecem em deptos com aquele cod.
-    // Mas categorias não têm vínculo direto com depto no JSON... vou só listar todas se filtrar.
-    // (Melhoria futura: o ETL pode cruzar isso.)
 
     catArr.sort(function(a,b){return b.fat_liq - a.fat_liq;});
     catArr = catArr.slice(0, 30);

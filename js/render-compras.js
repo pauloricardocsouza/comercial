@@ -445,6 +445,9 @@ function _fornAgregar(){
     a.dev_qt    = dev ? dev.qt    : 0;
     a.dev_nfs   = dev ? dev.nfs   : 0;
     a.pct_devol = a.v_compra > 0 ? (a.dev_valor/a.v_compra*100) : 0;
+    // Compras líquidas = brutas − devoluções (nunca abaixo de zero)
+    a.v_compra_liq = Math.max(0, a.v_compra - a.dev_valor);
+    a.qt_compra_liq = Math.max(0, a.qt_compra - a.dev_qt);
     arr.push(a);
   });
   _fornAggCache = arr;
@@ -553,12 +556,13 @@ function renderFornecedoresNovo(){
   cont.innerHTML = html;
 
   // KPIs
+  const totCompraLiq = fornAtivos.reduce(function(s,f){return s+f.v_compra_liq;},0);
   const top1Nome = top1 ? (top1.nome||'').substring(0, 22) : '—';
   document.getElementById('kg-forn-novo').innerHTML = kgHtml([
     {l:'Fornecedores ativos', v:fI(fornAtivos.length), s:'Com compras 12m · de '+fI(fornAll.length)+' cadastrados'},
-    {l:'Líder em compras',    v:top1Nome,              s:top1?fK(top1.v_compra)+' nos últimos 12m':'-'},
+    {l:'Líder em compras',    v:top1Nome,              s:top1?fK(top1.v_compra_liq||top1.v_compra)+' líquidas nos últimos 12m':'-'},
     {l:'Concentração top 10', v:fP(concTop10),         s:'do total de compras'},
-    {l:'Total comprado 12m',  v:fK(totCompra),         s:'Soma de todas as entradas'},
+    {l:'Compras líquidas 12m',v:fK(totCompraLiq),      s:'Brutas '+fK(totCompra)+' − devoluções '+fK(totDev)},
     {l:'Margem global',       v:fP(margGlob),          s:'Lucro/Vendas com produtos desses fornecedores',cls:margGlob>10?'ok':margGlob>5?'':'wn'},
     {l:'Devoluções',          v:fK(totDev),            s:fI(comDev.length)+' fornecedores · '+fP(totCompra>0?totDev/totCompra*100:0)+' das compras',cls:'dn'},
   ]);

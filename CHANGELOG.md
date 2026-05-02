@@ -4,6 +4,32 @@ Lista das melhorias do sistema de BI da R2 Soluções para o Grupo Pinto Cerquei
 
 ---
 
+## v4.14 · 02/mai/2026
+
+**Supervisores ignorados · resiliência**
+
+- Antes: ao salvar a configuração de supervisores ignorados, podia aparecer "Erro ao salvar: Missing or insufficient permissions" mesmo com permissões corretas. Causa: token de autenticação ficava com decisões obsoletas após mudanças nas regras do Firebase.
+- Agora: o sistema força refresh do token antes de cada salvamento crítico, e se ainda assim houver erro de permissão, tenta uma segunda vez automaticamente.
+- Resultado: salvamento confiável sem precisar fazer logout/login.
+
+---
+
+## v4.13 · 02/mai/2026
+
+**Limpeza e melhorias diversas**
+
+- **Compras líquidas:** o KPI "Total comprado 12m" agora mostra valor líquido (compras brutas menos devoluções a fornecedor). Mostra os dois valores na descrição.
+- **Removido gráfico** "Faturamento × Preço médio por departamento" (Visão Itens & Departamentos).
+- **Recebimentos · CP corrigido:** página estava quebrada nas filiais Cestão Pinto (CP1, CP3, CP5, CP40). Causa: KPIs hardcoded em `R.resumo.ATP`. Agora detecta a base ativa automaticamente.
+- **Recebimentos · GPC oculto:** RCAs internos do GPC (intragrupo, ex: "RCA GPC") não aparecem mais nas tabelas de inadimplência.
+- **Renomeado:** página "Benchmarking" → "RCA". Removidos os gráficos de "Top 10 maiores crescimentos" e "Top 10 maiores quedas".
+- **Menu de Vendas simplificado:** removidas as 4 entradas individuais de loja (ATP-Varejo, ATP-Atacado, Cestão Loja 1, Cestão Inhambupe). Para análise por loja, use a Visão Consolidada com filtro.
+- **Top categorias respeita filtro de departamento:** ao filtrar por depto na seção Itens & Deptos, a tabela de categorias agora mostra apenas categorias daquele departamento.
+- **Tabelas com filtro e ordenação:** todas as tabelas com 6+ linhas agora têm uma busca por texto acima e ordenação por clique no cabeçalho da coluna (detecta números, R$, % e texto automaticamente).
+- **Mobile · botão do usuário:** layout corrigido — antes o botão ficava cortado/escondido em telas estreitas. Agora mostra avatar circular + menu suspenso com nome completo e logout.
+
+---
+
 ## v4.12 · 01/mai/2026
 
 **Bug crítico · Administração (continuação)**
