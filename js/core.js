@@ -216,7 +216,7 @@ const AUTH_MODE = 'firebase'; // 'mock' | 'firebase'
 // Convenção:
 //   X.x → alteração grande (quebra de compatibilidade, nova feature grande)
 //   x.X → alteração suave (fix, ajuste visual, pequeno refinamento)
-const APP_VERSION = '4.44-comercial';
+const APP_VERSION = '4.45-comercial';
 
 // ================================================================
 // HELPERS DE CHART.JS — compatíveis com Safari/iOS (sem spread ops)
@@ -1328,16 +1328,22 @@ function _fetchJsonComGz(url){
     if(info === null) return null;
     // .gz disponível: usa fluxo gzip
     if(info.gz) return _fetchGz(url);
-    // Só .json puro disponível: fetch direto
-    if(info.json) return fetch(url, {cache:'default'}).then(function(r){
-      return r.ok ? r.json() : null;
-    });
+    // Só .json puro disponível: fetch direto (com cache-bust)
+    if(info.json) {
+      const bust = (url.indexOf('?') >= 0 ? '&' : '?') + 'v=' + (typeof APP_VERSION !== 'undefined' ? APP_VERSION : 'na');
+      return fetch(url + bust, {cache:'default'}).then(function(r){
+        return r.ok ? r.json() : null;
+      });
+    }
     return null;
   });
 }
 
 function _fetchGz(url){
-  return fetch(url + '.gz', {cache:'default'})
+  // Cache-bust com APP_VERSION pra evitar JSON antigo no navegador
+  const sep = url.indexOf('?') >= 0 ? '&' : '?';
+  const bust = sep + 'v=' + (typeof APP_VERSION !== 'undefined' ? APP_VERSION : 'na');
+  return fetch(url + '.gz' + bust, {cache:'default'})
     .then(function(r){
       if(!r.ok) throw new Error('gz não disponível');
       if(typeof DecompressionStream !== 'undefined'){
@@ -1360,8 +1366,9 @@ function _fetchGz(url){
       }
     })
     .catch(function(){
-      // Fallback final: .json puro
-      return fetch(url, {cache:'default'}).then(function(r){
+      // Fallback final: .json puro (também com cache-bust)
+      const bustJ = sep + 'v=' + (typeof APP_VERSION !== 'undefined' ? APP_VERSION : 'na');
+      return fetch(url + bustJ, {cache:'default'}).then(function(r){
         return r.ok ? r.json() : null;
       });
     });

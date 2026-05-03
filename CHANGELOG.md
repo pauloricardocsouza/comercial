@@ -4,6 +4,22 @@ Lista das melhorias do sistema de BI da R2 Soluções para o Grupo Pinto Cerquei
 
 ---
 
+## v4.45 · 03/mai/2026
+
+**Cache busting nos arquivos JSON de dados**
+
+Você reportou que os supervisores extras (CP3 ganhou +2, CP40 ganhou +6, CP5 ganhou +1) não estavam aparecendo no admin. Investiguei e encontrei a causa: o navegador estava cacheando os arquivos JSON antigos.
+
+O sistema sempre teve cache busting nos arquivos JS (`?v=4.45`), mas os JSONs de dados eram baixados sem isso. Quando o `vendas_grupo.json` era atualizado no servidor com supervisores novos, o navegador continuava servindo a versão antiga do cache local.
+
+Corrigi adicionando cache busting com APP_VERSION em todos os fetches dos JSONs em `_fetchJsonComGz`. Agora cada vez que a versão do app sobe, o navegador é forçado a baixar os JSONs novamente.
+
+Pra esta versão funcionar visualmente, é importante que você dê **Ctrl+Shift+R** no navegador (hard refresh) na primeira abertura — isso força a recarga do JS, que aí baixa o JSON com a query string `?v=4.45` e finalmente pega os dados novos.
+
+Depois dessa primeira atualização, qualquer mudança em JSON acompanha a versão do app automaticamente.
+
+---
+
 ## v4.44 · 02/mai/2026
 
 **Supervisores · agora todas as combinações filial × supervisor que existem no fato**
