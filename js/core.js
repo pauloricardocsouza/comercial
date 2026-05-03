@@ -216,7 +216,7 @@ const AUTH_MODE = 'firebase'; // 'mock' | 'firebase'
 // Convenção:
 //   X.x → alteração grande (quebra de compatibilidade, nova feature grande)
 //   x.X → alteração suave (fix, ajuste visual, pequeno refinamento)
-const APP_VERSION = '4.46-comercial';
+const APP_VERSION = '4.47-comercial';
 
 // ================================================================
 // HELPERS DE CHART.JS — compatíveis com Safari/iOS (sem spread ops)
@@ -337,10 +337,9 @@ const _SUP_IGN_PAGINAS_CATALOGO = [
   {id:'v-vendas-diarias',label:'Vendas Diárias',        grupo:'Vendas',       aplicaFiltro:false},
   {id:'v-dias-cp',      label:'Dias C & P',             grupo:'Vendas',       aplicaFiltro:false},
   {id:'v-metas',        label:'Metas',                  grupo:'Vendas',       aplicaFiltro:false},
-  {id:'recebimentos',   label:'Recebimentos',           grupo:'Vendas',       aplicaFiltro:true},
+  {id:'recebimentos',   label:'Inadimplência',          grupo:'Vendas',       aplicaFiltro:true},
   {id:'v-benchmarking', label:'RCA',                    grupo:'Vendas',       aplicaFiltro:true},
   {id:'v-ano2026',      label:'Análise 2026',           grupo:'Vendas',       aplicaFiltro:false},
-  {id:'v-alertas',      label:'Alertas Vendas',         grupo:'Vendas',       aplicaFiltro:true},
   {id:'v-drilldown',    label:'Drill-Down por Vendedor',grupo:'Vendas',       aplicaFiltro:true},
   // Análise
   {id:'cubo',           label:'Análise Dinâmica',       grupo:'Análise',      aplicaFiltro:false},
@@ -853,7 +852,6 @@ const PAGINAS_CATALOGO = [
   {id:'v-metas',          nome:'Metas',               grupo:'Vendas'},
   {id:'v-benchmarking',   nome:'RCA',        grupo:'Vendas'},
   {id:'v-ano2026',        nome:'Análise 2026',        grupo:'Vendas'},
-  {id:'v-alertas',        nome:'Alertas Vendas',      grupo:'Vendas'},
   {id:'cubo',             nome:'Análise Dinâmica',    grupo:'Análise'},
   {id:'historico',    nome:'Histórico',           grupo:'Configuração'},
   {id:'admin',        nome:'Administração',       grupo:'Configuração'},
@@ -5821,8 +5819,47 @@ let _pinAtivos = []; // [{id, titulo, pagina, ordem}]
 let _pinFirestoreCarregado = false;
 
 // Registra um elemento pinável. Cada chamada de render gera um card.
+// Se o pin já está ativo (foi fixado pelo usuário), também salva uma snapshot
+// no Firestore com o último valor visualizado, para que possa ser exibido na home
+// mesmo que o usuário não tenha visitado a página de origem nesta sessão.
 function _pinRegistrar(id, titulo, pagina, render){
   _pinRegistry.set(id, {titulo: titulo, pagina: pagina, render: render});
+
+  // Se o usuário já fixou esse pin, atualiza o cache no Firestore
+  // (rodando o render num container offscreen pra capturar o HTML).
+  try {
+    const ativo = _pinAtivos.find(function(p){return p.id === id;});
+    if(!ativo) return;
+    const auth = (typeof firebase !== 'undefined' && firebase.auth) ? firebase.auth() : null;
+    if(!auth || !auth.currentUser) return;
+    // Render offscreen pra capturar valor atual
+    const sandbox = document.createElement('div');
+    sandbox.style.cssText = 'position:absolute;left:-9999px;top:-9999px;';
+    document.body.appendChild(sandbox);
+    try {
+      render(sandbox);
+      const snapshotHtml = sandbox.innerHTML;
+      // Atualiza Firestore (não bloqueia)
+      const db = firebase.firestore();
+      db.collection('users').doc(auth.currentUser.uid).collection('pins').doc(id)
+        .set({
+          titulo: titulo,
+          pagina: pagina,
+          ordem: ativo.ordem,
+          snapshotHtml: snapshotHtml,
+          snapshotAt: firebase.firestore.FieldValue.serverTimestamp()
+        }, {merge: true}).catch(function(e){
+          console.warn('[pin] erro ao atualizar snapshot:', e);
+        });
+      // Atualiza cache local também
+      ativo.snapshotHtml = snapshotHtml;
+    } catch(e){
+      console.warn('[pin] erro no render offscreen:', id, e);
+    }
+    sandbox.remove();
+  } catch(e){
+    console.warn('[pin] erro ao snapshotar:', e);
+  }
 }
 window._pinRegistrar = _pinRegistrar;
 
@@ -5842,7 +5879,8 @@ async function _pinCarregarFirestore(){
         id: doc.id,
         titulo: d.titulo || '',
         pagina: d.pagina || '',
-        ordem: d.ordem || 0
+        ordem: d.ordem || 0,
+        snapshotHtml: d.snapshotHtml || null
       });
     });
     _pinFirestoreCarregado = true;
@@ -6006,14 +6044,26 @@ async function _pinRenderHome(){
     const card = cont.querySelector('.pin-card[data-pin-id="'+p.id+'"] .pin-card-body');
     if(!card) return;
     if(!reg){
-      card.innerHTML = '<div style="color:var(--text-muted);font-size:11px;font-style:italic;">Elemento não disponível nesta sessão. Visite a página de origem para reativar.</div>';
+      // Sem renderer ativo nesta sessão. Tenta usar o snapshot salvo.
+      if(p.snapshotHtml){
+        card.innerHTML = p.snapshotHtml
+          + '<div style="font-size:10px;color:var(--text-muted);margin-top:6px;font-style:italic;opacity:.7;">Valor salvo · visite a página para atualizar</div>';
+      } else {
+        card.innerHTML = '<div style="color:var(--text-muted);font-size:11px;font-style:italic;">Visite a página de origem ('+esc(p.pagina||'?')+') para carregar o valor.</div>';
+      }
       return;
     }
     try {
       reg.render(card);
     } catch(e){
       console.warn('[pin] erro ao renderizar', p.id, e);
-      card.innerHTML = '<div style="color:#dc2626;font-size:11px;">Erro ao renderizar.</div>';
+      // Em caso de erro de render, tenta o snapshot
+      if(p.snapshotHtml){
+        card.innerHTML = p.snapshotHtml
+          + '<div style="font-size:10px;color:var(--text-muted);margin-top:6px;font-style:italic;opacity:.7;">Valor salvo (erro ao atualizar)</div>';
+      } else {
+        card.innerHTML = '<div style="color:#dc2626;font-size:11px;">Erro ao renderizar.</div>';
+      }
     }
   });
 

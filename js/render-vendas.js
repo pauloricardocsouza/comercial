@@ -252,15 +252,6 @@ const VENDAS_PANELS_STRUCTURE = {
       [{t:'Cestão Inhambupe — Jan-Mar por departamento', s:'3 anos'}]
     ],
     tables: []
-  },
-  'v-alertas': {
-    pk: 'Vendas · Análise',
-    h2: 'Alertas e <em>Oportunidades</em>',
-    desc: 'Detecção automática de oscilações relevantes, sazonalidades e oportunidades',
-    kpis: [],
-    rows: [],
-    tables: [],
-    customNote: 'Página de alertas: lista contextual gerada após o cálculo dos indicadores. Será populada automaticamente com os dados de Vendas.'
   }
 };
 
@@ -1337,7 +1328,6 @@ function renderVendasReal(pg){
     case 'v-vendas-diarias': return renderVDiarias();
     case 'v-dias-cp':        return renderVDiasCP();
     case 'v-metas':          return renderVMetas();
-    case 'v-alertas':        return renderVAlertas();
     // [removido em v4.13] cases de loja: v-atp-varejo, v-atp-atacado, v-cestao, v-inh
   }
   // Página ainda sem implementação real → cai no placeholder
@@ -2407,6 +2397,46 @@ function renderVBenchmarking(){
     return;
   }
 
+  // ─── Filtros de sessão ───
+  const ymsAll = Array.from(new Set(mensalV.map(function(r){return r.ym;}).filter(Boolean))).sort();
+  if(typeof window._rcaMesesAtivos === 'undefined') window._rcaMesesAtivos = null; // null = jan-mar 2026 padrão
+  if(typeof window._rcaSupAtivos === 'undefined') window._rcaSupAtivos = null;     // null = todos
+
+  // Período padrão: jan-mar 2026 (ou todos os meses 2026 se não houver mar)
+  let mesesDestino;
+  if(window._rcaMesesAtivos === null){
+    mesesDestino = ymsAll.filter(function(y){return y >= '2026-01' && y <= '2026-03';});
+    if(mesesDestino.length === 0) mesesDestino = ymsAll.filter(function(y){return y.indexOf('2026') === 0;});
+    if(mesesDestino.length === 0) mesesDestino = ymsAll.slice(-3);
+  } else {
+    mesesDestino = window._rcaMesesAtivos.slice();
+  }
+  const mesesDestinoSet = new Set(mesesDestino);
+
+  // Período comparação: mesmos meses ano anterior (ano-1)
+  const mesesCompara = mesesDestino.map(function(ym){
+    const y = parseInt(ym.slice(0,4), 10) - 1;
+    return y + ym.slice(4);
+  }).filter(function(y){return ymsAll.indexOf(y) >= 0;});
+  const mesesComparaSet = new Set(mesesCompara);
+
+  // Lista de supervisores únicos no cadastro
+  const supsMap = new Map();
+  cad.forEach(function(v){
+    if(v.cod_supervisor != null && !supsMap.has(v.cod_supervisor)){
+      supsMap.set(v.cod_supervisor, v.supervisor || ('Sup. '+v.cod_supervisor));
+    }
+  });
+  const supsArr = Array.from(supsMap.entries())
+    .map(function(e){return {cod:e[0], nome:e[1]};})
+    .sort(function(a,b){return a.cod - b.cod;});
+
+  // Aplicar filtro de supervisores ao cadastro filtrado
+  const supSel = window._rcaSupAtivos;
+  const cadFilt = (supSel === null || supSel.length === 0)
+    ? cad
+    : cad.filter(function(v){return supSel.indexOf(v.cod_supervisor) >= 0;});
+
   // Indexar mensal por cod
   const mensalIdx = new Map();
   mensalV.forEach(function(r){
@@ -2414,17 +2444,17 @@ function renderVBenchmarking(){
     mensalIdx.get(r.cod).push(r);
   });
 
-  // Para cada vendedor: comparar jan-mar 2026 vs jan-mar 2025
-  const compara = cad.map(function(v){
+  // Para cada vendedor: comparar período destino vs período comparação
+  const compara = cadFilt.map(function(v){
     const arr = mensalIdx.get(v.cod) || [];
-    const jm25 = arr.filter(function(r){return r.ym >= '2025-01' && r.ym <= '2025-03';});
-    const jm26 = arr.filter(function(r){return r.ym >= '2026-01' && r.ym <= '2026-03';});
-    const fat25 = jm25.reduce(function(s,r){return s+r.fat_liq;}, 0);
-    const fat26 = jm26.reduce(function(s,r){return s+r.fat_liq;}, 0);
-    const luc25 = jm25.reduce(function(s,r){return s+r.lucro;}, 0);
-    const luc26 = jm26.reduce(function(s,r){return s+r.lucro;}, 0);
-    const nfs26 = jm26.reduce(function(s,r){return s+r.nfs;}, 0);
-    const cli26 = jm26.reduce(function(s,r){return s+r.clientes;}, 0);
+    const jmAnt = arr.filter(function(r){return mesesComparaSet.has(r.ym);});
+    const jmDst = arr.filter(function(r){return mesesDestinoSet.has(r.ym);});
+    const fat25 = jmAnt.reduce(function(s,r){return s+r.fat_liq;}, 0);
+    const fat26 = jmDst.reduce(function(s,r){return s+r.fat_liq;}, 0);
+    const luc25 = jmAnt.reduce(function(s,r){return s+r.lucro;}, 0);
+    const luc26 = jmDst.reduce(function(s,r){return s+r.lucro;}, 0);
+    const nfs26 = jmDst.reduce(function(s,r){return s+r.nfs;}, 0);
+    const cli26 = jmDst.reduce(function(s,r){return s+r.clientes;}, 0);
 
     return {
       cod: v.cod, nome: v.nome, loja: v.loja, supervisor: v.supervisor,
@@ -2446,50 +2476,88 @@ function renderVBenchmarking(){
   const novos = compara.filter(function(x){return !x.ativo25 && x.ativo26;}).length;
   const desligados = compara.filter(function(x){return x.ativo25 && !x.ativo26;}).length;
 
-  // Crescimento ponderado total jan-mar
+  // Crescimento ponderado total
   const totFat26 = compara.reduce(function(s,x){return s+x.fat26;}, 0);
   const totFat25 = compara.reduce(function(s,x){return s+x.fat25;}, 0);
   const cresceMedio = totFat25>0 ? (totFat26/totFat25 - 1)*100 : 0;
-
-  // Top 10 maiores quedas e maiores crescimentos (apenas RCAs ativos nos 2 anos)
-  const ativosBoth = compara.filter(function(x){return x.ativo25 && x.ativo26 && x.fat25 > 10000;});
-  const topCresce = ativosBoth.slice().sort(function(a,b){return (b.cresce||0) - (a.cresce||0);}).slice(0, 10);
-  const topCai = ativosBoth.slice().sort(function(a,b){return (a.cresce||0) - (b.cresce||0);}).slice(0, 10);
 
   // Top 10 por margem (apenas com fat_liq > 50k pra evitar outliers)
   const ativos26Filt = compara.filter(function(x){return x.fat26 > 50000;});
   const topMargem = ativos26Filt.slice().sort(function(a,b){return b.marg26 - a.marg26;}).slice(0, 10);
   const topTicket = ativos26Filt.slice().sort(function(a,b){return b.ticket26 - a.ticket26;}).slice(0, 10);
 
+  const labelDst = mesesDestino.length
+    ? _ymToLabel(mesesDestino[0])+(mesesDestino.length>1?' a '+_ymToLabel(mesesDestino[mesesDestino.length-1]):'')
+    : '—';
+  const labelAnt = mesesCompara.length
+    ? _ymToLabel(mesesCompara[0])+(mesesCompara.length>1?' a '+_ymToLabel(mesesCompara[mesesCompara.length-1]):'')
+    : 'mesmos meses ano anterior';
+
   let html = '<div class="ph"><div class="pk">Vendas · Análise</div><h2><em>RCA</em> · Análise por Vendedor</h2></div>';
   html += '<div class="ph-sep"></div>';
   html += '<div class="page-body">';
 
+  // ─── Filtros ───
+  html += '<div class="cc" style="padding:12px 14px;margin-bottom:14px;">';
+  html += '<div style="display:flex;flex-wrap:wrap;gap:18px;align-items:flex-start;">';
+
+  // Período (multi-select)
+  html += '<div style="flex:1;min-width:280px;">';
+  html += '<div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;font-weight:700;margin-bottom:6px;">Período (vs. mesmos meses do ano anterior)</div>';
+  html += '<div style="display:flex;flex-wrap:wrap;gap:5px;">';
+  html += '<button class="rca-mes-shortcut" data-act="default" style="padding:4px 9px;font-size:11px;border:1px solid var(--border);border-radius:4px;cursor:pointer;background:transparent;color:var(--text-muted);">Padrão (jan-mar 26)</button>';
+  html += '<button class="rca-mes-shortcut" data-act="2026" style="padding:4px 9px;font-size:11px;border:1px solid var(--border);border-radius:4px;cursor:pointer;background:transparent;color:var(--text-muted);">Todo 2026</button>';
+  html += '<button class="rca-mes-shortcut" data-act="ult3" style="padding:4px 9px;font-size:11px;border:1px solid var(--border);border-radius:4px;cursor:pointer;background:transparent;color:var(--text-muted);">Últimos 3</button>';
+  html += '<button class="rca-mes-shortcut" data-act="ult6" style="padding:4px 9px;font-size:11px;border:1px solid var(--border);border-radius:4px;cursor:pointer;background:transparent;color:var(--text-muted);">Últimos 6</button>';
+  html += '</div>';
+  html += '<div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:6px;">';
+  ymsAll.forEach(function(ym){
+    const ativo = mesesDestinoSet.has(ym);
+    html += '<button class="rca-mes-btn" data-ym="'+esc(ym)+'" style="padding:3px 7px;font-size:10.5px;border:1px solid var(--border-strong);border-radius:4px;cursor:pointer;'
+         +   (ativo?'background:var(--accent);color:white;border-color:var(--accent);':'background:var(--surface);color:var(--text);')
+         + 'font-weight:600;">'+esc(_ymToLabel(ym))+'</button>';
+  });
+  html += '</div>';
+  html += '</div>';
+
+  // Supervisor multi-select
+  html += '<div style="flex:1;min-width:280px;">';
+  html += '<div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;font-weight:700;margin-bottom:6px;">Supervisor (multi-select)</div>';
+  html += '<div style="display:flex;flex-wrap:wrap;gap:5px;">';
+  html += '<button class="rca-sup-shortcut" data-act="todos" style="padding:4px 9px;font-size:11px;border:1px solid var(--border);border-radius:4px;cursor:pointer;background:transparent;color:var(--text-muted);">Todos</button>';
+  supsArr.forEach(function(s){
+    const isOn = (supSel === null || supSel.indexOf(s.cod) >= 0);
+    html += '<button class="rca-sup-btn" data-cod="'+s.cod+'" style="padding:4px 9px;font-size:11px;border:1px solid var(--border-strong);border-radius:4px;cursor:pointer;'
+         +   (isOn?'background:var(--accent);color:white;border-color:var(--accent);':'background:var(--surface);color:var(--text);')
+         + 'font-weight:600;">#'+s.cod+' '+esc((s.nome||'').substring(0,20))+'</button>';
+  });
+  html += '</div>';
+  html += '</div>';
+
+  html += '</div>'; // flex
+  html += '</div>'; // cc
+
   html += '<div style="background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:10px 14px;margin-bottom:14px;font-size:12px;color:var(--text-dim);">'
-       +   'Comparativo: <strong>jan-mar 2026 vs jan-mar 2025</strong> · '
-       +   'Filtros: rankings consideram apenas vendedores com faturamento > R$ 10k em 2025 e ativos em 2026.'
+       +   'Comparativo: <strong>'+esc(labelDst)+'</strong> vs <strong>'+esc(labelAnt)+'</strong> · '
+       +   'Filtros: rankings consideram apenas vendedores com faturamento > R$ 10k no período anterior e ativos no período destino.'
        + '</div>';
 
   // KPIs
   html += '<div class="kg" style="grid-template-columns:repeat(4,1fr);margin-bottom:14px;" id="kg-vbm"></div>';
 
-  // [removido em v4.13] Top 10 crescimentos e quedas removidos a pedido do usuário
-
-  // Scatter de distribuição removido a pedido do usuário
-
   // Linha 3: Top 10 por margem + Top 10 por ticket
   html += '<div class="row2eq" style="margin-bottom:12px;">'
        +    '<div class="cc">'
        +      '<div class="cct">Top 10 por margem</div>'
-       +      '<div class="ccs">jan-mar 2026 · com fat. > R$ 50k</div>'
+       +      '<div class="ccs">'+esc(labelDst)+' · com fat. > R$ 50k</div>'
        +      '<div class="tscroll"><table class="t"><thead><tr>'
        +        '<th class="L" style="width:24px;">#</th><th class="L">Vendedor</th>'
-       +        '<th class="L">Loja</th><th>Fat. 2026</th><th>Margem</th>'
+       +        '<th class="L">Loja</th><th>Fat.</th><th>Margem</th>'
        +      '</tr></thead><tbody id="tb-vbm-marg"></tbody></table></div>'
        +    '</div>'
        +    '<div class="cc">'
        +      '<div class="cct">Top 10 por ticket médio</div>'
-       +      '<div class="ccs">jan-mar 2026 · ticket = fat / NFs</div>'
+       +      '<div class="ccs">'+esc(labelDst)+' · ticket = fat / NFs</div>'
        +      '<div class="tscroll"><table class="t"><thead><tr>'
        +        '<th class="L" style="width:24px;">#</th><th class="L">Vendedor</th>'
        +        '<th class="L">Loja</th><th>NFs</th><th>Ticket</th>'
@@ -2503,10 +2571,10 @@ function renderVBenchmarking(){
        +    '<div class="ccs">Ordenado por crescimento percentual · clique no nome para ver detalhe no Drill-Down</div>'
        +    '<div class="tscroll"><table class="t" id="t-vbm">'
        +      '<thead><tr>'
-       +      '<th class="L">Vendedor</th><th class="L">Loja</th>'
-       +      '<th>Fat. jan-mar/25</th><th>Fat. jan-mar/26</th>'
+       +      '<th class="L">Vendedor</th><th class="L">Loja</th><th class="L">Sup.</th>'
+       +      '<th>Fat. '+esc(labelAnt)+'</th><th>Fat. '+esc(labelDst)+'</th>'
        +      '<th>Δ R$</th><th>Δ %</th>'
-       +      '<th>Margem 26</th><th>Status</th>'
+       +      '<th>Margem dest.</th><th>Status</th>'
        +      '</tr></thead><tbody id="tb-vbm"></tbody></table></div>'
        + '</div>';
 
@@ -2515,44 +2583,11 @@ function renderVBenchmarking(){
 
   // ─── KPIs ───
   document.getElementById('kg-vbm').innerHTML = kgHtml([
-    {l:'Ativos jan-mar/25', v:fI(ativos25), s:'no período'},
-    {l:'Ativos jan-mar/26', v:fI(ativos26), s:fI(novos)+' novos · '+fI(desligados)+' desligados'},
+    {l:'Ativos '+labelAnt, v:fI(ativos25), s:'no período'},
+    {l:'Ativos '+labelDst, v:fI(ativos26), s:fI(novos)+' novos · '+fI(desligados)+' desligados'},
     {l:'Crescimento médio', v:(cresceMedio>=0?'+':'')+fP(cresceMedio), s:'ponderado por fat.', cls:cresceMedio>=0?'up':'dn'},
-    {l:'Δ Faturamento total', v:(totFat26-totFat25>=0?'+':'')+fK(totFat26-totFat25), s:'jan-mar/26 vs jan-mar/25', cls:totFat26>totFat25?'up':'dn'},
+    {l:'Δ Faturamento total', v:(totFat26-totFat25>=0?'+':'')+fK(totFat26-totFat25), s:esc(labelDst)+' vs '+esc(labelAnt), cls:totFat26>totFat25?'up':'dn'},
   ]);
-
-  // [removido em v4.13] Charts de top crescimentos e quedas removidos a pedido do usuário
-
-  // ─── Chart: scatter ───
-  // Apenas RCAs com fat 2026 > 0
-  const scatterData = compara.filter(function(x){return x.fat26 > 0 && x.cresce !== null;});
-  const lojaCor = {'ATP-V':_PAL.ac, 'ATP-A':_PAL.hl};
-  const datasetsScatter = ['ATP-V','ATP-A'].map(function(loja){
-    const pontos = scatterData.filter(function(x){return x.loja===loja;});
-    return {
-      label: loja==='ATP-V'?'ATP Varejo':'ATP Atacado',
-      data: pontos.map(function(x){
-        return {x: x.fat26, y: x.cresce, r: Math.min(20, Math.max(3, x.ticket26/200)),
-                _nome: x.nome, _cod: x.cod, _ticket: x.ticket26};
-      }),
-      backgroundColor: (lojaCor[loja]||'#888')+'AA',
-      borderColor: lojaCor[loja]||'#888',
-      borderWidth:1.5,
-    };
-  });
-
-  mkC('c-vbm-scatter', {type:'bubble', data:{datasets:datasetsScatter},
-    options:{responsive:true, maintainAspectRatio:false,
-      plugins:{legend:{position:'bottom', labels:{padding:10, usePointStyle:true, boxWidth:8}},
-               tooltip:{callbacks:{label:function(ctx){
-                 const p = ctx.raw;
-                 return [p._nome+' (#'+p._cod+')', 'Fat. 26: '+fK(p.x),
-                         'Crescimento: '+(p.y>=0?'+':'')+fP(p.y), 'Ticket: '+fK(p._ticket)];
-               }}}},
-      scales:{
-        x:{title:{display:true,text:'Faturamento jan-mar/26 (R$)'},ticks:{callback:function(v){return fAbbr(v);}}},
-        y:{title:{display:true,text:'Crescimento vs 2025 (%)'},ticks:{callback:function(v){return (v>=0?'+':'')+fP(v);}}},
-      }}});
 
   // ─── Tabelas top margem e top ticket ───
   document.getElementById('tb-vbm-marg').innerHTML = topMargem.map(function(x, i){
@@ -2588,8 +2623,8 @@ function renderVBenchmarking(){
   document.getElementById('tb-vbm').innerHTML = compSort.map(function(x){
     const difCls = x.dif_abs>=0 ? 'val-pos' : 'val-neg';
     let status, statusCls;
-    if(!x.ativo25 && x.ativo26){ status = 'Novo em 26'; statusCls = 'val-pos'; }
-    else if(x.ativo25 && !x.ativo26){ status = 'Desligado'; statusCls = 'val-neg'; }
+    if(!x.ativo25 && x.ativo26){ status = 'Novo'; statusCls = 'val-pos'; }
+    else if(x.ativo25 && !x.ativo26){ status = 'Inativo no período'; statusCls = 'val-neg'; }
     else if(x.ativo25 && x.ativo26){ status = 'Ativo'; statusCls = ''; }
     else { status = '—'; statusCls = 'val-dim'; }
     const cresceStr = x.cresce===null ? '—' : (x.cresce>=0?'+':'')+fP(x.cresce);
@@ -2598,6 +2633,7 @@ function renderVBenchmarking(){
       + '<td class="L"><div style="font-family:\'JetBrains Mono\',monospace;font-size:10px;color:var(--text-muted);">#'+esc(x.cod)+'</div>'
       +    '<div style="font-weight:600;">'+esc(x.nome)+'</div></td>'
       + '<td class="L">'+esc(x.loja||'—')+'</td>'
+      + '<td class="L val-dim" style="font-size:10px;">'+esc(x.supervisor||'—')+'</td>'
       + '<td class="val-dim">'+(x.fat25>0?fK(x.fat25):'—')+'</td>'
       + '<td>'+(x.fat26>0?fK(x.fat26):'—')+'</td>'
       + '<td class="'+difCls+'">'+(x.dif_abs>=0?'+':'')+fK(x.dif_abs)+'</td>'
@@ -2606,6 +2642,49 @@ function renderVBenchmarking(){
       + '<td class="'+statusCls+'">'+status+'</td>'
       + '</tr>';
   }).join('');
+
+  // ─── Listeners filtros ───
+  document.querySelectorAll('.rca-mes-btn').forEach(function(btn){
+    btn.addEventListener('click', function(){
+      const ym = btn.getAttribute('data-ym');
+      let cur = (window._rcaMesesAtivos === null) ? mesesDestino.slice() : window._rcaMesesAtivos.slice();
+      const i = cur.indexOf(ym);
+      if(i >= 0) cur.splice(i, 1); else cur.push(ym);
+      window._rcaMesesAtivos = cur.length === 0 ? null : cur;
+      renderVBenchmarking();
+    });
+  });
+  document.querySelectorAll('.rca-mes-shortcut').forEach(function(btn){
+    btn.addEventListener('click', function(){
+      const act = btn.getAttribute('data-act');
+      if(act === 'default'){
+        window._rcaMesesAtivos = null;
+      } else if(act === '2026'){
+        window._rcaMesesAtivos = ymsAll.filter(function(y){return y.indexOf('2026') === 0;});
+      } else if(act === 'ult3'){
+        window._rcaMesesAtivos = ymsAll.slice(-3);
+      } else if(act === 'ult6'){
+        window._rcaMesesAtivos = ymsAll.slice(-6);
+      }
+      renderVBenchmarking();
+    });
+  });
+  document.querySelectorAll('.rca-sup-btn').forEach(function(btn){
+    btn.addEventListener('click', function(){
+      const cod = Number(btn.getAttribute('data-cod'));
+      let cur = (window._rcaSupAtivos === null) ? supsArr.map(function(x){return x.cod;}) : window._rcaSupAtivos.slice();
+      const i = cur.indexOf(cod);
+      if(i >= 0) cur.splice(i, 1); else cur.push(cod);
+      window._rcaSupAtivos = (cur.length === 0 || cur.length === supsArr.length) ? null : cur;
+      renderVBenchmarking();
+    });
+  });
+  document.querySelectorAll('.rca-sup-shortcut').forEach(function(btn){
+    btn.addEventListener('click', function(){
+      window._rcaSupAtivos = null;
+      renderVBenchmarking();
+    });
+  });
 }
 
 // ────────────────────────────────────────────────────────────────────
@@ -2628,7 +2707,29 @@ function renderVItens(){
   // Filtrar INATIVO (depto cod=11) — não é interesse de análise
   const deptosFilt = Filtros.deptosValidos(deptos);
 
-  // Agregar por depto (todos os meses, todas as lojas)
+  // Lista de meses disponíveis (todos do dataset, jan/2025+)
+  const ymsAll = Array.from(new Set(deptosFilt.map(function(r){return r.ym;}).filter(Boolean))).sort();
+
+  // Filtro de meses persistido por sessão (persiste só durante a sessão JS)
+  if(typeof window._vitMesesAtivos === 'undefined'){
+    window._vitMesesAtivos = null; // null = todos os meses
+  }
+  const mesesAtivos = (Array.isArray(window._vitMesesAtivos) && window._vitMesesAtivos.length)
+    ? window._vitMesesAtivos.filter(function(y){return ymsAll.indexOf(y) >= 0;})
+    : ymsAll.slice();
+  const mesesSet = new Set(mesesAtivos);
+  const filtroAtivo = window._vitMesesAtivos !== null && mesesAtivos.length !== ymsAll.length;
+
+  // Linhas filtradas pelo conjunto de meses ativos (afeta tabelas de depto e categoria)
+  function filtrarPorMes(arr){
+    if(!filtroAtivo) return arr;
+    return arr.filter(function(r){return mesesSet.has(r.ym);});
+  }
+  const deptosFiltMes = filtrarPorMes(deptosFilt);
+  const catsFiltMes   = filtrarPorMes(cats);
+
+  // Agregar por depto (USANDO TODOS OS MESES — para gráficos topo-fixos)
+  // As tabelas inferiores usarão deptosFiltMes/catsFiltMes (com filtro de meses).
   const deptoAgg = new Map();
   deptosFilt.forEach(function(r){
     const k = r.cod;
@@ -2652,10 +2753,30 @@ function renderVItens(){
     };
   }).sort(function(a,b){return b.fat_liq - a.fat_liq;});
 
+  // Agregar por depto APENAS COM MESES ATIVOS — para a tabela "Departamentos visão consolidada"
+  const deptoAggMes = new Map();
+  deptosFiltMes.forEach(function(r){
+    const k = r.cod;
+    if(!deptoAggMes.has(k)) deptoAggMes.set(k, {cod:r.cod, nome:r.nome, fat_liq:0, lucro:0, qt:0});
+    const x = deptoAggMes.get(k);
+    x.fat_liq += r.fat_liq||0;
+    x.lucro   += r.lucro||0;
+    x.qt      += r.qt||0;
+  });
+  const deptoArrMes = Array.from(deptoAggMes.values()).map(function(d){
+    return {
+      cod: d.cod, nome: d.nome,
+      fat_liq: d.fat_liq, lucro: d.lucro, qt: d.qt,
+      marg: d.fat_liq>0 ? d.lucro/d.fat_liq*100 : 0,
+      preco_medio: d.qt>0 ? d.fat_liq/d.qt : 0,
+    };
+  }).sort(function(a,b){return b.fat_liq - a.fat_liq;});
+  const totalGeralMes = deptoArrMes.reduce(function(s,d){return s+d.fat_liq;}, 0);
+
   const totalGeral = deptoArr.reduce(function(s,d){return s+d.fat_liq;}, 0);
 
   // Último mês para análise temporal
-  const yms = [...new Set(deptosFilt.map(function(r){return r.ym;}))].sort();
+  const yms = ymsAll;
   const ultimoYm = yms[yms.length-1];
   const labelUltimoMes = _ymToLabel(ultimoYm);
 
@@ -2669,10 +2790,10 @@ function renderVItens(){
        +   'período '+_ymToLabel(yms[0])+' a '+labelUltimoMes
        + '</div>';
 
-  // KPIs
+  // KPIs (sempre acumulados — todo o período)
   html += '<div class="kg" style="grid-template-columns:repeat(5,1fr);margin-bottom:14px;" id="kg-vit"></div>';
 
-  // Linha 1: pizza geral + barras evolução por depto top 5
+  // Linha 1: pizza geral + barras evolução por depto top 5 (sempre todo o período — referência fixa)
   html += '<div class="row2eq" style="margin-bottom:14px;">'
        +    '<div class="cc">'
        +      '<div class="cct">Participação no faturamento</div>'
@@ -2686,12 +2807,39 @@ function renderVItens(){
        +    '</div>'
        + '</div>';
 
-  // [removido em v4.13] Scatter "Faturamento × Preço médio por departamento"
+  // ─── Filtro de meses (afeta apenas tabelas de depto e categoria abaixo) ───
+  const labelFiltro = filtroAtivo
+    ? mesesAtivos.length+' de '+yms.length+' meses'
+    : 'todos os meses do período';
+  html += '<div class="cc" style="padding:12px 14px;margin-bottom:12px;">';
+  html += '<div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;">';
+  html += '<span style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;font-weight:700;">Filtrar período (afeta as tabelas abaixo):</span>';
+  // Atalhos
+  html += '<button class="vit-mes-shortcut" data-act="todos" style="padding:4px 8px;font-size:11px;border:1px solid var(--border);border-radius:4px;cursor:pointer;background:transparent;color:var(--text-muted);">Todos</button>';
+  html += '<button class="vit-mes-shortcut" data-act="2026" style="padding:4px 8px;font-size:11px;border:1px solid var(--border);border-radius:4px;cursor:pointer;background:transparent;color:var(--text-muted);">Só 2026</button>';
+  html += '<button class="vit-mes-shortcut" data-act="2025" style="padding:4px 8px;font-size:11px;border:1px solid var(--border);border-radius:4px;cursor:pointer;background:transparent;color:var(--text-muted);">Só 2025</button>';
+  html += '<button class="vit-mes-shortcut" data-act="ult12" style="padding:4px 8px;font-size:11px;border:1px solid var(--border);border-radius:4px;cursor:pointer;background:transparent;color:var(--text-muted);">Últimos 12m</button>';
+  html += '</div>';
+  // Botões individuais por mês
+  html += '<div style="display:flex;flex-wrap:wrap;gap:5px;align-items:center;margin-top:8px;">';
+  yms.forEach(function(ym){
+    const ativo = mesesSet.has(ym);
+    html += '<button class="vit-mes-btn" data-ym="'+esc(ym)+'" style="padding:4px 9px;font-size:11px;border:1px solid var(--border-strong);border-radius:4px;cursor:pointer;'
+         +   (ativo?'background:var(--accent);color:white;border-color:var(--accent);':'background:var(--surface);color:var(--text);')
+         + 'font-weight:600;">'+esc(_ymToLabel(ym))+'</button>';
+  });
+  html += '</div>';
+  html += '<div style="margin-top:8px;font-size:11.5px;color:var(--text-dim);">'
+       +   (filtroAtivo
+            ? 'Acumulado de '+esc(labelFiltro)+' nas tabelas abaixo. Os gráficos do topo seguem mostrando o período total.'
+            : 'Mostrando '+esc(labelFiltro)+'. Clique em meses para filtrar as duas tabelas abaixo.')
+       + '</div>';
+  html += '</div>';
 
   // Tabela departamentos
   html += '<div class="cc" style="margin-bottom:12px;">'
        +    '<div class="cct">Departamentos — visão consolidada</div>'
-       +    '<div class="ccs">Período total · ordenado por faturamento</div>'
+       +    '<div class="ccs">'+(filtroAtivo?'Período filtrado: '+esc(labelFiltro):'Período total')+' · ordenado por faturamento</div>'
        +    '<div class="tscroll"><table class="t" id="t-vit-dept">'
        +      '<thead><tr>'
        +      '<th class="L" style="width:28px;">#</th><th class="L">Departamento</th>'
@@ -2704,8 +2852,8 @@ function renderVItens(){
   // Tabela top categorias (filtrada por depto via select)
   html += '<div class="cc">'
        +    '<div class="cct">Top categorias por departamento</div>'
-       +    '<div class="ccs" style="display:flex;gap:10px;align-items:center;">'
-       +      '<span>Filtre por departamento:</span>'
+       +    '<div class="ccs" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">'
+       +      '<span>'+(filtroAtivo?'Período filtrado: '+esc(labelFiltro)+' · ':'')+'Filtre por departamento:</span>'
        +      '<select id="flt-vit-dept" style="padding:4px 10px;border:1px solid var(--border);border-radius:5px;background:var(--surface);color:var(--text);font-size:12px;font-family:inherit;">'
        +        '<option value="">Todos</option>'
        +        deptoArr.map(function(d){return '<option value="'+escAttr(d.cod)+'">'+esc(d.nome)+'</option>';}).join('')
@@ -2779,9 +2927,9 @@ function renderVItens(){
 
   // [removido em v4.13] Scatter fat × preço médio por depto
 
-  // ─── Tabela departamentos ───
-  document.getElementById('tb-vit-dept').innerHTML = deptoArr.map(function(d, i){
-    const pct = totalGeral>0 ? d.fat_liq/totalGeral*100 : 0;
+  // ─── Tabela departamentos (usa deptoArrMes — respeita filtro de meses) ───
+  document.getElementById('tb-vit-dept').innerHTML = deptoArrMes.map(function(d, i){
+    const pct = totalGeralMes>0 ? d.fat_liq/totalGeralMes*100 : 0;
     const margCls = d.marg<5 ? 'val-neg' : d.marg>15 ? 'val-pos' : '';
     return '<tr style="cursor:pointer;" onclick="document.getElementById(\'flt-vit-dept\').value='+escJs(String(d.cod))+';document.getElementById(\'flt-vit-dept\').dispatchEvent(new Event(\'change\'));">'
       + '<td class="L" style="color:var(--text-muted);font-weight:700;">'+(i+1)+'</td>'
@@ -2795,10 +2943,10 @@ function renderVItens(){
       + '</tr>';
   }).join('');
 
-  // ─── Tabela categorias com filtro ───
+  // ─── Tabela categorias com filtro de depto (usa catsFiltMes — respeita filtro de meses) ───
   function rebuildCats(){
     const fltCod = document.getElementById('flt-vit-dept').value;
-    let rows = cats.slice();
+    let rows = catsFiltMes.slice();
 
     // Aplicar filtro de departamento: cod da categoria começa com cod do depto.
     // Ex: depto 7 (MERCEARIA) → categorias com cod 7XXXX (71303, 70205, etc).
@@ -2843,6 +2991,38 @@ function renderVItens(){
   }
   document.getElementById('flt-vit-dept').addEventListener('change', rebuildCats);
   rebuildCats();
+
+  // ─── Listeners do filtro de meses ───
+  document.querySelectorAll('.vit-mes-btn').forEach(function(btn){
+    btn.addEventListener('click', function(){
+      const ym = btn.getAttribute('data-ym');
+      const atual = (Array.isArray(window._vitMesesAtivos) && window._vitMesesAtivos.length)
+        ? window._vitMesesAtivos.slice()
+        : ymsAll.slice();
+      const i = atual.indexOf(ym);
+      if(i >= 0) atual.splice(i, 1); else atual.push(ym);
+      window._vitMesesAtivos = (atual.length === 0 || atual.length === ymsAll.length) ? null : atual;
+      renderVItens();
+    });
+  });
+  document.querySelectorAll('.vit-mes-shortcut').forEach(function(btn){
+    btn.addEventListener('click', function(){
+      const act = btn.getAttribute('data-act');
+      if(act === 'todos'){
+        window._vitMesesAtivos = null;
+      } else if(act === '2026'){
+        window._vitMesesAtivos = ymsAll.filter(function(y){return y.indexOf('2026') === 0;});
+        if(window._vitMesesAtivos.length === ymsAll.length) window._vitMesesAtivos = null;
+      } else if(act === '2025'){
+        window._vitMesesAtivos = ymsAll.filter(function(y){return y.indexOf('2025') === 0;});
+        if(window._vitMesesAtivos.length === ymsAll.length) window._vitMesesAtivos = null;
+      } else if(act === 'ult12'){
+        window._vitMesesAtivos = ymsAll.slice(-12);
+        if(window._vitMesesAtivos.length === ymsAll.length) window._vitMesesAtivos = null;
+      }
+      renderVItens();
+    });
+  });
 }
 
 // ────────────────────────────────────────────────────────────────────
@@ -3701,272 +3881,6 @@ function _dcpAbrirCadastroUI(){
     overlay.remove();
     _dcpRenderConteudo();
   });
-}
-
-function renderVAlertas(){
-  const cont = document.getElementById('page-v-alertas');
-  if(!cont) return;
-
-  // ─── Coleta de alertas ───
-  const alertas = [];
-
-  // Tipo 1: Vendedores em queda forte (jan-mar 26 vs 25, > -30%)
-  if(V && V.vendedores && V.vendedores.cadastro && V.vendedores.mensal){
-    const cad = Filtros.vendedoresAtivos(V.vendedores.cadastro, 'v-alertas');
-    const mensalIdx = new Map();
-    V.vendedores.mensal.forEach(function(r){
-      if(!mensalIdx.has(r.cod)) mensalIdx.set(r.cod, []);
-      mensalIdx.get(r.cod).push(r);
-    });
-
-    cad.forEach(function(v){
-      const arr = mensalIdx.get(v.cod) || [];
-      const f25 = arr.filter(function(r){return r.ym>='2025-01' && r.ym<='2025-03';})
-                      .reduce(function(s,r){return s+r.fat_liq;}, 0);
-      const f26 = arr.filter(function(r){return r.ym>='2026-01' && r.ym<='2026-03';})
-                      .reduce(function(s,r){return s+r.fat_liq;}, 0);
-      // Só alerta para vendedores com volume relevante (> R$ 50k em 25)
-      if(f25 < 50000 || f26 === 0) return;
-      const cresce = (f26/f25 - 1)*100;
-      if(cresce <= -30){
-        alertas.push({
-          severity: cresce <= -50 ? 'crit' : 'warn',
-          tipo: 'Vendedor em queda',
-          titulo: '#'+v.cod+' '+v.nome,
-          desc: (v.loja||'?')+' · '+v.supervisor+' · '+fK(f25)+' (25) → '+fK(f26)+' (26)',
-          metric: fP(cresce),
-          metricCls: 'val-neg',
-          ordem: cresce, // mais negativo primeiro
-        });
-      }
-    });
-  }
-
-  // Tipo 2: Departamentos com margem baixa (< 5%) e fat relevante
-  if(V && V.deptos){
-    const deptoAgg = new Map();
-    Filtros.deptosValidos(V.deptos).forEach(function(r){
-      const k = r.cod;
-      if(!deptoAgg.has(k)) deptoAgg.set(k, {cod:r.cod, nome:r.nome, fat:0, lucro:0});
-      const x = deptoAgg.get(k);
-      x.fat += r.fat_liq||0;
-      x.lucro += r.lucro||0;
-    });
-    deptoAgg.forEach(function(d){
-      if(d.fat < 1000000) return; // só deptos relevantes
-      const marg = d.fat>0 ? d.lucro/d.fat*100 : 0;
-      if(marg < 5){
-        alertas.push({
-          severity: marg < 3 ? 'crit' : 'warn',
-          tipo: 'Margem baixa em depto',
-          titulo: d.nome,
-          desc: 'Fat. '+fK(d.fat)+' · Lucro '+fK(d.lucro),
-          metric: fP(marg),
-          metricCls: 'val-neg',
-          ordem: marg,
-        });
-      }
-    });
-  }
-
-  // Tipo 3: SKUs em ruptura (estoque=0, mas com vendas históricas relevantes)
-  if(E && E.produtos){
-    const ruptura = [];
-    E.produtos.forEach(function(p){
-      const eq = (p.estoque && p.estoque.qt) || 0;
-      if(eq > 0) return;
-      // Vendas nos últimos 3 meses (últimos 3 elementos de vendas_por_mes)
-      const vpm = p.vendas_por_mes || [];
-      if(!vpm.length) return;
-      const ult3 = vpm.slice(-3);
-      const fatUlt3 = ult3.reduce(function(s,m){return s + (m.fat_liq||0);}, 0);
-      if(fatUlt3 < 5000) return; // só rupturas relevantes
-      ruptura.push({cod:p.cod, desc:p.desc, fat:fatUlt3, depto:p.depto && p.depto.nome});
-    });
-    // Top 30 rupturas
-    ruptura.sort(function(a,b){return b.fat - a.fat;});
-    ruptura.slice(0, 30).forEach(function(r){
-      alertas.push({
-        severity: r.fat > 50000 ? 'crit' : 'warn',
-        tipo: 'SKU em ruptura',
-        titulo: '#'+r.cod+' '+(r.desc||''),
-        desc: (r.depto||'?')+' · vendas últimos 3 meses: '+fK(r.fat),
-        metric: '0 un',
-        metricCls: 'val-neg',
-        ordem: -r.fat, // maior fat primeiro
-      });
-    });
-  }
-
-  // Tipo 4: Concentração crítica em vendedores (top 5 > 50% do total)
-  if(V && V.vendedores && V.vendedores.mensal){
-    // Identificar vendedores cujo supervisor está ignorado
-    const cadIdx = new Map();
-    (V.vendedores.cadastro||[]).forEach(function(v){ cadIdx.set(v.cod, v); });
-    const totalVend = new Map();
-    V.vendedores.mensal.forEach(function(r){
-      const v = cadIdx.get(r.cod);
-      // Pula se temos cadastro E ele está com supervisor marcado como ignorado.
-      // Se não houver cadastro, mantém (vendedor desconhecido conta).
-      if(v && _isSupervisorIgnorado('v-alertas', v.loja, v.cod_supervisor)) return;
-      totalVend.set(r.cod, (totalVend.get(r.cod)||0) + (r.fat_liq||0));
-    });
-    const arr = Array.from(totalVend.entries()).map(function(kv){return {cod:kv[0], fat:kv[1]};})
-                    .sort(function(a,b){return b.fat-a.fat;});
-    const grandeTotal = arr.reduce(function(s,x){return s+x.fat;}, 0);
-    const top5 = arr.slice(0, 5).reduce(function(s,x){return s+x.fat;}, 0);
-    const pct5 = grandeTotal>0 ? top5/grandeTotal*100 : 0;
-    if(pct5 > 50){
-      alertas.push({
-        severity: 'warn',
-        tipo: 'Concentração de vendedores',
-        titulo: 'Top 5 vendedores = '+fP(pct5)+' do faturamento',
-        desc: 'Risco de dependência · queda de qualquer um afeta proporcionalmente',
-        metric: fP(pct5),
-        metricCls: 'hl',
-        ordem: -pct5,
-      });
-    }
-  }
-
-  // Tipo 5: Vencidos críticos (faixa 91+ dias)
-  if(F && F.aberto && F.aberto.aging && F.aberto.aging.VENCIDO_90_PLUS){
-    const f = F.aberto.aging.VENCIDO_90_PLUS;
-    if(f.valor > 100000){
-      alertas.push({
-        severity: 'crit',
-        tipo: 'Vencidos > 90 dias',
-        titulo: 'Atraso crítico em pagamentos',
-        desc: fI(f.titulos||0)+' títulos · vencimento >90 dias',
-        metric: fK(f.valor),
-        metricCls: 'val-neg',
-        ordem: -f.valor,
-      });
-    }
-  }
-
-  // Tipo 6: Recebimentos atrasados — top cliente concentra muito
-  if(R && R.concentracao && R.concentracao.top_1_pct > 30 && R.por_cliente_top){
-    const c = R.por_cliente_top[0];
-    alertas.push({
-      severity: 'warn',
-      tipo: 'Concentração de inadimplência',
-      titulo: 'Cliente cod='+c.cod+' = '+fP(R.concentracao.top_1_pct)+' do total atrasado',
-      desc: fI(c.parcelas||0)+' parcelas · '+(c.dias_atraso_max||'?')+' dias máx atraso',
-      metric: fK(c.valor),
-      metricCls: 'val-neg',
-      ordem: -c.valor,
-    });
-  }
-
-  // Ordenar alertas: crit antes de warn, e dentro do grupo, por ordem
-  alertas.sort(function(a,b){
-    const sevOrder = {crit:0, warn:1, info:2};
-    if(sevOrder[a.severity] !== sevOrder[b.severity]){
-      return sevOrder[a.severity] - sevOrder[b.severity];
-    }
-    return a.ordem - b.ordem;
-  });
-
-  // Contagem por tipo
-  const porTipo = new Map();
-  alertas.forEach(function(a){
-    porTipo.set(a.tipo, (porTipo.get(a.tipo)||0) + 1);
-  });
-
-  // ─── HTML ───
-  let html = '<div class="ph"><div class="pk">Vendas · Alertas</div><h2>Alertas <em>Heurísticos</em></h2></div>';
-  html += '<div class="ph-sep"></div>';
-  html += '<div class="page-body">';
-
-  html += '<div style="background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:10px 14px;margin-bottom:14px;font-size:12px;color:var(--text-dim);">'
-       +   '<strong>Análise automática</strong> · alertas gerados a partir dos dados disponíveis (vendas, estoque, financeiro, recebimentos). '
-       +   'Esta página será personalizada quando o cliente definir regras específicas.'
-       + '</div>';
-
-  // KPIs por severidade
-  const nCrit = alertas.filter(function(a){return a.severity==='crit';}).length;
-  const nWarn = alertas.filter(function(a){return a.severity==='warn';}).length;
-
-  html += '<div class="kg" style="grid-template-columns:repeat(4,1fr);margin-bottom:14px;" id="kg-vala"></div>';
-
-  // Tabela de alertas
-  html += '<div class="cc">'
-       +    '<div class="cct">'+alertas.length+' alertas detectados</div>'
-       +    '<div class="ccs">Ordenado por severidade · clique no tipo para filtrar</div>'
-       +    '<div style="padding:8px 0;display:flex;gap:6px;flex-wrap:wrap;" id="vala-filtros"></div>'
-       +    '<div class="tscroll"><table class="t" id="t-vala">'
-       +      '<thead><tr>'
-       +      '<th class="L" style="width:80px;">Sev.</th>'
-       +      '<th class="L">Tipo</th>'
-       +      '<th class="L">Item</th>'
-       +      '<th class="L">Detalhe</th>'
-       +      '<th>Métrica</th>'
-       +      '</tr></thead><tbody id="tb-vala"></tbody></table></div>'
-       + '</div>';
-
-  html += '</div>';
-  cont.innerHTML = html;
-
-  // KPIs
-  document.getElementById('kg-vala').innerHTML = kgHtml([
-    {l:'Total alertas',  v:fI(alertas.length), s:'detectados automaticamente'},
-    {l:'Críticos',       v:fI(nCrit), s:'severity=crit', cls: nCrit>0?'dn':''},
-    {l:'Avisos',         v:fI(nWarn), s:'severity=warn', cls: nWarn>0?'hl':''},
-    {l:'Tipos distintos', v:fI(porTipo.size), s:'categorias diferentes'},
-  ]);
-
-  // Filtros por tipo
-  const filtroDiv = document.getElementById('vala-filtros');
-  let filtroAtivo = '';
-  function rebuildAlertas(){
-    let arr = alertas.slice();
-    if(filtroAtivo) arr = arr.filter(function(a){return a.tipo === filtroAtivo;});
-
-    document.getElementById('tb-vala').innerHTML = arr.map(function(a){
-      const sevColor = a.severity==='crit' ? '#dc2626'
-                     : a.severity==='warn' ? '#f59e0b'
-                     : '#3b82f6';
-      const sevLabel = a.severity==='crit' ? 'CRÍTICO'
-                      : a.severity==='warn' ? 'AVISO'
-                      : 'INFO';
-      return '<tr>'
-        + '<td class="L"><span style="display:inline-block;padding:2px 8px;border-radius:4px;background:'+sevColor+'18;color:'+sevColor+';font-weight:700;font-size:10px;font-family:JetBrains Mono,monospace;letter-spacing:.05em;">'+sevLabel+'</span></td>'
-        + '<td class="L">'+esc(a.tipo)+'</td>'
-        + '<td class="L"><strong>'+esc(a.titulo)+'</strong></td>'
-        + '<td class="L" style="font-size:11px;color:var(--text-dim);">'+esc(a.desc)+'</td>'
-        + '<td class="'+(a.metricCls||'')+'"><strong>'+esc(a.metric)+'</strong></td>'
-        + '</tr>';
-    }).join('');
-  }
-
-  // Botões de filtro
-  const tipos = Array.from(porTipo.entries()).sort(function(a,b){return b[1]-a[1];});
-  filtroDiv.innerHTML = '<button data-tipo="" style="padding:4px 10px;border:1px solid var(--accent);background:var(--accent);color:white;border-radius:4px;cursor:pointer;font-size:11px;font-family:inherit;">Todos ('+alertas.length+')</button>'
-    + tipos.map(function(t){
-      return '<button data-tipo="'+escAttr(t[0])+'" style="padding:4px 10px;border:1px solid var(--border);background:var(--surface);color:var(--text);border-radius:4px;cursor:pointer;font-size:11px;font-family:inherit;">'+esc(t[0])+' ('+t[1]+')</button>';
-    }).join('');
-
-  filtroDiv.querySelectorAll('button').forEach(function(btn){
-    btn.addEventListener('click', function(){
-      filtroAtivo = btn.dataset.tipo;
-      // Atualizar visual
-      filtroDiv.querySelectorAll('button').forEach(function(b){
-        if(b.dataset.tipo === filtroAtivo){
-          b.style.background = 'var(--accent)';
-          b.style.color = 'white';
-          b.style.borderColor = 'var(--accent)';
-        } else {
-          b.style.background = 'var(--surface)';
-          b.style.color = 'var(--text)';
-          b.style.borderColor = 'var(--border)';
-        }
-      });
-      rebuildAlertas();
-    });
-  });
-
-  rebuildAlertas();
 }
 
 // ────────────────────────────────────────────────────────────────────

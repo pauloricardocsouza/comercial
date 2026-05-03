@@ -30,7 +30,6 @@ function _renderComprasIndisponivel(pg){
     'excesso':      {alt:'cubo', altLabel:'Análise Dinâmica', altDesc:'Arquivo estoque_atp.json não encontrado. Use a Análise Dinâmica como alternativa.'},
     'diagnostico':  {alt:'cubo', altLabel:'Análise Dinâmica', altDesc:'Arquivo estoque_atp.json não encontrado. Use linha=SKU na Análise Dinâmica como alternativa.'},
     'diag-forn':    {alt:'cubo', altLabel:'Análise Dinâmica', altDesc:'Arquivo estoque_atp.json não encontrado. Use linha=Fornecedor na Análise Dinâmica como alternativa.'},
-    'alertas':      {alt:'v-alertas', altLabel:'Alertas Vendas', altDesc:'Arquivo estoque_atp.json não encontrado. Os alertas de vendas estão em Alertas Vendas (já migrada).'},
     'financeiro':   {alt:'recebimentos', altLabel:'Recebimentos', altDesc:'Arquivo financeiro_atp.json não encontrado. Para vendas a prazo veja Recebimentos.'},
     'vencidos':     {alt:'financeiro', altLabel:'Financeiro', altDesc:'Arquivo financeiro_atp.json não encontrado. Use a página Financeiro como alternativa.'}
   };
@@ -1695,9 +1694,14 @@ window._openProdNovo = function(cod){
   let html = '';
 
   // Hero
+  // EAN: campo opcional. Aparece se o JSON trouxer p.ean (ETL futuro).
+  // Fallback: campos alternativos (codigo_barras, ean13) caso o ETL use outro nome.
+  const eanProd = p.ean || p.codigo_barras || p.ean13 || null;
   html += '<div class="prod-hero">'
        +    '<div class="ph-nav">'+esc(nav)+'</div>'
-       +    '<div class="ph-code">#'+esc(p.cod)+(p.embalagem?' · '+esc(p.embalagem):'')+' · '+esc(p.unidade||'—')+'</div>'
+       +    '<div class="ph-code">#'+esc(p.cod)
+       +      (eanProd ? ' · EAN '+esc(eanProd) : '')
+       +      (p.embalagem?' · '+esc(p.embalagem):'')+' · '+esc(p.unidade||'—')+'</div>'
        +    '<h2>'+esc(p.desc||'')+'</h2>'
        +    '<div class="ph-meta">'
        +      '<div class="ph-mi"><div class="pml">Fornecedor</div><div class="pmv">'+esc(forn)+(fornC?' <span style="color:var(--text-muted);font-size:11px;">#'+esc(fornC)+'</span>':'')+'</div></div>'

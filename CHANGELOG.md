@@ -4,6 +4,32 @@ Lista das melhorias do sistema de BI da R2 Soluções para o Grupo Pinto Cerquei
 
 ---
 
+## v4.47 · 03/mai/2026
+
+**8 ajustes em Vendas**
+
+1. **Página Alertas Vendas removida.** Excluída por completo: botão do menu, página, função de render, fallback. Quem precisa de alertas pode usar a página Alertas em Compras (excessos, parados, quedas).
+
+2. **Itens & Departamentos · filtro de meses nas tabelas.** A página continua acumulando jan/2025+ no topo (KPIs, pizza, evolução) — esses não mudam para preservar a referência. Embaixo, dois quadros novos: "Departamentos visão consolidada" e "Top categorias por departamento" agora respeitam um filtro de meses (todo o período / só 2025 / só 2026 / últimos 12 / clicar mês a mês). Os atalhos ficam logo acima das tabelas. Marcação visual indica quando há filtro aplicado.
+
+3. **Diag. Produto e Diag. Fornecedor saem de Compras.** As duas páginas foram movidas pra fora do grupo Compras e agora aparecem na seção Análise junto com Análise Dinâmica.
+
+4. **EAN no diag de produto.** Cabeçalho do diag agora mostra o EAN do produto se ele existir no JSON (campo `ean`, com fallback `codigo_barras`/`ean13`). **Nota importante:** o JSON atual de estoque ainda não traz EAN — pendência de ETL. Quando o campo for incluído no extract, vai aparecer automaticamente.
+
+5. **Diag só funciona com loja selecionada (já estava certo).** A trava de "selecione uma loja" já existia desde versões anteriores. Verifiquei: o picker oferece todas as lojas ativas do `filiais.json` (ATP, CP1, CP3, CP5, CP40, CP consolidado e GPC consolidado). Se não estavam aparecendo, era cache do navegador. Faça Ctrl+Shift+R uma vez nesta versão.
+
+6. **Pins na home — fallback resiliente.** Antes, se você fixasse um pin em uma página e depois recarregasse e fosse direto pra home (sem visitar a página de origem), aparecia "Elemento não disponível nesta sessão". Agora cada pin guarda no Firestore um snapshot do último HTML rendererizado. Se o renderer não estiver registrado nessa sessão, a home exibe o snapshot salvo com um aviso "Valor salvo · visite a página para atualizar". O snapshot é atualizado toda vez que você visita a página de origem.
+
+7. **Recebimentos → Inadimplência.** O menu agora se chama "Inadimplência" e o título da página também. A barra de filtros foi remodelada: dois grupos de chips (período de vencimento e supervisor multi-select). Você pode clicar em cada mês ou supervisor pra ligar/desligar, ou usar atalhos ("Todos", "Últimos 3"). A tabela top 30 clientes em atraso reage aos filtros aplicados. Nota: o filtro de período no JSON atual atua como filtro informativo na seleção (o JSON não traz vínculo cliente → mês de vencimento individual, apenas agregação mensal). Pendência de ETL pra cobertura completa.
+
+8. **RCA · filtros período + supervisor multi-select.** A página agora tem dois grupos de chips no topo:
+   - **Período**: padrão jan-mar 2026, com atalhos (Padrão / Todo 2026 / Últimos 3 / Últimos 6) e clique mês a mês. Se você seleciona, por exemplo, abr-jun 2026, o sistema compara automaticamente com abr-jun 2025 (mesmos meses ano anterior).
+   - **Supervisor multi-select**: padrão todos. Cada chip liga/desliga um supervisor; "Todos" volta ao default.
+
+   Tudo reage: KPIs (Δ faturamento, crescimento médio, ativos no período), top 10 por margem, top 10 por ticket, e tabela geral comparativa. A coluna "Supervisor" foi adicionada à tabela geral pra você ver de qual sup cada RCA vem.
+
+---
+
 ## v4.46 · 03/mai/2026
 
 **11 ajustes solicitados**

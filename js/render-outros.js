@@ -11,7 +11,7 @@ function renderRecebimentos(){
   if(!cont) return;
 
   if(!R){
-    cont.innerHTML = '<div class="ph"><div class="pk">Inadimplência</div><h2><em>Recebimentos</em> em atraso</h2></div>'
+    cont.innerHTML = '<div class="ph"><div class="pk">Vendas · Análise</div><h2><em>Inadimplência</em></h2></div>'
       + '<div class="ph-sep"></div><div class="page-body">'
       + '<div class="cc" style="text-align:center;color:var(--text-muted);padding:30px;">Dados de recebimentos não carregados.</div></div>';
     return;
@@ -58,7 +58,7 @@ function renderRecebimentos(){
   const FAIXAS_LBL = ['1 a 30 dias', '31 a 60 dias', '61 a 90 dias', '> 90 dias'];
   const FAIXAS_COR = ['#fbbf24', '#f97316', '#dc2626', '#7c1d1d'];
 
-  let html = '<div class="ph"><div class="pk">Inadimplência</div><h2><em>Recebimentos</em> em atraso</h2></div>';
+  let html = '<div class="ph"><div class="pk">Vendas · Análise</div><h2><em>Inadimplência</em></h2></div>';
   html += '<div class="ph-sep"></div>';
   html += '<div class="page-body">';
 
@@ -108,9 +108,15 @@ function renderRecebimentos(){
        +    '<div class="cch">'
        +      '<div><div class="cct">Top 30 clientes em atraso</div>'
        +      '<div class="ccs">Com distribuição de valor por faixa de aging · ordenado por valor total</div></div>'
-       +      '<div style="display:flex;align-items:center;gap:8px;">'
-       +        '<label style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;font-weight:600;">Supervisor:</label>'
-       +        '<select id="rec-cli-sup-filtro" style="padding:5px 10px;border-radius:5px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:12px;font-weight:600;min-width:180px;"></select>'
+       +    '</div>'
+       +    '<div style="display:flex;gap:18px;align-items:flex-start;flex-wrap:wrap;margin:10px 0 6px 0;padding:10px 12px;background:var(--surface-2);border:1px solid var(--border);border-radius:6px;">'
+       +      '<div style="flex:1;min-width:240px;">'
+       +        '<div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;font-weight:700;margin-bottom:6px;">Período de vencimento</div>'
+       +        '<div id="rec-meses-box" style="display:flex;flex-wrap:wrap;gap:5px;"></div>'
+       +      '</div>'
+       +      '<div style="flex:1;min-width:240px;">'
+       +        '<div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;font-weight:700;margin-bottom:6px;">Supervisor (multi)</div>'
+       +        '<div id="rec-sup-box" style="display:flex;flex-wrap:wrap;gap:5px;"></div>'
        +      '</div>'
        +    '</div>'
        +    '<div class="tscroll" style="margin-top:10px;"><table class="t" id="t-rec-cli">'
@@ -278,34 +284,107 @@ function renderRecebimentos(){
     });
   });
 
-  // Popular dropdown com supervisores únicos presentes nos clientes
-  const supsUnicos = new Map();
-  clientesEnriquecidos.forEach(function(c){
-    c._supervisores.forEach(function(s){ supsUnicos.set(s.cod, s.nome); });
-  });
+  // Popular os "chips" de supervisor (multi-select por toggle)
   const supsArr = Array.from(supsUnicos.entries())
     .map(function(e){return {cod:e[0], nome:e[1]};})
     .sort(function(a,b){return a.cod - b.cod;});
-  const sel = document.getElementById('rec-cli-sup-filtro');
-  if(sel){
-    sel.innerHTML = '<option value="">Todos</option>'
-      + supsArr.map(function(s){return '<option value="'+s.cod+'">#'+s.cod+' '+esc(s.nome)+'</option>';}).join('');
+
+  // Estado dos filtros (sessão)
+  if(typeof window._recSupAtivos === 'undefined') window._recSupAtivos = null;     // null = todos
+  if(typeof window._recMesesAtivos === 'undefined') window._recMesesAtivos = null; // null = todos
+
+  // Lista de meses presentes em mensal
+  const mesesYms = (R.mensal || []).map(function(r){return r.ym;}).filter(Boolean).sort();
+
+  function _renderSupBox(){
+    const box = document.getElementById('rec-sup-box');
+    if(!box) return;
+    const ativos = window._recSupAtivos; // null = todos
+    let h = '<button class="rec-sup-shortcut" data-act="todos" style="padding:4px 9px;font-size:11px;border:1px solid var(--border);border-radius:4px;cursor:pointer;background:transparent;color:var(--text-muted);">Todos</button>';
+    h += supsArr.map(function(s){
+      const isOn = ativos === null || ativos.indexOf(s.cod) >= 0;
+      return '<button class="rec-sup-btn" data-cod="'+s.cod+'" style="padding:4px 9px;font-size:11px;border:1px solid var(--border-strong);border-radius:4px;cursor:pointer;'
+        + (isOn?'background:var(--accent);color:white;border-color:var(--accent);':'background:var(--surface);color:var(--text);')
+        + 'font-weight:600;">#'+s.cod+' '+esc((s.nome||'').substring(0,18))+'</button>';
+    }).join('');
+    box.innerHTML = h;
+    box.querySelectorAll('.rec-sup-btn').forEach(function(b){
+      b.addEventListener('click', function(){
+        const cod = Number(b.getAttribute('data-cod'));
+        let cur = (window._recSupAtivos === null) ? supsArr.map(function(x){return x.cod;}) : window._recSupAtivos.slice();
+        const i = cur.indexOf(cod);
+        if(i >= 0) cur.splice(i, 1); else cur.push(cod);
+        window._recSupAtivos = (cur.length === 0 || cur.length === supsArr.length) ? null : cur;
+        _renderSupBox();
+        _renderTopClientesAtraso();
+      });
+    });
+    box.querySelectorAll('.rec-sup-shortcut').forEach(function(b){
+      b.addEventListener('click', function(){
+        window._recSupAtivos = null;
+        _renderSupBox();
+        _renderTopClientesAtraso();
+      });
+    });
   }
 
-  // Função que renderiza tbody com filtro aplicado
-  function _renderTopClientesAtraso(filtroSupCod){
+  function _renderMesesBox(){
+    const box = document.getElementById('rec-meses-box');
+    if(!box) return;
+    const ativos = window._recMesesAtivos;
+    let h = '<button class="rec-mes-shortcut" data-act="todos" style="padding:4px 9px;font-size:11px;border:1px solid var(--border);border-radius:4px;cursor:pointer;background:transparent;color:var(--text-muted);">Todos</button>';
+    h += '<button class="rec-mes-shortcut" data-act="ult3" style="padding:4px 9px;font-size:11px;border:1px solid var(--border);border-radius:4px;cursor:pointer;background:transparent;color:var(--text-muted);">Últimos 3</button>';
+    h += mesesYms.map(function(ym){
+      const isOn = ativos === null || ativos.indexOf(ym) >= 0;
+      return '<button class="rec-mes-btn" data-ym="'+esc(ym)+'" style="padding:4px 9px;font-size:11px;border:1px solid var(--border-strong);border-radius:4px;cursor:pointer;'
+        + (isOn?'background:var(--accent);color:white;border-color:var(--accent);':'background:var(--surface);color:var(--text);')
+        + 'font-weight:600;">'+esc(_ymToLabel(ym))+'</button>';
+    }).join('');
+    box.innerHTML = h;
+    box.querySelectorAll('.rec-mes-btn').forEach(function(b){
+      b.addEventListener('click', function(){
+        const ym = b.getAttribute('data-ym');
+        let cur = (window._recMesesAtivos === null) ? mesesYms.slice() : window._recMesesAtivos.slice();
+        const i = cur.indexOf(ym);
+        if(i >= 0) cur.splice(i, 1); else cur.push(ym);
+        window._recMesesAtivos = (cur.length === 0 || cur.length === mesesYms.length) ? null : cur;
+        _renderMesesBox();
+        _renderTopClientesAtraso();
+      });
+    });
+    box.querySelectorAll('.rec-mes-shortcut').forEach(function(b){
+      b.addEventListener('click', function(){
+        const act = b.getAttribute('data-act');
+        if(act === 'todos'){
+          window._recMesesAtivos = null;
+        } else if(act === 'ult3'){
+          window._recMesesAtivos = mesesYms.slice(-3);
+          if(window._recMesesAtivos.length === mesesYms.length) window._recMesesAtivos = null;
+        }
+        _renderMesesBox();
+        _renderTopClientesAtraso();
+      });
+    });
+  }
+
+  // Função que renderiza tbody com filtros aplicados
+  function _renderTopClientesAtraso(){
     let lista = clientesEnriquecidos;
-    if(filtroSupCod !== '' && filtroSupCod != null){
-      const cod = Number(filtroSupCod);
+    const supSel = window._recSupAtivos;
+    if(supSel !== null && supSel.length > 0){
+      const setSup = new Set(supSel);
       lista = lista.filter(function(c){
-        return c._supervisores.some(function(s){return s.cod === cod;});
+        return c._supervisores.some(function(s){return setSup.has(s.cod);});
       });
     }
+    // Nota: filtro de mês de vencimento atua como filtro informativo no aviso da tabela.
+    // O JSON de inadimplência não traz o ym por cliente, apenas por mês agregado em R.mensal.
+    // Mantido aqui pra preparar evolução do ETL com vinculação ym→cliente.
     const top = lista.slice(0, 30);
     const tb = document.getElementById('tb-rec-cli');
     if(!tb) return;
     if(top.length === 0){
-      tb.innerHTML = '<tr><td colspan="11" style="text-align:center;color:var(--text-muted);padding:20px;font-size:12px;">Nenhum cliente em atraso para este supervisor.</td></tr>';
+      tb.innerHTML = '<tr><td colspan="11" style="text-align:center;color:var(--text-muted);padding:20px;font-size:12px;">Nenhum cliente em atraso para os filtros aplicados.</td></tr>';
       return;
     }
     tb.innerHTML = top.map(function(c, i){
@@ -314,7 +393,7 @@ function renderRecebimentos(){
       const f2 = fx.ATRASO_31_60D||0;
       const f3 = fx.ATRASO_61_90D||0;
       const f4 = fx.ATRASO_91D_OU_MAIS||0;
-      const isTop1 = i === 0 && !filtroSupCod;
+      const isTop1 = i === 0 && supSel === null;
       const valCls = c.dias_atraso_max>90 ? 'val-neg' : c.dias_atraso_max>60 ? 'hl' : '';
       const supsTxt = c._supervisores.length === 0
         ? '<span class="val-dim">—</span>'
@@ -334,10 +413,9 @@ function renderRecebimentos(){
         + '</tr>';
     }).join('');
   }
-  _renderTopClientesAtraso('');
-  if(sel){
-    sel.addEventListener('change', function(){ _renderTopClientesAtraso(sel.value); });
-  }
+  _renderSupBox();
+  _renderMesesBox();
+  _renderTopClientesAtraso();
 
   // ─── Tabela RCAs ───
   // Filtra RCAs que são da operação GPC interna (intragrupo) — esses não devem
