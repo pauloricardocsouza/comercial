@@ -564,6 +564,7 @@ table.data tbody td .cod {
   .kpi .value { font-size: 20px; }
   .page-head h1 { font-size: 22px; }
   /* Topbar ainda mais compacta */
+  .topbar { padding: 8px 10px !important; gap: 6px !important; }
   .base-badge { font-size: 8px !important; padding: 2px 4px !important; }
   #userWidget { margin-left: 2px !important; padding-left: 4px !important; }
   #userWidget #userMenuBtn > div:first-child {
@@ -571,6 +572,11 @@ table.data tbody td .cod {
     height: 24px !important;
     font-size: 10px !important;
   }
+  /* Esconde a data atualizada na topbar (ela é mostrada na própria página de qualquer jeito) */
+  .last-update { display: none !important; }
+  /* Esconde texto da marca, mantém só o logo */
+  .brand-text { display: none !important; }
+  .brand-logo { height: 32px !important; }
   /* Esconde título da topbar se necessário */
   .topbar > div:first-child { min-width: 0; flex-shrink: 1; }
 }
@@ -581,6 +587,8 @@ table.data tbody td .cod {
     height: 22px !important;
     font-size: 9px !important;
   }
+  /* Visão como texto: encurta */
+  .topbar [data-role="visao-label"] { display: none !important; }
 }
 ::-webkit-scrollbar { width: 10px; height: 10px; }
 ::-webkit-scrollbar-track { background: var(--surface-2); }
@@ -1883,10 +1891,10 @@ textarea.proc-inp{resize:vertical;min-height:44px}
      JS principal · dividido em 5 arquivos pela auditoria v4.6
      Ordem importa: core declara as globais; render-* dependem de core.
      ════════════════════════════════════════════════════════════════════════════ -->
-<script src="js/core.js?v=4.45"></script>
-<script src="js/render-compras.js?v=4.45"></script>
-<script src="js/render-vendas.js?v=4.45"></script>
-<script src="js/render-outros.js?v=4.45"></script>
-<script src="js/admin.js?v=4.45"></script>
+<script src="js/core.js?v=4.46"></script>
+<script src="js/render-compras.js?v=4.46"></script>
+<script src="js/render-vendas.js?v=4.46"></script>
+<script src="js/render-outros.js?v=4.46"></script>
+<script src="js/admin.js?v=4.46"></script>
 </body>
 </html>

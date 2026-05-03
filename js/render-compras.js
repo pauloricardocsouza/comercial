@@ -95,7 +95,7 @@ function renderEstoqueNovo(){
            + '<div class="page-body">';
 
   html += '<div style="background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:10px 14px;margin-bottom:14px;font-size:12px;color:var(--text-dim);">'
-       + '<strong>Retrato:</strong> '+esc(meta.data_referencia||r.data_ref||'?')+' · '
+       + '<strong>Retrato:</strong> '+fDt(meta.data_referencia||r.data_ref)+' · '
        + '<strong>'+fI(r.skus_total||0)+'</strong> SKUs'
        + (r.markup_pct != null ? ' · Markup médio <strong>'+fP(r.markup_pct)+'</strong>' : '')
        + '</div>';
@@ -107,8 +107,13 @@ function renderEstoqueNovo(){
        +    '<div style="height:280px;margin-top:8px;"><canvas id="c-est-status"></canvas></div>'
        + '</div>';
 
-  html += '<div class="cc"><div class="cct">Estoque por departamento (a custo)</div>'
-       +    '<div style="height:280px;margin-top:8px;"><canvas id="c-est-dept-novo"></canvas></div>'
+  // Estoque por departamento · tabela hierárquica drill-down
+  // Estrutura: agregar por (depto.cod) → (secao.cod) → (categoria.cod)
+  // a partir de E.produtos. Mostra Estoque a custo + Estoque a preço de venda.
+  // O usuário expande um depto pra ver suas seções e cada seção pra ver categorias.
+  html += '<div class="cc"><div class="cct">Estoque por departamento</div>'
+       +    '<div class="ccs">Clique no departamento para ver seções, depois categorias. Valor em <strong>custo</strong> e em <strong>preço de venda</strong>.</div>'
+       +    '<div id="est-hier-table" style="margin-top:10px;"></div>'
        + '</div>';
 
   const skus = (E.produtos || []).slice().sort(function(a,b){return (b.estoque?b.estoque.vl_custo:0) - (a.estoque?a.estoque.vl_custo:0);});
@@ -166,12 +171,108 @@ function renderEstoqueNovo(){
       plugins:{legend:{position:'right',labels:{padding:8,usePointStyle:true,boxWidth:8,font:{size:10}}},
                tooltip:{callbacks:{label:function(ctx){return ctx.label+': '+fK(ctx.raw)+(teCusto>0?' ('+fP(ctx.raw/teCusto*100)+')':'');}}}}}});
 
-  const dpSorted = pd.slice().sort(function(a,b){return b.vl_custo-a.vl_custo;});
-  mkC('c-est-dept-novo',{type:'bar',
-    data:{labels:dpSorted.map(function(d){return d.nome;}),datasets:[{label:'Vl custo',data:dpSorted.map(function(d){return d.vl_custo;}),backgroundColor:_PAL.ac+'CC',borderRadius:4}]},
-    options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,
-      plugins:{legend:{display:false},tooltip:{callbacks:{label:function(ctx){return fK(ctx.raw);}}}},
-      scales:{x:{ticks:{callback:function(v){return fAbbr(v);}}},y:{grid:{display:false},ticks:{font:{size:10}}}}}});
+  // ─── Tabela hierárquica de estoque (depto → seção → categoria) ───
+  // Pré-calcula a hierarquia uma vez. Estado de expansão fica em window._estHierExp.
+  if(!window._estHierExp) window._estHierExp = {deptos:new Set(), secoes:new Set()};
+  const _hier = (function(){
+    const deptos = new Map();
+    (E.produtos||[]).forEach(function(p){
+      if(!p.estoque) return;
+      const d = p.depto || {cod:'?',nome:'(sem depto)'};
+      const s = p.secao || {cod:'?',nome:'(sem seção)'};
+      const c = p.categoria || {cod:'?',nome:'(sem categoria)'};
+      if(!deptos.has(d.cod)) deptos.set(d.cod, {cod:d.cod, nome:d.nome, vl_custo:0, vl_preco:0, qt:0, skus:0, secoes:new Map()});
+      const dN = deptos.get(d.cod);
+      dN.vl_custo += p.estoque.vl_custo||0;
+      dN.vl_preco += p.estoque.vl_preco||0;
+      dN.qt       += p.estoque.qt||0;
+      dN.skus     += 1;
+      if(!dN.secoes.has(s.cod)) dN.secoes.set(s.cod, {cod:s.cod, nome:s.nome, vl_custo:0, vl_preco:0, qt:0, skus:0, cats:new Map()});
+      const sN = dN.secoes.get(s.cod);
+      sN.vl_custo += p.estoque.vl_custo||0;
+      sN.vl_preco += p.estoque.vl_preco||0;
+      sN.qt       += p.estoque.qt||0;
+      sN.skus     += 1;
+      if(!sN.cats.has(c.cod)) sN.cats.set(c.cod, {cod:c.cod, nome:c.nome, vl_custo:0, vl_preco:0, qt:0, skus:0});
+      const cN = sN.cats.get(c.cod);
+      cN.vl_custo += p.estoque.vl_custo||0;
+      cN.vl_preco += p.estoque.vl_preco||0;
+      cN.qt       += p.estoque.qt||0;
+      cN.skus     += 1;
+    });
+    return Array.from(deptos.values()).sort(function(a,b){return b.vl_custo-a.vl_custo;});
+  })();
+
+  function _renderEstHier(){
+    const exp = window._estHierExp;
+    let h = '<table class="t" style="font-size:12px;"><thead><tr>'
+          + '<th class="L">Departamento / Seção / Categoria</th>'
+          + '<th>SKUs</th>'
+          + '<th>Estoque (custo)</th>'
+          + '<th>Estoque (preço venda)</th>'
+          + '<th>Markup</th>'
+          + '</tr></thead><tbody>';
+    _hier.forEach(function(d){
+      const dExp = exp.deptos.has(d.cod);
+      const dMk = d.vl_custo>0 ? ((d.vl_preco-d.vl_custo)/d.vl_custo*100) : 0;
+      h += '<tr style="cursor:pointer;background:var(--surface-2);font-weight:600;" data-est-depto="'+esc(d.cod)+'">'
+        +    '<td class="L"><span style="display:inline-block;width:14px;text-align:center;color:var(--accent);">'+(dExp?'▼':'▶')+'</span> '+esc(d.nome)+'</td>'
+        +    '<td>'+fI(d.skus)+'</td>'
+        +    '<td class="val-strong">'+fK(d.vl_custo)+'</td>'
+        +    '<td>'+fK(d.vl_preco)+'</td>'
+        +    '<td>'+fP(dMk)+'</td>'
+        +  '</tr>';
+      if(dExp){
+        const secs = Array.from(d.secoes.values()).sort(function(a,b){return b.vl_custo-a.vl_custo;});
+        secs.forEach(function(s){
+          const sKey = d.cod+'/'+s.cod;
+          const sExp = exp.secoes.has(sKey);
+          const sMk = s.vl_custo>0 ? ((s.vl_preco-s.vl_custo)/s.vl_custo*100) : 0;
+          h += '<tr style="cursor:pointer;" data-est-secao="'+esc(sKey)+'">'
+            +    '<td class="L" style="padding-left:32px;"><span style="display:inline-block;width:14px;text-align:center;color:var(--text-muted);">'+(sExp?'▼':'▶')+'</span> '+esc(s.nome)+'</td>'
+            +    '<td>'+fI(s.skus)+'</td>'
+            +    '<td>'+fK(s.vl_custo)+'</td>'
+            +    '<td>'+fK(s.vl_preco)+'</td>'
+            +    '<td>'+fP(sMk)+'</td>'
+            +  '</tr>';
+          if(sExp){
+            const cats = Array.from(s.cats.values()).sort(function(a,b){return b.vl_custo-a.vl_custo;});
+            cats.forEach(function(c){
+              const cMk = c.vl_custo>0 ? ((c.vl_preco-c.vl_custo)/c.vl_custo*100) : 0;
+              h += '<tr style="color:var(--text-muted);">'
+                +    '<td class="L" style="padding-left:60px;font-size:11.5px;">└ '+esc(c.nome)+'</td>'
+                +    '<td>'+fI(c.skus)+'</td>'
+                +    '<td>'+fK(c.vl_custo)+'</td>'
+                +    '<td>'+fK(c.vl_preco)+'</td>'
+                +    '<td>'+fP(cMk)+'</td>'
+                +  '</tr>';
+            });
+          }
+        });
+      }
+    });
+    h += '</tbody></table>';
+    const cont = document.getElementById('est-hier-table');
+    if(cont){
+      cont.innerHTML = h;
+      cont.querySelectorAll('[data-est-depto]').forEach(function(tr){
+        tr.addEventListener('click', function(){
+          const k = tr.getAttribute('data-est-depto');
+          if(exp.deptos.has(k)) exp.deptos.delete(k); else exp.deptos.add(k);
+          _renderEstHier();
+        });
+      });
+      cont.querySelectorAll('[data-est-secao]').forEach(function(tr){
+        tr.addEventListener('click', function(ev){
+          ev.stopPropagation();
+          const k = tr.getAttribute('data-est-secao');
+          if(exp.secoes.has(k)) exp.secoes.delete(k); else exp.secoes.add(k);
+          _renderEstHier();
+        });
+      });
+    }
+  }
+  _renderEstHier();
 }
 
 // ════════════════════════════════════════════════════════════════════════
@@ -279,58 +380,30 @@ function renderExcessoNovo(){
   const metodo = _getMetodoExcesso();
   const ultimoMesInfo = (E.meta && E.meta.ultimo_mes_vendas) || null;
 
-  // Quando método é "maior_mes", recalcula giro_dia e status pra cada produto
-  // Não modifica o objeto original — cria campos auxiliares __giro_dia_novo, __status_novo
+  // Quando método é "maior_mes", recalcula APENAS giro_dia (cobertura).
+  // Status PARADO/MORTO/CRITICO sempre vem do ETL — são fatos sobre o produto
+  // (vendeu ou não vendeu, há quanto tempo) e não dependem do método de cálculo de giro.
+  // O método só afeta a métrica de cobertura (quantos dias o estoque vai durar)
+  // e por consequência quais SKUs entram na lista de "excesso por giro".
   if(metodo === 'maior_mes'){
     produtos.forEach(function(p){
       const r = _calcularGiroMaiorMes(p, ultimoMesInfo);
-      if(!r){ p.__giro_dia_novo = p.giro_dias || 0; p.__status_novo = p.status; p.__calc_novo = null; return; }
+      if(!r){ p.__giro_dia_novo = p.giro_dias || 0; p.__calc_novo = null; return; }
       p.__calc_novo = r;
-      // Calcula novo giro_dias (dias de cobertura): estoque_qt / giro_dia
       const estQt = (p.estoque && p.estoque.qt) || 0;
       if(r.giro_dia > 0){
         p.__giro_dia_novo = estQt / r.giro_dia;
       } else {
-        p.__giro_dia_novo = estQt > 0 ? 9999 : 0; // sem venda mas com estoque = morto
+        p.__giro_dia_novo = estQt > 0 ? 9999 : 0;
       }
-      // Status: PARADO/MORTO dependem só de "vendeu ou não vendeu nos últimos N meses",
-      // independente do método de cálculo. CRÍTICO/ATIVO usam giro/cobertura.
-      // Verifica se houve venda nos últimos 90/180 dias usando vendas_por_mes
-      const vpm = p.vendas_por_mes || [];
-      const ultY = (ultimoMesInfo && ultimoMesInfo.ym) || '';
-      function ymPrevSimple(ym, n){
-        const ano = parseInt(ym.substring(0,4),10);
-        const mes = parseInt(ym.substring(5,7),10);
-        let m = mes - n; let a = ano;
-        while(m <= 0){ m += 12; a -= 1; }
-        return a + '-' + (m<10?'0':'') + m;
-      }
-      // Conjunto dos últimos 3 meses (≈90 dias) e dos últimos 6 (≈180 dias)
-      const ultimos3 = ultY ? new Set([ultY, ymPrevSimple(ultY,1), ymPrevSimple(ultY,2)]) : new Set();
-      const ultimos6 = ultY ? new Set([
-        ultY, ymPrevSimple(ultY,1), ymPrevSimple(ultY,2),
-        ymPrevSimple(ultY,3), ymPrevSimple(ultY,4), ymPrevSimple(ultY,5)
-      ]) : new Set();
-      let venda3 = 0, venda6 = 0;
-      vpm.forEach(function(v){
-        if(ultimos3.has(v.ym)) venda3 += v.qt || 0;
-        if(ultimos6.has(v.ym)) venda6 += v.qt || 0;
-      });
-      const g = p.__giro_dia_novo;
-      if(estQt <= 0)                       p.__status_novo = 'MORTO';
-      else if(venda6 <= 0)                 p.__status_novo = 'MORTO';   // sem venda em 180d
-      else if(venda3 <= 0)                 p.__status_novo = 'PARADO';  // sem venda em 90d
-      else if(g > 90)                      p.__status_novo = 'CRITICO'; // vende mas cobertura alta
-      else                                 p.__status_novo = 'ATIVO';
     });
   } else {
-    // Limpa cálculos antigos pra não confundir
-    produtos.forEach(function(p){ p.__giro_dia_novo = null; p.__status_novo = null; p.__calc_novo = null; });
+    produtos.forEach(function(p){ p.__giro_dia_novo = null; p.__calc_novo = null; });
   }
 
-  // Função pra obter giro_dias e status conforme método
+  // Status SEMPRE vem do ETL (estável entre métodos)
   function _giro(p){ return metodo === 'maior_mes' ? (p.__giro_dia_novo||0) : (p.giro_dias||0); }
-  function _status(p){ return metodo === 'maior_mes' ? (p.__status_novo||p.status) : p.status; }
+  function _status(p){ return p.status; }
 
   const excessos = produtos.filter(function(p){
     const st = _status(p);
@@ -385,12 +458,8 @@ function renderExcessoNovo(){
          +   'Se vencedor é mês fechado, divide por 30 dias. Se é o mês atual, divide pelos dias corridos. '
          +   'Mês atual com menos de 5 dias é ignorado.'
          + '</div>';
-  } else {
-    html += '<div style="background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:10px 14px;margin-bottom:14px;font-size:12px;color:var(--text-dim);">'
-         + '<strong>Critério:</strong> SKUs com status PARADO, MORTO, CRITICO, ou giro maior que 180 dias. '
-         + 'Retrato de '+esc(E.meta?E.meta.data_referencia:'?')+'.'
-         + '</div>';
   }
+  // (banner antigo "Critério: SKUs com status PARADO..." removido conforme solicitado)
 
   const pctSku = skusTotal>0?(excessos.length/skusTotal*100):0;
   const pctVl = vlCustoTotal>0?(totVlCusto/vlCustoTotal*100):null;
@@ -563,21 +632,30 @@ function renderABCNovo(){
   if(!cont || !E) return;
   const produtos = E.produtos || [];
 
-  // YMs disponíveis (vindos de vendas_por_mes)
+  // YMs disponíveis (vindos de vendas_por_mes) — RESTRINGE A 2026
   const ymsSet = {};
   produtos.forEach(function(p){
-    (p.vendas_por_mes||[]).forEach(function(v){ ymsSet[v.ym] = true; });
+    (p.vendas_por_mes||[]).forEach(function(v){
+      if(v.ym && v.ym.indexOf('2026') === 0) ymsSet[v.ym] = true;
+    });
   });
   const ymsTodos = Object.keys(ymsSet).sort();
 
-  // Se _abcMesesSel é null, considera todos. Se array vazio, também todos (defensivo).
-  const mesesAtivos = (Array.isArray(_abcMesesSel) && _abcMesesSel.length) ? _abcMesesSel : ymsTodos;
-  const mesesSet = new Set(mesesAtivos);
+  // Se _abcMesesSel é null, considera todos os meses de 2026.
+  const mesesAtivos = (Array.isArray(_abcMesesSel) && _abcMesesSel.length)
+    ? _abcMesesSel.filter(function(ym){return ymsSet[ym];}) // só aceita meses de 2026
+    : ymsTodos;
+  const mesesSet = new Set(mesesAtivos.length ? mesesAtivos : ymsTodos);
 
   // Calcula ranking de acordo com o modo
+  // No modo "valor" agora também acumulamos só os meses selecionados de 2026.
+  // Limitação: vendas_por_mes só traz QT (sem valor). Pra "valor" usamos
+  // p.vendas.valor (12m total) — mas se o usuário filtrar meses, recalculamos
+  // proporcionalmente: valor_estimado = vendas.valor * (qt_periodo / qt_12m).
+  // Isso é uma estimativa enquanto o ETL não exporta valor por mês.
   let comVenda, ordenado, totalGeral;
   if(_abcModo === 'qt'){
-    // Ranking por quantidade vendida nos meses selecionados
+    // Ranking por quantidade vendida nos meses selecionados (de 2026)
     comVenda = produtos.map(function(p){
       const qtPeriodo = (p.vendas_por_mes||[]).reduce(function(s,v){
         return s + (mesesSet.has(v.ym) ? (v.qt||0) : 0);
@@ -593,14 +671,26 @@ function renderABCNovo(){
       x._classe = x._pctAcum<=80?'A':x._pctAcum<=95?'B':'C';
     });
   } else {
-    // Modo valor (original): por faturamento total (12m fechado, ignora seleção de meses)
-    comVenda = produtos.filter(function(p){return p.vendas && p.vendas.valor>0;})
-                       .map(function(p){return {p:p};});
-    ordenado = comVenda.slice().sort(function(a,b){return (b.p.vendas.valor||0) - (a.p.vendas.valor||0);});
-    totalGeral = ordenado.reduce(function(t,x){return t+(x.p.vendas.valor||0);},0);
+    // Modo valor (faturamento). Estima valor 2026 a partir da proporção
+    // qt_periodo / qt_12m_total * vendas.valor.
+    comVenda = produtos.map(function(p){
+      const vds = p.vendas || {};
+      const valor12m = vds.valor || 0;
+      const qt12m = vds.qt || 0;
+      const qtPeriodo = (p.vendas_por_mes||[]).reduce(function(s,v){
+        return s + (mesesSet.has(v.ym) ? (v.qt||0) : 0);
+      }, 0);
+      let valEstimado = 0;
+      if(qt12m > 0 && valor12m > 0){
+        valEstimado = valor12m * (qtPeriodo / qt12m);
+      }
+      return {p:p, _valEstimado:valEstimado, _qtPeriodo:qtPeriodo};
+    }).filter(function(x){return x._valEstimado > 0;});
+    ordenado = comVenda.slice().sort(function(a,b){return b._valEstimado - a._valEstimado;});
+    totalGeral = ordenado.reduce(function(t,x){return t + x._valEstimado;}, 0);
     let acum = 0;
     ordenado.forEach(function(x){
-      acum += x.p.vendas.valor;
+      acum += x._valEstimado;
       x._pctAcum = totalGeral>0?(acum/totalGeral*100):0;
       x._classe = x._pctAcum<=80?'A':x._pctAcum<=95?'B':'C';
     });
@@ -614,11 +704,12 @@ function renderABCNovo(){
   const vlA = sumEst(cA), vlB = sumEst(cB), vlC = sumEst(cC);
 
   const isQt = _abcModo === 'qt';
+  const labelMes = (mesesAtivos.length === ymsTodos.length)
+    ? 'todos os meses de 2026'
+    : mesesAtivos.length+' de '+ymsTodos.length+' meses de 2026';
   const subTitleSufixo = isQt
-    ? (mesesAtivos.length === ymsTodos.length
-        ? ' · ranking por quantidade · todos os meses'
-        : ' · ranking por quantidade · '+mesesAtivos.length+' mês(es) selecionado(s)')
-    : ' · ranking por faturamento (12m total)';
+    ? ' · ranking por quantidade · '+labelMes
+    : ' · ranking por faturamento estimado · '+labelMes;
 
   let html = '<div class="ph"><div class="pk">Compras</div><h2>Curva ABC · '+fI(comVenda.length)+' SKUs com venda<span style="font-size:11px;color:var(--text-muted);font-weight:400;display:block;margin-top:2px;">'+esc(subTitleSufixo)+'</span></h2></div>'
            + '<div class="ph-sep"></div>'
@@ -636,26 +727,29 @@ function renderABCNovo(){
   html += '</div>';
   html += '</div>';
 
-  // Filtro de meses (só ativo no modo qt)
-  if(isQt){
-    html += '<div style="display:flex;align-items:center;gap:8px;flex:1;min-width:280px;">';
-    html += '<span style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;font-weight:700;">Meses:</span>';
-    html += '<button id="abc-meses-btn" style="padding:6px 12px;font-size:12px;border:1px solid var(--border-strong);border-radius:5px;cursor:pointer;background:var(--surface);font-weight:600;">';
-    if(mesesAtivos.length === ymsTodos.length){
-      html += 'Todos os '+ymsTodos.length+' meses';
-    } else {
-      html += fI(mesesAtivos.length)+' de '+ymsTodos.length+' meses';
-    }
-    html += ' ▼</button>';
-    if(mesesAtivos.length !== ymsTodos.length){
-      html += '<button id="abc-meses-clear" style="padding:5px 8px;font-size:11px;border:1px solid var(--border);border-radius:4px;cursor:pointer;background:transparent;color:var(--text-muted);">Limpar</button>';
-    }
-    html += '</div>';
-  } else {
-    html += '<div style="font-size:11.5px;color:var(--text-dim);font-style:italic;">No modo Faturamento, o filtro de mês não está disponível porque os dados de venda mensal só têm quantidade — não trazem valor monetário. Use o modo Quantidade pra filtrar por mês.</div>';
+  // Filtro de meses (sempre disponível agora, em ambos os modos, modelo CV)
+  html += '<div style="display:flex;align-items:center;gap:8px;flex:1;min-width:280px;flex-wrap:wrap;">';
+  html += '<span style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;font-weight:700;">Período:</span>';
+  ymsTodos.forEach(function(ym){
+    const ativo = mesesSet.has(ym);
+    html += '<button class="abc-mes-btn" data-ym="'+esc(ym)+'" style="padding:5px 10px;font-size:11.5px;border:1px solid var(--border-strong);border-radius:5px;cursor:pointer;'
+         +   (ativo?'background:var(--accent);color:white;':'background:var(--surface);color:var(--text);')
+         + 'font-weight:600;">'+esc(_ymToLabel(ym))+'</button>';
+  });
+  if(mesesAtivos.length !== ymsTodos.length){
+    html += '<button id="abc-meses-clear" style="padding:5px 8px;font-size:11px;border:1px solid var(--border);border-radius:4px;cursor:pointer;background:transparent;color:var(--text-muted);">Limpar</button>';
   }
-
   html += '</div>';
+  html += '</div>';
+
+  // Aviso sobre estimativa no modo Faturamento
+  if(!isQt){
+    html += '<div style="margin-top:10px;font-size:11.5px;color:var(--text-dim);font-style:italic;">'
+         +   'Modo Faturamento: o ETL atual exporta valor de venda apenas no agregado dos 12 meses. '
+         +   'Para acumular só 2026, o sistema estima o valor proporcional pela quantidade vendida no período. '
+         +   'É uma aproximação — para números exatos por mês, use o modo Quantidade.'
+         + '</div>';
+  }
   html += '</div>';
 
   // ── Card de critério ──
@@ -671,7 +765,7 @@ function renderABCNovo(){
        +    '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-top:10px;">';
   [['A',cA,vlA,_PAL.ok],['B',cB,vlB,_PAL.hl],['C',cC,vlC,_PAL.dn]].forEach(function(t){
     const cls = t[0], arr = t[1], vl = t[2], color = t[3];
-    const tot = arr.reduce(function(s,x){return s + (isQt ? x._qtPeriodo : (x.p.vendas.valor||0));}, 0);
+    const tot = arr.reduce(function(s,x){return s + (isQt ? x._qtPeriodo : (x._valEstimado||0));}, 0);
     const pctSku = comVenda.length>0?(arr.length/comVenda.length*100):0;
     const pctTot = totalGeral>0?(tot/totalGeral*100):0;
     html += '<div style="background:var(--surface-2);border-left:4px solid '+color+';padding:12px 14px;border-radius:6px;">'
@@ -733,19 +827,26 @@ function renderABCNovo(){
       const novoModo = btn.getAttribute('data-modo');
       if(novoModo === _abcModo) return;
       _abcModo = novoModo;
-      // Ao trocar modo, reseta seleção de meses
-      _abcMesesSel = null;
       renderABCNovo();
     });
   });
 
-  // Bind seletor de meses (só no modo qt)
-  if(isQt){
-    const btnMeses = document.getElementById('abc-meses-btn');
-    if(btnMeses) btnMeses.addEventListener('click', function(){ _abcAbrirSeletorMeses(ymsTodos); });
-    const btnClear = document.getElementById('abc-meses-clear');
-    if(btnClear) btnClear.addEventListener('click', function(){ _abcMesesSel = null; renderABCNovo(); });
-  }
+  // Bind toggle de mês (botões inline modelo CV)
+  document.querySelectorAll('.abc-mes-btn').forEach(function(btn){
+    btn.addEventListener('click', function(){
+      const ym = btn.getAttribute('data-ym');
+      // Se _abcMesesSel é null, considera todos selecionados; ao clicar, deseleciona o ym
+      const atual = (_abcMesesSel && _abcMesesSel.length) ? _abcMesesSel.slice() : ymsTodos.slice();
+      const idx = atual.indexOf(ym);
+      if(idx >= 0) atual.splice(idx, 1);
+      else atual.push(ym);
+      // Se acabou deselecionando tudo, volta pra todos
+      _abcMesesSel = atual.length === 0 ? null : atual;
+      renderABCNovo();
+    });
+  });
+  const btnClear = document.getElementById('abc-meses-clear');
+  if(btnClear) btnClear.addEventListener('click', function(){ _abcMesesSel = null; renderABCNovo(); });
 
   const top100 = ordenado.slice(0, 100);
   mkC('c-abc-pareto',{
@@ -753,7 +854,7 @@ function renderABCNovo(){
     data:{
       labels:top100.map(function(_,i){return (i+1).toString();}),
       datasets:[
-        {label:isQt?'Quantidade':'Faturamento (R$)',type:'bar',data:top100.map(function(x){return isQt?x._qtPeriodo:x.p.vendas.valor;}),
+        {label:isQt?'Quantidade':'Faturamento estimado (R$)',type:'bar',data:top100.map(function(x){return isQt?x._qtPeriodo:x._valEstimado;}),
          backgroundColor:top100.map(function(x){return x._classe==='A'?_PAL.ok+'CC':x._classe==='B'?_PAL.hl+'CC':_PAL.dn+'CC';}),
          yAxisID:'y'},
         {label:'% acumulado',type:'line',data:top100.map(function(x){return x._pctAcum;}),
@@ -857,7 +958,152 @@ function _abcAbrirSeletorMeses(ymsTodos){
 // Agrega E.produtos por fornecedor → compras 12m, vendas 16m, margem real,
 // vl em estoque, devoluções (se Dev disponível).
 // ════════════════════════════════════════════════════════════════════════
-let _fornAggCache = null; // cache da agregação (recalcula só quando dados mudam)
+let _fornAggCache = null; // cache da agregação 12m (recalcula só quando dados mudam)
+let _fornFiltroMeses = null; // null = 2026 inteiro · array = só esses meses 2026
+
+/**
+ * Agrega fornecedores filtrando por período. Usa o cubo (Cu) para reagregar
+ * dados por (ym × fornecedor) tanto de vendas quanto de compras.
+ * Retorna array com a mesma estrutura de _fornAgregar mas restrito aos meses.
+ *
+ * Se o cubo não estiver disponível (ou não tiver as dimensões necessárias),
+ * cai pro _fornAgregar() padrão (12m).
+ */
+function _fornAgregarPorPeriodo(mesesSet){
+  if(!Cu) return _fornAgregar();
+  // Localiza fato_vendas e fato_compras + campos
+  let fv, vCampos, fc, cCampos;
+  if(Cu.fatos && Cu.fatos.vendas){
+    fv = Cu.fatos.vendas.linhas || []; vCampos = Cu.fatos.vendas.campos || [];
+  } else if(Cu.fato_vendas){
+    fv = Cu.fato_vendas.linhas || []; vCampos = Cu.fato_vendas.campos || [];
+  } else { return _fornAgregar(); }
+  if(Cu.fatos && Cu.fatos.compras){
+    fc = Cu.fatos.compras.linhas || []; cCampos = Cu.fatos.compras.campos || [];
+  } else if(Cu.fato_compras){
+    fc = Cu.fato_compras.linhas || []; cCampos = Cu.fato_compras.campos || [];
+  } else { return _fornAgregar(); }
+
+  const idx = function(arr,n){var i = arr.indexOf(n); return i;};
+  const vYm   = idx(vCampos,'ym');
+  const vForn = idx(vCampos,'forn');
+  const vLiq  = idx(vCampos,'v_liq');
+  const vLuc  = idx(vCampos,'v_luc');
+  const vQt   = idx(vCampos,'v_qt');
+  const cYm   = idx(cCampos,'ym');
+  const cForn = idx(cCampos,'forn');
+  const cVal  = idx(cCampos,'c_val');
+  const cQt   = idx(cCampos,'c_qt');
+  const cNfs  = idx(cCampos,'c_nfs');
+  if(vYm<0 || vForn<0 || cYm<0 || cForn<0) return _fornAgregar();
+
+  // dim de fornecedores pra resolver nome
+  let dimForn = {};
+  if(Cu.dim && Cu.dim.forn){
+    (Cu.dim.forn || []).forEach(function(f){ dimForn[f.cod] = f.nome; });
+  } else if(Cu.dimensoes && Cu.dimensoes.fornecedor){
+    (Cu.dimensoes.fornecedor.items || []).forEach(function(f){ dimForn[f.cod] = f.nome; });
+  }
+
+  // Cruza com SKU→fornecedor do estoque pra capturar dados de estoque/markup
+  const map = new Map();
+  function getF(cod){
+    if(!map.has(cod)){
+      map.set(cod, {cod:cod, nome:dimForn[cod]||'?', skus:0,
+        v_compra:0, qt_compra:0, nfs_compra:0, ult_compra:'',
+        v_venda:0, lucro:0, qt_venda:0,
+        vl_est_custo:0, vl_est_preco:0,
+        skus_paralisados:0, skus_ativos:0,
+        dev_valor:0, dev_qt:0, dev_nfs:0});
+    }
+    return map.get(cod);
+  }
+
+  // Agrega vendas filtradas por meses
+  fv.forEach(function(l){
+    if(!mesesSet.has(l[vYm])) return;
+    const fcod = l[vForn];
+    if(fcod == null) return;
+    const a = getF(fcod);
+    a.v_venda  += l[vLiq] || 0;
+    a.lucro    += l[vLuc] || 0;
+    a.qt_venda += l[vQt]  || 0;
+  });
+
+  // Agrega compras filtradas
+  fc.forEach(function(l){
+    if(!mesesSet.has(l[cYm])) return;
+    const fcod = l[cForn];
+    if(fcod == null) return;
+    const a = getF(fcod);
+    a.v_compra   += l[cVal] || 0;
+    a.qt_compra  += l[cQt]  || 0;
+    a.nfs_compra += l[cNfs] || 0;
+  });
+
+  // Cruza com estoque (que é "snapshot atual", não tem mês — sempre incluído)
+  // pra ter SKUs cadastrados, valor em estoque, status etc
+  const produtos = (E && E.produtos) || [];
+  produtos.forEach(function(p){
+    const f = p.fornecedor || {};
+    if(f.cod == null) return;
+    if(!map.has(f.cod)){
+      // Fornecedor que tem cadastro mas nada de venda/compra no período
+      return; // ignora — só queremos quem aparece no período
+    }
+    const a = getF(f.cod);
+    a.skus += 1;
+    if(['ATIVO','CRITICO'].indexOf(p.status)>=0) a.skus_ativos += 1;
+    if(['PARADO','MORTO'].indexOf(p.status)>=0) a.skus_paralisados += 1;
+    const e = p.estoque || {};
+    a.vl_est_custo += e.vl_custo || 0;
+    a.vl_est_preco += e.vl_preco || 0;
+  });
+
+  // Devoluções: o JSON Dev não tem mês discriminado por linha — usa o total como proxy
+  // Quando o filtro é 2026 inteiro, é o total real. Quando é mês específico, é uma aproximação.
+  // (Pra ter exato, o ETL de Dev precisaria expor por mês. Hoje não expõe.)
+  const devMap = new Map();
+  if(typeof Dev !== 'undefined' && Dev && Dev.por_fornecedor){
+    Dev.por_fornecedor.forEach(function(d){ devMap.set(d.cod, d); });
+  }
+
+  const arr = [];
+  map.forEach(function(a){
+    a.marg = a.v_venda > 0 ? (a.lucro/a.v_venda*100) : 0;
+    a.markup_est = a.vl_est_custo > 0 ? ((a.vl_est_preco - a.vl_est_custo)/a.vl_est_custo*100) : 0;
+    const dev = devMap.get(a.cod);
+    a.dev_valor = dev ? dev.valor : 0;
+    a.dev_qt    = dev ? dev.qt    : 0;
+    a.dev_nfs   = dev ? dev.nfs   : 0;
+    a.pct_devol = a.v_compra > 0 ? (a.dev_valor/a.v_compra*100) : 0;
+    a.v_compra_liq = Math.max(0, a.v_compra - a.dev_valor);
+    a.qt_compra_liq = Math.max(0, a.qt_compra - a.dev_qt);
+    arr.push(a);
+  });
+  return arr;
+}
+
+/**
+ * Retorna os meses YM disponíveis em 2026 baseado no cubo.
+ */
+function _fornYmsDisponiveis2026(){
+  if(!Cu) return [];
+  let fv, campos;
+  if(Cu.fatos && Cu.fatos.vendas){
+    fv = Cu.fatos.vendas.linhas || []; campos = Cu.fatos.vendas.campos || [];
+  } else if(Cu.fato_vendas){
+    fv = Cu.fato_vendas.linhas || []; campos = Cu.fato_vendas.campos || [];
+  } else { return []; }
+  const idxYm = campos.indexOf('ym');
+  if(idxYm < 0) return [];
+  const set = {};
+  fv.forEach(function(l){
+    const ym = l[idxYm];
+    if(ym && ym.indexOf('2026') === 0) set[ym] = true;
+  });
+  return Object.keys(set).sort();
+}
 let _fornFiltro = '';     // filtro de busca
 
 function _fornAgregar(){
@@ -926,7 +1172,19 @@ function renderFornecedoresNovo(){
   const cont = document.getElementById('page-fornecedores');
   if(!cont || !E) return;
 
-  const fornAll = _fornAgregar();
+  const ymsTodos = _fornYmsDisponiveis2026();
+  // Se não há dados de 2026 no cubo, cai pra agregação 12m antiga
+  const usarPeriodo = ymsTodos.length > 0;
+  const mesesAtivos = usarPeriodo
+    ? ((Array.isArray(_fornFiltroMeses) && _fornFiltroMeses.length)
+        ? _fornFiltroMeses.filter(function(y){return ymsTodos.indexOf(y)>=0;})
+        : ymsTodos)
+    : [];
+  const mesesSet = new Set(mesesAtivos);
+
+  const fornAll = usarPeriodo
+    ? _fornAgregarPorPeriodo(mesesSet)
+    : _fornAgregar();
   const fornAtivos = fornAll.filter(function(f){return f.v_compra>0;});
   const totCompra = fornAtivos.reduce(function(s,f){return s+f.v_compra;},0);
   const totVenda  = fornAll.reduce(function(s,f){return s+f.v_venda;},0);
@@ -945,15 +1203,42 @@ function renderFornecedoresNovo(){
            + '<div class="ph-sep"></div>'
            + '<div class="page-body">';
 
-  // Banner explicativo
-  const periodoCompra = (E.meta && E.meta.periodo_vendas) ? E.meta.periodo_vendas.meses+' meses' : '12 meses';
-  html += '<div style="background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:10px 14px;margin-bottom:14px;font-size:12px;color:var(--text-dim);line-height:1.5;">'
-       + '<strong>Período:</strong> compras 12 meses · vendas '+periodoCompra+' · '
-       + '<strong>'+fI(fornAll.length)+'</strong> fornecedores cadastrados · '
-       + '<strong>'+fI(fornAtivos.length)+'</strong> com compras no período · '
-       + 'Retrato estoque: '+esc((E.meta&&E.meta.data_referencia)||'?')
-       + '<br><span style="color:var(--text-muted);font-size:11px;">Filtro por mês não disponível: o ETL atual exporta vendas mensais só em quantidade (sem valor) e compras só em agregado anual. Para análises por mês específico, use a Análise Dinâmica.</span>'
-       + '</div>';
+  // Banner explicativo + filtro de meses (modelo CV)
+  if(usarPeriodo){
+    const labelMes = (mesesAtivos.length === ymsTodos.length)
+      ? 'todos os meses de 2026'
+      : mesesAtivos.length+' de '+ymsTodos.length+' meses';
+    html += '<div class="cc" style="padding:12px 14px;margin-bottom:14px;">';
+    html += '<div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;">';
+    html += '<span style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;font-weight:700;">Período:</span>';
+    ymsTodos.forEach(function(ym){
+      const ativo = mesesSet.has(ym);
+      html += '<button class="forn-mes-btn" data-ym="'+esc(ym)+'" style="padding:5px 10px;font-size:11.5px;border:1px solid var(--border-strong);border-radius:5px;cursor:pointer;'
+           +   (ativo?'background:var(--accent);color:white;':'background:var(--surface);color:var(--text);')
+           + 'font-weight:600;">'+esc(_ymToLabel(ym))+'</button>';
+    });
+    if(mesesAtivos.length !== ymsTodos.length){
+      html += '<button id="forn-meses-clear" style="padding:5px 8px;font-size:11px;border:1px solid var(--border);border-radius:4px;cursor:pointer;background:transparent;color:var(--text-muted);">Limpar</button>';
+    }
+    html += '</div>';
+    html += '<div style="margin-top:10px;font-size:12px;color:var(--text-dim);">'
+         +   '<strong>'+fI(fornAll.length)+'</strong> fornecedores no período · '
+         +   '<strong>'+fI(fornAtivos.length)+'</strong> com compras · '+esc(labelMes)+' · '
+         +   'Retrato estoque: '+fDt(E.meta && E.meta.data_referencia)
+         + '</div>';
+    html += '<div style="margin-top:6px;font-size:11px;color:var(--text-muted);font-style:italic;">'
+         +   'Devoluções não são filtradas por mês (o ETL de devoluções não exporta detalhe mensal por fornecedor) — o valor exibido é o total do período disponível.'
+         + '</div>';
+    html += '</div>';
+  } else {
+    const periodoCompra = (E.meta && E.meta.periodo_vendas) ? E.meta.periodo_vendas.meses+' meses' : '12 meses';
+    html += '<div style="background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:10px 14px;margin-bottom:14px;font-size:12px;color:var(--text-dim);line-height:1.5;">'
+         + '<strong>Período:</strong> compras 12 meses · vendas '+periodoCompra+' · '
+         + '<strong>'+fI(fornAll.length)+'</strong> fornecedores cadastrados · '
+         + '<strong>'+fI(fornAtivos.length)+'</strong> com compras no período · '
+         + 'Retrato estoque: '+fDt(E.meta && E.meta.data_referencia)
+         + '</div>';
+  }
 
   html += '<div id="kg-forn-novo"></div>';
 
@@ -1085,6 +1370,24 @@ function renderFornecedoresNovo(){
       _fornRenderTabela(filtrado);
     });
   }
+
+  // Filtro de meses (modelo CV)
+  document.querySelectorAll('.forn-mes-btn').forEach(function(btn){
+    btn.addEventListener('click', function(){
+      const ym = btn.getAttribute('data-ym');
+      const atual = (_fornFiltroMeses && _fornFiltroMeses.length) ? _fornFiltroMeses.slice() : ymsTodos.slice();
+      const i = atual.indexOf(ym);
+      if(i >= 0) atual.splice(i, 1);
+      else atual.push(ym);
+      _fornFiltroMeses = atual.length === 0 ? null : atual;
+      renderFornecedoresNovo();
+    });
+  });
+  const btnClearF = document.getElementById('forn-meses-clear');
+  if(btnClearF) btnClearF.addEventListener('click', function(){
+    _fornFiltroMeses = null;
+    renderFornecedoresNovo();
+  });
 }
 
 function _fornRenderTabela(arr){
@@ -1449,7 +1752,7 @@ window._openProdNovo = function(cod){
        +        '<tr><td class="L">Valor total</td><td class="val-strong">'+fK(c12.valor||0)+'</td></tr>'
        +        '<tr><td class="L">Notas fiscais</td><td>'+fI(c12.nfs||0)+'</td></tr>'
        +        '<tr><td class="L">Preço médio de compra</td><td>'+(c12.preco_medio>0?fB(c12.preco_medio):'—')+'</td></tr>'
-       +        '<tr><td class="L">Última compra</td><td>'+esc(c12.ult_data||'—')+'</td></tr>'
+       +        '<tr><td class="L">Última compra</td><td>'+fDt(c12.ult_data)+'</td></tr>'
        +        '<tr><td colspan="2" style="height:8px;"></td></tr>'
        +        '<tr><td class="L" style="font-weight:700;">Devoluções 2026</td><td>'+(dev.qt>0?'<span class="kg-tag dn">'+fI(dev.qt||0)+' un · '+fK(dev.valor||0)+'</span>':'<span style="color:var(--text-muted);">nenhuma</span>')+'</td></tr>'
        +      '</tbody></table>'
@@ -1695,8 +1998,40 @@ function renderFinanceiroNovo(){
   const titulosFiltrados = titulosOrig.filter(function(t){return _ehContaMercadoria(t.conta);});
   // Recalcula aging com os títulos filtrados
   const aging = _agingDeTitulos(titulosFiltrados);
+  // Reconstrói por_fornecedor agregando só os títulos da conta de mercadorias.
+  // Sem isso, `abr.por_fornecedor` (que vem direto do JSON) inclui Banco do Brasil,
+  // Receita Federal, Secretaria da Fazenda etc — que aparecem em outras contas.
+  const _hojeRef = new Date(); _hojeRef.setHours(0,0,0,0);
+  const fornAgg = new Map();
+  titulosFiltrados.forEach(function(t){
+    const cod = (t.parceiro && t.parceiro.cod) || null;
+    if(cod == null) return;
+    if(!fornAgg.has(cod)){
+      fornAgg.set(cod, {
+        cod: cod,
+        nome: (t.parceiro && t.parceiro.nome) || '',
+        valor: 0, titulos: 0,
+        mais_atrasado_dias: null
+      });
+    }
+    const x = fornAgg.get(cod);
+    x.valor   += t.valor || t.valor_dup || 0;
+    x.titulos += 1;
+    if(t.data_venc){
+      const dv = new Date(t.data_venc + 'T12:00:00');
+      const dias = Math.floor((_hojeRef - dv)/(1000*60*60*24)); // positivo = atrasado
+      if(x.mais_atrasado_dias == null || dias > x.mais_atrasado_dias){
+        x.mais_atrasado_dias = dias;
+      }
+    }
+  });
+  const porFornFiltrado = Array.from(fornAgg.values()).sort(function(a,b){return b.valor-a.valor;});
   // Reconstrói abr com os filtrados pra que código posterior use
-  const abr = Object.assign({}, _abrOriginal, {titulos: titulosFiltrados, aging: aging});
+  const abr = Object.assign({}, _abrOriginal, {
+    titulos: titulosFiltrados,
+    aging: aging,
+    por_fornecedor: porFornFiltrado
+  });
   // pagas: filtra apenas mensal/perfomance/por_conta/por_fornecedor que estiverem disponíveis
   const pagas = _filtrarPagasMercadorias(F.pagas || {});
 
@@ -1842,7 +2177,7 @@ function renderFinanceiroNovo(){
       const dCls = t.dias_atraso > 30 ? 'dn' : t.dias_atraso > 7 ? 'wn' : '';
       html += '<tr>'
            +    '<td class="L" style="color:var(--text-muted);font-weight:700;">'+(i+1)+'</td>'
-           +    '<td class="L">'+esc(t.data_venc||'')+'</td>'
+           +    '<td class="L">'+fDt(t.data_venc)+'</td>'
            +    '<td class="L"><strong>'+esc(((t.parceiro&&t.parceiro.nome)||'').substring(0,32))+'</strong></td>'
            +    '<td class="L">'+esc((t.conta_desc||'').substring(0,28))+'</td>'
            +    '<td class="val-strong">'+fK(t.valor||0)+'</td>'
@@ -1945,8 +2280,42 @@ let _deptosCache = null;
 let _deptosNivel = 'depto'; // 'depto' | 'secao' | 'categoria'
 let _deptosPath = {};       // {deptoCod, deptoNome, secaoCod, secaoNome}
 
+// Filtro de meses 2026 para Análise por Departamento.
+// null = todos os meses 2026; array = só esses meses.
+let _deptosFiltroMeses = null;
+
+/**
+ * Retorna meses YM em 2026 disponíveis no cubo (vendas).
+ */
+function _deptosYms2026(){
+  if(!Cu) return [];
+  let fv, campos;
+  if(Cu.fatos && Cu.fatos.vendas){
+    fv = Cu.fatos.vendas.linhas || []; campos = Cu.fatos.vendas.campos || [];
+  } else if(Cu.fato_vendas){
+    fv = Cu.fato_vendas.linhas || []; campos = Cu.fato_vendas.campos || [];
+  } else { return []; }
+  const idxYm = campos.indexOf('ym');
+  if(idxYm < 0) return [];
+  const set = {};
+  fv.forEach(function(l){ const ym = l[idxYm]; if(ym && ym.indexOf('2026')===0) set[ym] = true; });
+  return Object.keys(set).sort();
+}
+
 function _deptosAgregar(){
-  if(_deptosCache) return _deptosCache;
+  // Decide se vai usar agregação 12m (default, original) ou agregação por meses 2026 do cubo
+  const ymsAll = _deptosYms2026();
+  const usarPeriodo = ymsAll.length > 0 && _deptosFiltroMeses !== null;
+  if(!usarPeriodo){
+    // Comportamento original (cache 12m)
+    if(_deptosCache) return _deptosCache;
+    return _deptosAgregar12m();
+  }
+  // Recalcula a cada chamada quando há filtro (sem cache, pra refletir a seleção)
+  return _deptosAgregarPorPeriodo(_deptosFiltroMeses);
+}
+
+function _deptosAgregar12m(){
   const produtos = (E && E.produtos) || [];
 
   // Aggregator helper
@@ -1975,34 +2344,27 @@ function _deptosAgregar(){
     });
   }
 
-  // Nível 1: depto
   const dMap = new Map();
-  // Nível 2: por depto → seção (chave: deptoCod, valor: Map(secaoCod → agg))
   const sByD = new Map();
-  // Nível 3: por (deptoCod, secaoCod) → categoria
   const cBySD = new Map();
 
   produtos.forEach(function(p){
     const dCod = (p.depto && p.depto.cod) || 0;
     const dNm  = (p.depto && p.depto.nome) || '?';
-    // Filtra depto INATIVO (cod 11) — mesmo critério de Vendas
     if(dNm === 'INATIVO') return;
     const sCod = (p.secao && p.secao.cod) || 0;
     const sNm  = (p.secao && p.secao.nome) || '(sem seção)';
     const cCod = (p.categoria && p.categoria.cod) || 0;
     const cNm  = (p.categoria && p.categoria.nome) || '(sem categoria)';
 
-    // Depto
     if(!dMap.has(dCod)) dMap.set(dCod, Object.assign({cod:dCod, nome:dNm}, emptyAgg()));
     pushProd(dMap.get(dCod), p);
 
-    // Seção (dentro do depto)
     if(!sByD.has(dCod)) sByD.set(dCod, new Map());
     const sm = sByD.get(dCod);
     if(!sm.has(sCod)) sm.set(sCod, Object.assign({cod:sCod, nome:sNm}, emptyAgg()));
     pushProd(sm.get(sCod), p);
 
-    // Categoria (dentro do depto+seção)
     const sdKey = dCod+'/'+sCod;
     if(!cBySD.has(sdKey)) cBySD.set(sdKey, new Map());
     const cm = cBySD.get(sdKey);
@@ -2010,7 +2372,124 @@ function _deptosAgregar(){
     pushProd(cm.get(cCod), p);
   });
 
-  // Converte Maps em arrays
+  const deptos = Array.from(dMap.values());
+  finalize(deptos);
+  deptos.sort(function(a,b){return b.fat-a.fat;});
+
+  const secoesPorDepto = new Map();
+  sByD.forEach(function(m, dCod){
+    const arr = Array.from(m.values());
+    finalize(arr);
+    arr.sort(function(a,b){return b.fat-a.fat;});
+    secoesPorDepto.set(dCod, arr);
+  });
+
+  const categoriasPorSec = new Map();
+  cBySD.forEach(function(m, key){
+    const arr = Array.from(m.values());
+    finalize(arr);
+    arr.sort(function(a,b){return b.fat-a.fat;});
+    categoriasPorSec.set(key, arr);
+  });
+
+  _deptosCache = {deptos:deptos, secoesPorDepto:secoesPorDepto, categoriasPorSec:categoriasPorSec};
+  return _deptosCache;
+}
+
+/**
+ * Agrega depto/seção/categoria filtrando por meses 2026 do cubo.
+ * Mantém o cruzamento com E.produtos pra preservar status/markup/seção.
+ */
+function _deptosAgregarPorPeriodo(mesesArr){
+  const ymsAll = _deptosYms2026();
+  const meses = (mesesArr && mesesArr.length) ? mesesArr.filter(function(y){return ymsAll.indexOf(y)>=0;}) : ymsAll.slice();
+  if(meses.length === 0) return _deptosAgregar12m();
+  const mesesSet = new Set(meses);
+
+  // Localiza fato_vendas
+  let fv, campos;
+  if(Cu.fatos && Cu.fatos.vendas){
+    fv = Cu.fatos.vendas.linhas || []; campos = Cu.fatos.vendas.campos || [];
+  } else if(Cu.fato_vendas){
+    fv = Cu.fato_vendas.linhas || []; campos = Cu.fato_vendas.campos || [];
+  } else { return _deptosAgregar12m(); }
+  const iYm = campos.indexOf('ym');
+  const iSku = campos.indexOf('sku');
+  const iLiq = campos.indexOf('v_liq');
+  const iLuc = campos.indexOf('v_luc');
+  const iQt  = campos.indexOf('v_qt');
+  if(iYm<0 || iSku<0) return _deptosAgregar12m();
+
+  // Soma vendas por SKU no período selecionado
+  const vSku = new Map();
+  fv.forEach(function(l){
+    if(!mesesSet.has(l[iYm])) return;
+    const sku = l[iSku];
+    if(!vSku.has(sku)) vSku.set(sku, {fat:0, lucro:0, qt:0});
+    const a = vSku.get(sku);
+    a.fat   += l[iLiq] || 0;
+    a.lucro += l[iLuc] || 0;
+    a.qt    += l[iQt]  || 0;
+  });
+
+  // Cruza com E.produtos pra ter depto/seção/categoria/estoque/status
+  const produtos = (E && E.produtos) || [];
+
+  function emptyAgg(){
+    return {skus:0, fat:0, lucro:0, vl_est_custo:0, vl_est_preco:0,
+            parados:0, mortos:0, ativos:0, criticos:0, qt_v:0};
+  }
+  function pushAgg(target, p, vendas){
+    target.skus += 1;
+    target.fat   += vendas.fat;
+    target.lucro += vendas.lucro;
+    target.qt_v  += vendas.qt;
+    const e = p.estoque || {};
+    target.vl_est_custo += e.vl_custo || 0;
+    target.vl_est_preco += e.vl_preco || 0;
+    if(p.status === 'PARADO') target.parados += 1;
+    if(p.status === 'MORTO')  target.mortos  += 1;
+    if(p.status === 'ATIVO')  target.ativos  += 1;
+    if(p.status === 'CRITICO') target.criticos += 1;
+  }
+  function finalize(arr){
+    arr.forEach(function(a){
+      a.marg = a.fat > 0 ? (a.lucro/a.fat*100) : 0;
+      a.markup = a.vl_est_custo > 0 ? ((a.vl_est_preco - a.vl_est_custo)/a.vl_est_custo*100) : 0;
+    });
+  }
+
+  const dMap = new Map();
+  const sByD = new Map();
+  const cBySD = new Map();
+
+  produtos.forEach(function(p){
+    const dCod = (p.depto && p.depto.cod) || 0;
+    const dNm  = (p.depto && p.depto.nome) || '?';
+    if(dNm === 'INATIVO') return;
+    const sCod = (p.secao && p.secao.cod) || 0;
+    const sNm  = (p.secao && p.secao.nome) || '(sem seção)';
+    const cCod = (p.categoria && p.categoria.cod) || 0;
+    const cNm  = (p.categoria && p.categoria.nome) || '(sem categoria)';
+
+    // Vendas do período pra esse SKU (se não tiver, é zero)
+    const vendas = vSku.get(p.cod) || {fat:0, lucro:0, qt:0};
+
+    if(!dMap.has(dCod)) dMap.set(dCod, Object.assign({cod:dCod, nome:dNm}, emptyAgg()));
+    pushAgg(dMap.get(dCod), p, vendas);
+
+    if(!sByD.has(dCod)) sByD.set(dCod, new Map());
+    const sm = sByD.get(dCod);
+    if(!sm.has(sCod)) sm.set(sCod, Object.assign({cod:sCod, nome:sNm}, emptyAgg()));
+    pushAgg(sm.get(sCod), p, vendas);
+
+    const sdKey = dCod+'/'+sCod;
+    if(!cBySD.has(sdKey)) cBySD.set(sdKey, new Map());
+    const cm = cBySD.get(sdKey);
+    if(!cm.has(cCod)) cm.set(cCod, Object.assign({cod:cCod, nome:cNm}, emptyAgg()));
+    pushAgg(cm.get(cCod), p, vendas);
+  });
+
   const deptos = Array.from(dMap.values());
   finalize(deptos);
   deptos.sort(function(a,b){return b.fat-a.fat;});
@@ -2046,18 +2525,52 @@ function renderDeptosNovo(){
     _deptosPath = {};
   }
 
+  // Meses 2026 disponíveis pelo cubo
+  const ymsTodos = _deptosYms2026();
+  const usarFiltro = ymsTodos.length > 0;
+  const mesesAtivos = (Array.isArray(_deptosFiltroMeses) && _deptosFiltroMeses.length)
+    ? _deptosFiltroMeses.filter(function(y){return ymsTodos.indexOf(y)>=0;})
+    : ymsTodos.slice();
+  const mesesSet = new Set(mesesAtivos);
+  const filtroAtivo = usarFiltro && _deptosFiltroMeses !== null && mesesAtivos.length !== ymsTodos.length;
+
   let html = '<div class="ph"><div class="pk">Hierarquia</div><h2>Análise por <em>departamento</em></h2></div>'
            + '<div class="ph-sep"></div>'
            + '<div class="page-body">';
+
+  // Filtro de meses (modelo CV)
+  if(usarFiltro){
+    const labelMes = filtroAtivo
+      ? mesesAtivos.length+' de '+ymsTodos.length+' meses de 2026'
+      : 'todos os meses de 2026';
+    html += '<div class="cc" style="padding:12px 14px;margin-bottom:14px;">';
+    html += '<div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;">';
+    html += '<span style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;font-weight:700;">Período:</span>';
+    ymsTodos.forEach(function(ym){
+      const ativo = mesesSet.has(ym);
+      html += '<button class="dn-mes-btn" data-ym="'+esc(ym)+'" style="padding:5px 10px;font-size:11.5px;border:1px solid var(--border-strong);border-radius:5px;cursor:pointer;'
+           +   (ativo?'background:var(--accent);color:white;':'background:var(--surface);color:var(--text);')
+           + 'font-weight:600;">'+esc(_ymToLabel(ym))+'</button>';
+    });
+    if(filtroAtivo){
+      html += '<button id="dn-meses-clear" style="padding:5px 8px;font-size:11px;border:1px solid var(--border);border-radius:4px;cursor:pointer;background:transparent;color:var(--text-muted);">Limpar</button>';
+    }
+    html += '<button id="dn-meses-12m" style="padding:5px 10px;font-size:11px;border:1px solid var(--border);border-radius:4px;cursor:pointer;background:transparent;color:var(--text-muted);">Últimos 12 meses</button>';
+    html += '</div>';
+    html += '<div style="margin-top:8px;font-size:11.5px;color:var(--text-dim);">'
+         +   _deptosFiltroMeses === null
+              ? 'Acumulado dos últimos 12 meses (modo padrão).'
+              : 'Acumulado de '+esc(labelMes)+' (vendas reagregadas pelo cubo). Estoque e markup permanecem da posição atual.'
+         + '</div>';
+    html += '</div>';
+  }
 
   // Banner
   const meta = E.meta || {};
   const periodoTxt = (meta.periodo_vendas && meta.periodo_vendas.meses) ? meta.periodo_vendas.meses+' meses' : '?';
   html += '<div style="background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:10px 14px;margin-bottom:14px;font-size:12px;color:var(--text-dim);line-height:1.5;">'
-       + '<strong>Período de vendas:</strong> '+esc(periodoTxt)+' · '
        + '<strong>'+fI(_deptosCache.deptos.length)+'</strong> departamentos · '
        + 'Drill: clique no nome para ver seções → categorias'
-       + '<br><span style="color:var(--text-muted);font-size:11px;">Filtro por mês não disponível: o ETL exporta vendas mensais só em quantidade. Para análises por mês específico use a Análise Dinâmica.</span>'
        + '</div>';
 
   // Legenda dos status
@@ -2107,7 +2620,6 @@ function renderDeptosNovo(){
     back.addEventListener('click', function(){
       if(_deptosNivel === 'categoria'){
         _deptosNivel = 'secao';
-        // Mantém deptoCod no path, mas zera secao
         _deptosPath.secaoCod = null;
         _deptosPath.secaoNome = null;
       } else if(_deptosNivel === 'secao'){
@@ -2117,6 +2629,32 @@ function renderDeptosNovo(){
       _deptosRender();
     });
   }
+
+  // Filtro de meses
+  document.querySelectorAll('.dn-mes-btn').forEach(function(btn){
+    btn.addEventListener('click', function(){
+      const ym = btn.getAttribute('data-ym');
+      const atual = (_deptosFiltroMeses && _deptosFiltroMeses.length) ? _deptosFiltroMeses.slice() : ymsTodos.slice();
+      const i = atual.indexOf(ym);
+      if(i >= 0) atual.splice(i, 1);
+      else atual.push(ym);
+      _deptosFiltroMeses = atual.length === 0 ? null : atual;
+      _deptosCache = null; // invalida cache pra recalcular
+      renderDeptosNovo();
+    });
+  });
+  const btnClearD = document.getElementById('dn-meses-clear');
+  if(btnClearD) btnClearD.addEventListener('click', function(){
+    _deptosFiltroMeses = null;
+    _deptosCache = null;
+    renderDeptosNovo();
+  });
+  const btn12m = document.getElementById('dn-meses-12m');
+  if(btn12m) btn12m.addEventListener('click', function(){
+    _deptosFiltroMeses = null; // 12m é o cache padrão (sem filtro)
+    _deptosCache = null;
+    renderDeptosNovo();
+  });
 }
 
 function _deptosRender(){
@@ -2255,13 +2793,10 @@ function _alertasCalcular(){
   }
 
   // Buckets por categoria
+  // Removidos a pedido: ruptura, mk_baixo, dev_forn, crescendo.
   const buckets = {
     excesso_compra: [],
     parado: [],
-    ruptura: [],
-    mk_baixo: [],
-    dev_forn: [],
-    crescendo: [],
     queda: []
   };
 
@@ -2269,7 +2804,6 @@ function _alertasCalcular(){
     const e   = p.estoque || {};
     const vds = p.vendas || {};
     const c12 = p.compras_12m || {};
-    const dev = p.devol_2026 || {};
 
     const fat   = vds.valor || 0;
     const qtV   = vds.qt    || 0;
@@ -2277,7 +2811,6 @@ function _alertasCalcular(){
     const qtE   = e.qt      || 0;
     const vlE   = e.vl_custo || 0;
     const giro  = p.giro_dias;
-    const marg  = vds.marg;
 
     // 1. Excesso de compras: comprou >> vendeu e tem muito estoque
     if(qtC > 0 && qtV > 0 && qtC > qtV * 1.3 && qtE > qtV * 0.5 && vlE > 1000){
@@ -2289,22 +2822,7 @@ function _alertasCalcular(){
       buckets.parado.push(p);
     }
 
-    // 3. Risco de ruptura: cobertura < 7 dias E tem estoque (>0) E vende ativamente
-    if(giro != null && giro > 0 && giro < 7 && qtE > 0 && p.status === 'ATIVO'){
-      buckets.ruptura.push(p);
-    }
-
-    // 4. Markup estreito: marg < 8% com vendas > R$10.000
-    if(marg != null && marg < 8 && fat > 10000){
-      buckets.mk_baixo.push(p);
-    }
-
-    // 5. Alta devolução fornecedor: dev > R$1.000
-    if(dev.valor && dev.valor > 1000){
-      buckets.dev_forn.push(p);
-    }
-
-    // 6/7. Crescendo / Queda (só se ymComp e prev calculados)
+    // 3. Queda brusca: precisa de comparativo mensal
     if(ymComp && ymPrev1 && ymPrev2 && p.vendas_por_mes && p.vendas_por_mes.length){
       const mp = {};
       p.vendas_por_mes.forEach(function(m){ mp[m.ym] = m.qt || 0; });
@@ -2312,16 +2830,11 @@ function _alertasCalcular(){
       const a = mp[ymPrev1]  || 0;
       const b = mp[ymPrev2]  || 0;
       const med = (a + b) / 2;
-      // só considera se houve venda relevante na média (filtro contra ruído de produtos novos/relançamentos)
-      // E se o mês comparativo também teve venda relevante
       if(med >= 20){
         const g = (c - med) / med * 100;
         p._growth = g;
         p._growth_ym = ymComp;
-        // Crescimento: precisa de >= 50% e mês recente com vendas substanciais
-        if(g >= 50 && fat > 10000 && c >= 30) buckets.crescendo.push(p);
-        // Queda: precisa de <= -50% e produto que tinha histórico relevante
-        else if(g <= -50 && fat > 10000) buckets.queda.push(p);
+        if(g <= -50 && fat > 10000) buckets.queda.push(p);
       }
     }
   });
@@ -2396,19 +2909,13 @@ function _alertasRenderCards(){
   const c = _alertasCache;
 
   // Configuração visual de cada categoria
+  // Removidos a pedido do usuário: ruptura, mk_baixo (markup estreito), dev_forn (alta devolução), crescendo (crescimento forte).
+  // Mantidos: excesso_compra, parado, queda.
   const CFGS = [
     {k:'excesso_compra', ico:'▣', tt:'Excesso de compras', sb:'Comprou muito acima da venda com estoque alto', cls:'wn',
      fn:function(p){var c12=p.compras_12m||{};var vds=p.vendas||{};var e=p.estoque||{};return 'Comprou '+fI(c12.qt||0)+' un · vendeu '+fI(vds.qt||0)+' un · estoque atual '+fI(e.qt||0)+' un';}},
     {k:'parado', ico:'⏸', tt:'Estoque parado', sb:'Cobertura > 120 dias e estoque > R$ 2.000', cls:'wn',
      fn:function(p){var e=p.estoque||{};return (p.giro_dias||0).toFixed(0)+' dias de cobertura · '+fK(e.vl_custo||0)+' imobilizado';}},
-    {k:'ruptura', ico:'🔴', tt:'Risco de ruptura', sb:'Menos de 7 dias de estoque com produto ativo', cls:'dn',
-     fn:function(p){return (p.giro_dias||0).toFixed(1)+' dia(s) de cobertura — repor com urgência';}},
-    {k:'mk_baixo', ico:'⇳', tt:'Markup estreito', sb:'Margem < 8% com vendas > R$ 10.000', cls:'wn',
-     fn:function(p){var vds=p.vendas||{};var e=p.estoque||{};return 'Margem '+fP(vds.marg||0)+' · custo '+fB(e.custo||0)+' → preço '+fB(e.preco||0);}},
-    {k:'dev_forn', ico:'↲', tt:'Alta devolução a fornecedor', sb:'Devoluções > R$ 1.000 em 2026', cls:'wn',
-     fn:function(p){var d=p.devol_2026||{};return fK(d.valor||0)+' devolvidos · '+fI(d.qt||0)+' un · '+fI(d.nfs||0)+' NFs';}},
-    {k:'crescendo', ico:'▲', tt:'Crescimento forte', sb:'+50% no mês comparativo vs média dos 2 meses anteriores · faturamento > R$ 10k', cls:'ok',
-     fn:function(p){var g=p._growth||0;var gTxt=g>999?'+999%':'+'+fP(g);return gTxt+' no '+_ymToLabel(p._growth_ym||'');}},
     {k:'queda', ico:'▼', tt:'Queda brusca', sb:'-50% no mês comparativo vs média dos 2 meses anteriores · faturamento > R$ 10k', cls:'dn',
      fn:function(p){return fP(p._growth||0)+' no '+_ymToLabel(p._growth_ym||'');}},
   ];
@@ -2881,7 +3388,7 @@ window._openFornNovo = function(cod){
         const dCls = da > 30 ? 'dn' : da > 0 ? 'wn' : '';
         const dTxt = da > 0 ? '+'+fI(da)+'d' : (da < 0 ? fI(Math.abs(da))+'d' : 'hoje');
         h += '<tr>'
-          +    '<td class="L">'+esc(t.data_venc||'-')+'</td>'
+          +    '<td class="L">'+fDt(t.data_venc)+'</td>'
           +    '<td class="L">'+esc(t.num_nota||'-')+'</td>'
           +    '<td class="val-strong">'+fK(t.valor||t.valor_dup||0)+'</td>'
           +    '<td><span class="kg-tag '+dCls+'">'+esc(dTxt)+'</span></td>'
@@ -3657,7 +4164,7 @@ function _vencRender(){
       const dCls = (t.dias_atraso||0) > 90 ? 'dn' : (t.dias_atraso||0) > 30 ? 'wn' : '';
       titHtml += '<tr>'
               +    '<td class="L" style="color:var(--text-muted);font-weight:700;">'+(i+1)+'</td>'
-              +    '<td class="L">'+esc(t.data_venc||'')+'</td>'
+              +    '<td class="L">'+fDt(t.data_venc)+'</td>'
               +    '<td class="L"><strong>'+esc(((t.parceiro&&t.parceiro.nome)||'').substring(0,32))+'</strong></td>'
               +    '<td class="L">'+esc((t.conta_desc||'').substring(0,28))+'</td>'
               +    '<td><span style="font-family:JetBrains Mono,monospace;font-size:10px;color:var(--text-muted);">'+esc(t.num_nota||'')+'</span></td>'
@@ -3683,7 +4190,18 @@ function _vencRender(){
 function renderFornGPCNovo(){
   const cont = document.getElementById('page-forn-gpc');
   if(!cont || !E) return;
-  _fornAgregar(); // garante que _fornAggCache existe
+
+  // Filtro de meses 2026 (modelo CV)
+  const ymsTodos = _fornYmsDisponiveis2026();
+  const usarPeriodo = ymsTodos.length > 0;
+  const mesesAtivos = usarPeriodo
+    ? ((Array.isArray(_fornFiltroMeses) && _fornFiltroMeses.length)
+        ? _fornFiltroMeses.filter(function(y){return ymsTodos.indexOf(y)>=0;})
+        : ymsTodos)
+    : [];
+  const mesesSet = new Set(mesesAtivos);
+
+  const fornAggBase = usarPeriodo ? _fornAgregarPorPeriodo(mesesSet) : _fornAgregar();
 
   // Lista intragrupo (configurável; usa getGpcSuppliers se existir, senão fallback)
   let nomesGpc;
@@ -3697,7 +4215,7 @@ function renderFornGPCNovo(){
   // Match flexível: nome do fornecedor agregado vs lista (case-insensitive, sem cedilha)
   function norm(s){return (s||'').toLowerCase().replace(/[^\w\s]/g,'').trim();}
   const setGpc = new Set(nomesGpc.map(norm));
-  const fornsGpc = (_fornAggCache||[]).filter(function(f){return setGpc.has(norm(f.nome));});
+  const fornsGpc = (fornAggBase||[]).filter(function(f){return setGpc.has(norm(f.nome));});
 
   // Totais agregados
   const tot = {skus:0, v_compra:0, v_venda:0, lucro:0, vl_est:0, dev_valor:0,
@@ -3716,8 +4234,8 @@ function renderFornGPCNovo(){
   const margGpc = tot.v_venda > 0 ? (tot.lucro/tot.v_venda*100) : 0;
 
   // % do total da filial
-  const totFatGeral = (_fornAggCache||[]).reduce(function(s,f){return s+(f.v_venda||0);},0);
-  const totComGeral = (_fornAggCache||[]).reduce(function(s,f){return s+(f.v_compra||0);},0);
+  const totFatGeral = (fornAggBase||[]).reduce(function(s,f){return s+(f.v_venda||0);},0);
+  const totComGeral = (fornAggBase||[]).reduce(function(s,f){return s+(f.v_compra||0);},0);
   const pctFat = totFatGeral > 0 ? (tot.v_venda/totFatGeral*100) : 0;
   const pctCom = totComGeral > 0 ? (tot.v_compra/totComGeral*100) : 0;
 
@@ -3758,6 +4276,28 @@ function renderFornGPCNovo(){
   let html = '<div class="ph"><div class="pk">Hierarquia · Intragrupo</div><h2><em>Fornecedores GPC</em> · Pinto Cerqueira</h2></div>'
            + '<div class="ph-sep"></div>'
            + '<div class="page-body">';
+
+  // Filtro de meses (modelo CV) — só se cubo disponível
+  if(usarPeriodo){
+    const labelMes = (mesesAtivos.length === ymsTodos.length)
+      ? 'todos os meses de 2026'
+      : mesesAtivos.length+' de '+ymsTodos.length+' meses';
+    html += '<div class="cc" style="padding:12px 14px;margin-bottom:14px;">';
+    html += '<div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;">';
+    html += '<span style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;font-weight:700;">Período:</span>';
+    ymsTodos.forEach(function(ym){
+      const ativo = mesesSet.has(ym);
+      html += '<button class="fgpc-mes-btn" data-ym="'+esc(ym)+'" style="padding:5px 10px;font-size:11.5px;border:1px solid var(--border-strong);border-radius:5px;cursor:pointer;'
+           +   (ativo?'background:var(--accent);color:white;':'background:var(--surface);color:var(--text);')
+           + 'font-weight:600;">'+esc(_ymToLabel(ym))+'</button>';
+    });
+    if(mesesAtivos.length !== ymsTodos.length){
+      html += '<button id="fgpc-meses-clear" style="padding:5px 8px;font-size:11px;border:1px solid var(--border);border-radius:4px;cursor:pointer;background:transparent;color:var(--text-muted);">Limpar</button>';
+    }
+    html += '</div>';
+    html += '<div style="margin-top:8px;font-size:11.5px;color:var(--text-dim);">Acumulado de '+esc(labelMes)+'.</div>';
+    html += '</div>';
+  }
 
   // Banner
   html += '<div style="background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:10px 14px;margin-bottom:14px;font-size:12px;color:var(--text-dim);">'
@@ -3899,6 +4439,24 @@ function renderFornGPCNovo(){
         plugins:{legend:{position:'right',labels:{padding:8,usePointStyle:true,boxWidth:8,font:{size:10}}},
                  tooltip:{callbacks:{label:function(ctx){var pct=tot.v_venda>0?(ctx.raw/tot.v_venda*100):0;return ctx.label+': '+fK(ctx.raw)+' ('+fP(pct)+')';}}}}}});
   }
+
+  // Handlers do filtro de meses (mesma var _fornFiltroMeses compartilhada com Fornecedores)
+  document.querySelectorAll('.fgpc-mes-btn').forEach(function(btn){
+    btn.addEventListener('click', function(){
+      const ym = btn.getAttribute('data-ym');
+      const atual = (_fornFiltroMeses && _fornFiltroMeses.length) ? _fornFiltroMeses.slice() : ymsTodos.slice();
+      const i = atual.indexOf(ym);
+      if(i >= 0) atual.splice(i, 1);
+      else atual.push(ym);
+      _fornFiltroMeses = atual.length === 0 ? null : atual;
+      renderFornGPCNovo();
+    });
+  });
+  const btnClearGPC = document.getElementById('fgpc-meses-clear');
+  if(btnClearGPC) btnClearGPC.addEventListener('click', function(){
+    _fornFiltroMeses = null;
+    renderFornGPCNovo();
+  });
 }
 
 function renderPage(pg){

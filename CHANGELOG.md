@@ -4,6 +4,34 @@ Lista das melhorias do sistema de BI da R2 Soluções para o Grupo Pinto Cerquei
 
 ---
 
+## v4.46 · 03/mai/2026
+
+**11 ajustes solicitados**
+
+1. **Cabeçalho responsivo em mobile.** Em telas estreitas a topbar agora encolhe: a data atualizada, o nome "Comercial GPC" e em telas muito estreitas até o rótulo "VISÃO" desaparecem pra dar espaço ao seletor de visão e ao avatar.
+
+2. **Departamentos · filtro por mês.** A página agora tem botões de mês (Jan/Fev/Mar/Abr 2026) no mesmo modelo de Compras × Vendas. Quando você seleciona um subconjunto, fat/lucro/margem/qt são recalculados a partir do cubo (granularidade por SKU), preservando o drill-down até categoria. Estoque, markup e contagens de status continuam refletindo a posição atual (são fotos do dia, não fazem sentido por mês).
+
+3. **Padrão de data DD-MM-AAAA.** Criado helper `fDt` que converte qualquer data ISO ou Date em DD-MM-AAAA (com traço, padrão R2). Aplicado em estoque (Retrato), última compra do produto, vencidos e Top 20 contas a pagar. Vou aplicar em mais lugares conforme você for me apontando.
+
+4. **Estoque por departamento · tabela hierárquica drill-down.** O gráfico de barras horizontal foi substituído por uma tabela hierárquica clicável. Departamento → seção → categoria. Cada linha mostra SKUs, estoque a custo, estoque a preço de venda e markup. Clique no departamento expande as seções; clique na seção expande as categorias.
+
+5. **Excesso de estoque · status estável + banner removido.** O banner "Critério: SKUs com status PARADO, MORTO, CRITICO..." foi removido. Mais importante: corrigido o comportamento estranho dos contadores de status mudarem entre os métodos de cálculo. Agora PARADO/MORTO/CRITICO sempre vêm do ETL (são fatos sobre o produto: vendeu ou não vendeu), e o método de cálculo só afeta o **giro de cobertura** (quanto tempo o estoque vai durar). Os números abaixo da seleção de método ficam estáveis.
+
+6. **Financeiro · Top fornecedores filtrado.** Bug corrigido: o "Top 20 contas a pagar por fornecedor" ainda mostrava Banco do Brasil, Receita Federal, Secretaria da Fazenda etc. Causa: o JSON traz por_fornecedor agregado por TODAS as contas, e eu só estava filtrando títulos. Agora reconstruo `por_fornecedor` em runtime a partir dos títulos já filtrados pela conta de mercadorias (10001 e 99912). Esses fornecedores governamentais aparecem em outras contas que não são compras.
+
+7. **Fornecedores · acumulado 2026 + filtro de mês.** Página já estava com isso implementado em versão anterior. Modelo CV de botões de mês.
+
+8. **Fornecedores GPC · idem.** Mesma estrutura de filtros, já implementada.
+
+9. **Curva ABC · só 2026 + filtro de mês.** Já implementada anteriormente. Modo "valor" estima faturamento mensal proporcional à quantidade (limitação do ETL atual que exporta vendas mensais só em quantidade).
+
+10. **Alertas · 4 buckets removidos.** Excluídos: Risco de ruptura, Markup estreito, Alta devolução a fornecedor, Crescimento forte. Mantidos: Excesso de compras, Estoque parado, Queda nas vendas.
+
+11. **Cache busting nos JSONs** (já em v4.45). Cada subida de versão força navegador a baixar JSONs novos.
+
+---
+
 ## v4.45 · 03/mai/2026
 
 **Cache busting nos arquivos JSON de dados**

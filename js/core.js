@@ -216,7 +216,7 @@ const AUTH_MODE = 'firebase'; // 'mock' | 'firebase'
 // Convenção:
 //   X.x → alteração grande (quebra de compatibilidade, nova feature grande)
 //   x.X → alteração suave (fix, ajuste visual, pequeno refinamento)
-const APP_VERSION = '4.45-comercial';
+const APP_VERSION = '4.46-comercial';
 
 // ================================================================
 // HELPERS DE CHART.JS — compatíveis com Safari/iOS (sem spread ops)
@@ -2726,6 +2726,24 @@ const fI=n=>Math.round(n||0).toLocaleString('pt-BR');
 const fN=(n,d=0)=>(n||0).toLocaleString('pt-BR',{minimumFractionDigits:d,maximumFractionDigits:d});
 // Item 2: datas em DD/MM/AAAA
 const fD=d=>d?d.slice(8)+'/'+d.slice(5,7)+'/'+d.slice(0,4):'—';
+// fDt: formato preferido pelo usuário em DD-MM-AAAA (com traço, padrão do sistema)
+// Aceita 'YYYY-MM-DD', 'YYYY-MM-DDTHH:MM:SS' ou Date.
+const fDt=d=>{
+  if(!d) return '—';
+  if(typeof d === 'string'){
+    // pega só os 10 primeiros caracteres se vier datetime
+    const s = d.slice(0, 10);
+    if(s.length !== 10 || s.charAt(4) !== '-') return d;
+    return s.slice(8) + '-' + s.slice(5, 7) + '-' + s.slice(0, 4);
+  }
+  if(d instanceof Date){
+    const y = d.getFullYear();
+    const m = String(d.getMonth()+1).padStart(2,'0');
+    const dd = String(d.getDate()).padStart(2,'0');
+    return dd + '-' + m + '-' + y;
+  }
+  return '—';
+};
 // _dataLocal(): retorna 'YYYY-MM-DD' no timezone do usuário (não UTC)
 // Diferente de new Date().toISOString().slice(0,10) que usa UTC e pode estar
 // 1 dia "à frente" para usuários no Brasil (UTC-3) após as 21h locais.
