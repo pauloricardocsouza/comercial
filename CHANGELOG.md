@@ -4,6 +4,44 @@ Lista das melhorias do sistema de BI da R2 Soluções para o Grupo Pinto Cerquei
 
 ---
 
+## v4.44 · 02/mai/2026
+
+**Supervisores · agora todas as combinações filial × supervisor que existem no fato**
+
+Você reportou: "Estranho Inhambupe ter só um supervisor". Investiguei e descobri uma divergência grande entre o que estava sendo mostrado no admin e o que realmente acontece nos dados.
+
+O problema
+
+O cadastro de RCAs (que era a fonte do admin) registra cada RCA em uma loja só. Mas no fato de vendas, RCAs cadastrados em uma filial fazem vendas em outra. Exemplo concreto: RCA #241 está cadastrado como CP1 sup=3, mas o fato de vendas mostra R$ 42M faturados em CP40. Isso é normal no fluxo do WinThor — RCAs do atacado emitem em CP40 mesmo cadastrados em CP1.
+
+Resultado: no admin, CP40 aparecia com só 1 supervisor (#9 INATIVOS), enquanto o cubo de vendas mostra 7 supervisores ativamente faturando lá.
+
+Correção
+
+Adicionei ao `vendas_grupo.json` um campo novo `supervisores_por_filial` reconstruído a partir do FATO de vendas, que lista todas as combinações filial × supervisor que efetivamente existem nos dados, com contagem de RCAs e faturamento real.
+
+O admin agora prioriza esse campo. Se não existir (JSON antigo), cai no comportamento anterior.
+
+Comparação antes vs depois
+
+| Filial | Antes | Depois |
+|---|---|---|
+| ATP-V | 2 supervisores | 2 supervisores |
+| ATP-A | 1 supervisor | 1 supervisor |
+| CP1 | 6 supervisores | 6 supervisores |
+| CP3 | 2 supervisores | 4 supervisores (+3, +11) |
+| CP5 | 1 supervisor | 2 supervisores (+3 GPC INTRAGRUPO) |
+| CP40 | 1 supervisor | 7 supervisores (+1, +2, +3, +4, +10, +11) |
+| **Total** | 13 combinações | 22 combinações |
+
+Inhambupe (CP5) agora aparece com Cestão 04 e GPC INTRAGRUPO (que vende 1 RCA com R$ 28k). Barros 40 (CP40) deixa de ter só "INATIVOS" e mostra todos os supervisores reais.
+
+Cadastro reconstruído
+
+O cadastro de RCAs em `vendas_grupo.json` também foi reconstruído baseado no fato. Cada RCA agora aparece na filial onde mais fatura (não onde está cadastrado). Total: 304 RCAs (189 CP + 115 ATP).
+
+---
+
 ## v4.43 · 02/mai/2026
 
 **ATP · GPC INTRAGRUPO agora soma no total**

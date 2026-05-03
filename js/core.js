@@ -216,7 +216,7 @@ const AUTH_MODE = 'firebase'; // 'mock' | 'firebase'
 // Convenção:
 //   X.x → alteração grande (quebra de compatibilidade, nova feature grande)
 //   x.X → alteração suave (fix, ajuste visual, pequeno refinamento)
-const APP_VERSION = '4.43-comercial';
+const APP_VERSION = '4.44-comercial';
 
 // ================================================================
 // HELPERS DE CHART.JS — compatíveis com Safari/iOS (sem spread ops)
@@ -476,8 +476,17 @@ function _getSupervisoresPorLoja(){
 /** Igual _getSupervisoresPorLoja mas carrega vendas_grupo.json (todas as bases)
  *  pra retornar supervisores de TODAS as filiais (ATP-V, ATP-A, CP1, CP3, CP5, CP40),
  *  independente da base atual da sessão.
- *  Cacheia em _supLojaCompletoCache.
- *  Usado pela UI de supervisores ignorados em Administração.
+ *
+ *  Prioriza o campo `supervisores_por_filial` (novo, gerado a partir do FATO de vendas)
+ *  que mostra TODAS as combinações filial×supervisor que efetivamente existem nos dados.
+ *  Esse campo cobre o caso de RCAs cadastrados em CP1 mas que vendem majoritariamente
+ *  em CP40 (situação comum no WinThor) — o cubo registra a venda na filial real,
+ *  então o admin precisa listar o supervisor naquela filial.
+ *
+ *  Fallback: se o JSON antigo não tiver `supervisores_por_filial`, agrega do cadastro
+ *  como antes (limitação: cada RCA só aparece na sua loja cadastrada).
+ *
+ *  Cacheia em _supLojaCompletoCache. Usado pela UI de supervisores ignorados em Admin.
  */
 let _supLojaCompletoCache = null;
 let _supLojaCompletoLoading = null;
@@ -486,26 +495,40 @@ async function _getSupervisoresPorLojaCompleto(){
   if(_supLojaCompletoLoading) return _supLojaCompletoLoading;
 
   _supLojaCompletoLoading = (async function(){
-    // Tenta carregar vendas_grupo.json (consolidado de todas as bases)
-    let cad = null;
+    let dados = null;
     try {
       const data = await _fetchJsonComGz('vendas_grupo.json');
-      if(data && data.vendedores && data.vendedores.cadastro){
-        cad = data.vendedores.cadastro;
+      if(data && data.vendedores){
+        dados = data.vendedores;
       }
     } catch(e){
       console.warn('[supervisores] vendas_grupo.json não disponível, caindo no V atual:', e.message);
     }
 
     // Fallback: usa V atual se vendas_grupo não estiver disponível
-    if(!cad && V && V.vendedores && V.vendedores.cadastro){
-      cad = V.vendedores.cadastro;
+    if(!dados && V && V.vendedores){
+      dados = V.vendedores;
     }
-    if(!cad){
+    if(!dados){
       _supLojaCompletoCache = {};
       return _supLojaCompletoCache;
     }
 
+    // Prioriza supervisores_por_filial (gerado do FATO — mais completo)
+    if(dados.supervisores_por_filial){
+      const out = {};
+      Object.keys(dados.supervisores_por_filial).forEach(function(fil){
+        out[fil] = dados.supervisores_por_filial[fil].map(function(s){
+          return {cod: Number(s.cod), nome: s.nome || ''};
+        });
+        out[fil].sort(function(a,b){ return a.cod - b.cod; });
+      });
+      _supLojaCompletoCache = out;
+      return _supLojaCompletoCache;
+    }
+
+    // Fallback antigo: agrega do cadastro
+    const cad = dados.cadastro || [];
     const por_loja = {};
     cad.forEach(function(v){
       if(!v.loja || v.cod_supervisor == null) return;
