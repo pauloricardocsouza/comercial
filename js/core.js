@@ -216,7 +216,7 @@ const AUTH_MODE = 'firebase'; // 'mock' | 'firebase'
 // Convenção:
 //   X.x → alteração grande (quebra de compatibilidade, nova feature grande)
 //   x.X → alteração suave (fix, ajuste visual, pequeno refinamento)
-const APP_VERSION = '4.47-comercial';
+const APP_VERSION = '4.48-comercial';
 
 // ================================================================
 // HELPERS DE CHART.JS — compatíveis com Safari/iOS (sem spread ops)
@@ -312,37 +312,22 @@ function _auditLog(tipo, detalhes, identidadeOverride){
 // Páginas com `aplicaFiltro: false` aparecem no admin pra você poder pré-configurar
 // caso o comportamento da página mude no futuro. Hoje, marcar supervisor ali não muda nada.
 //
+// IMPORTANTE: o catálogo lista APENAS páginas que efetivamente aplicam o filtro
+// (aplicaFiltro:true). Páginas que não consultam o filtro foram removidas do catálogo
+// pra não criar a impressão errada de que marcar lá tem efeito.
+//
+// Hoje só 3 páginas filtram supervisores ignorados:
+//   - recebimentos (Inadimplência)
+//   - v-benchmarking (RCA)
+//   - v-drilldown (Drill-Down por Vendedor)
+//
+// Quando uma página nova começar a aplicar o filtro, basta adicioná-la aqui.
+//
 // A ORDEM aqui segue a ordem do menu lateral (index.html). Mantenha sincronizado.
 const _SUP_IGN_PAGINAS_CATALOGO = [
-  // Topo
-  {id:'executivo',      label:'Visão Executiva',        grupo:'Visão',        aplicaFiltro:false},
-  // Compras (ordem do menu)
-  {id:'cv',             label:'Compras × Vendas',       grupo:'Compras',      aplicaFiltro:false},
-  {id:'deptos',         label:'Departamentos',          grupo:'Compras',      aplicaFiltro:false},
-  {id:'estoque',        label:'Estoque',                grupo:'Compras',      aplicaFiltro:false},
-  {id:'excesso',        label:'Excesso de estoque',     grupo:'Compras',      aplicaFiltro:false},
-  {id:'financeiro',     label:'Financeiro',             grupo:'Compras',      aplicaFiltro:false},
-  {id:'vencidos',       label:'Vencidos',               grupo:'Compras',      aplicaFiltro:false},
-  {id:'verbas',         label:'Verbas',                 grupo:'Compras',      aplicaFiltro:false},
-  {id:'fornecedores',   label:'Fornecedores',           grupo:'Compras',      aplicaFiltro:false},
-  {id:'forn-gpc',       label:'Fornecedores GPC',       grupo:'Compras',      aplicaFiltro:false},
-  {id:'abc',            label:'Curva ABC',              grupo:'Compras',      aplicaFiltro:false},
-  {id:'alertas',        label:'Alertas (compras)',      grupo:'Compras',      aplicaFiltro:false},
-  {id:'diagnostico',    label:'Diag. Produto',          grupo:'Compras',      aplicaFiltro:false},
-  {id:'diag-forn',      label:'Diag. Fornecedor',       grupo:'Compras',      aplicaFiltro:false},
-  // Vendas (ordem do menu)
-  {id:'v-visao-grupo',  label:'Visão Consolidada',      grupo:'Vendas',       aplicaFiltro:false},
-  {id:'v-evolucao',     label:'Evolução Mensal',        grupo:'Vendas',       aplicaFiltro:false},
-  {id:'v-itens',        label:'Itens & Deptos',         grupo:'Vendas',       aplicaFiltro:false},
-  {id:'v-vendas-diarias',label:'Vendas Diárias',        grupo:'Vendas',       aplicaFiltro:false},
-  {id:'v-dias-cp',      label:'Dias C & P',             grupo:'Vendas',       aplicaFiltro:false},
-  {id:'v-metas',        label:'Metas',                  grupo:'Vendas',       aplicaFiltro:false},
   {id:'recebimentos',   label:'Inadimplência',          grupo:'Vendas',       aplicaFiltro:true},
   {id:'v-benchmarking', label:'RCA',                    grupo:'Vendas',       aplicaFiltro:true},
-  {id:'v-ano2026',      label:'Análise 2026',           grupo:'Vendas',       aplicaFiltro:false},
   {id:'v-drilldown',    label:'Drill-Down por Vendedor',grupo:'Vendas',       aplicaFiltro:true},
-  // Análise
-  {id:'cubo',           label:'Análise Dinâmica',       grupo:'Análise',      aplicaFiltro:false},
 ];
 
 let _supIgnoradosCache = null;     // {paginas: {pagina: {loja: [cod, ...]}}}
@@ -2636,10 +2621,15 @@ async function _initSistema(){
   } catch(e){
     console.warn('[_initSistema] Erro ao popular perfil:', e);
   }
-  // Carregar config de supervisores ignorados em paralelo (não bloqueante)
-  _carregarSupervisoresIgnorados().then(function(m){
-    const total = Object.values(m||{}).reduce(function(s,a){return s+(a?a.length:0);}, 0);
-  }).catch(function(e){ console.warn('[_initSistema] erro supervisores ignorados:', e); });
+  // Carrega config de supervisores ignorados ANTES de iniciar as páginas
+  // pra evitar race condition: as páginas que filtram (RCA, Drill-Down, Inadimplência)
+  // chamam _isSupervisorIgnorado, que retorna false se o cache ainda for null,
+  // ignorando a config do usuário e mostrando dados que deveriam estar filtrados.
+  try {
+    await _carregarSupervisoresIgnorados();
+  } catch(e){
+    console.warn('[_initSistema] erro supervisores ignorados:', e);
+  }
   _renderSnapshotBanner();
   _renderSeletorFilial();
   _renderUserWidget();
@@ -5890,7 +5880,10 @@ async function _pinCarregarFirestore(){
   }
 }
 
-// Salva um pin no Firestore (toggle)
+// Salva um pin no Firestore (toggle).
+// Ao fixar, tenta capturar um snapshot do HTML do pin (renderizando offscreen),
+// pra que ele apareça na home mesmo se o usuário recarregar e for direto pra home
+// sem visitar a página de origem (sessão sem o renderer registrado).
 async function _pinToggle(id){
   try {
     const auth = (typeof firebase !== 'undefined' && firebase.auth) ? firebase.auth() : null;
@@ -5905,18 +5898,35 @@ async function _pinToggle(id){
       _pinAtivos.splice(idx, 1);
       _pinToast('Pin removido', 'info');
     } else {
-      // Adicionar
+      // Adicionar — capturando snapshot do valor atual
       const reg = _pinRegistry.get(id);
       if(!reg){ console.warn('[pin] id não registrado:', id); return; }
       const ordem = _pinAtivos.length;
+
+      // Renderiza num sandbox offscreen pra extrair HTML do valor atual
+      let snapshotHtml = null;
+      try {
+        const sandbox = document.createElement('div');
+        sandbox.style.cssText = 'position:absolute;left:-9999px;top:-9999px;width:280px;';
+        document.body.appendChild(sandbox);
+        try { reg.render(sandbox); snapshotHtml = sandbox.innerHTML; } catch(e){ console.warn('[pin] erro snapshot:', e); }
+        sandbox.remove();
+      } catch(e){
+        console.warn('[pin] erro ao criar sandbox:', e);
+      }
+
       const data = {
         titulo: reg.titulo,
         pagina: reg.pagina,
         ordem: ordem,
         addedAt: firebase.firestore.FieldValue.serverTimestamp()
       };
+      if(snapshotHtml){
+        data.snapshotHtml = snapshotHtml;
+        data.snapshotAt = firebase.firestore.FieldValue.serverTimestamp();
+      }
       await ref.set(data);
-      _pinAtivos.push({id: id, titulo: reg.titulo, pagina: reg.pagina, ordem: ordem});
+      _pinAtivos.push({id: id, titulo: reg.titulo, pagina: reg.pagina, ordem: ordem, snapshotHtml: snapshotHtml});
       _pinToast('Adicionado à home', 'ok');
     }
     // Atualiza visual dos botões de pin em todos os elementos

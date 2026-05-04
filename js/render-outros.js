@@ -109,15 +109,9 @@ function renderRecebimentos(){
        +      '<div><div class="cct">Top 30 clientes em atraso</div>'
        +      '<div class="ccs">Com distribuição de valor por faixa de aging · ordenado por valor total</div></div>'
        +    '</div>'
-       +    '<div style="display:flex;gap:18px;align-items:flex-start;flex-wrap:wrap;margin:10px 0 6px 0;padding:10px 12px;background:var(--surface-2);border:1px solid var(--border);border-radius:6px;">'
-       +      '<div style="flex:1;min-width:240px;">'
-       +        '<div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;font-weight:700;margin-bottom:6px;">Período de vencimento</div>'
-       +        '<div id="rec-meses-box" style="display:flex;flex-wrap:wrap;gap:5px;"></div>'
-       +      '</div>'
-       +      '<div style="flex:1;min-width:240px;">'
-       +        '<div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;font-weight:700;margin-bottom:6px;">Supervisor (multi)</div>'
-       +        '<div id="rec-sup-box" style="display:flex;flex-wrap:wrap;gap:5px;"></div>'
-       +      '</div>'
+       +    '<div style="margin:10px 0 6px 0;padding:10px 12px;background:var(--surface-2);border:1px solid var(--border);border-radius:6px;">'
+       +      '<div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;font-weight:700;margin-bottom:6px;">Supervisor por loja (multi-select)</div>'
+       +      '<div id="rec-sup-box" style="display:flex;flex-wrap:wrap;gap:5px;"></div>'
        +    '</div>'
        +    '<div class="tscroll" style="margin-top:10px;"><table class="t" id="t-rec-cli">'
        +      '<thead><tr>'
@@ -266,8 +260,11 @@ function renderRecebimentos(){
     if(/INTRA[\s-]?GRUPO/.test(n)) return true;
     return false;
   }
+  // Cada cliente tem uma lista de supervisores. A unidade é (loja, cod_supervisor),
+  // pois cod_supervisor não é único entre lojas (ex: cod=1 = VAREJO em ATP-V e
+  // CESTAO 01 em CP3/CP40). A chave do Map é "loja|cod" para evitar colisão.
   const clientesEnriquecidos = clientes.map(function(c){
-    const supsSet = new Map(); // cod → nome
+    const supsSet = new Map(); // "loja|cod" → {loja, cod, nome}
     (c.rcas || []).forEach(function(rNome){
       // Pula RCAs internos do GPC (não interessam pra análise de inadimplência)
       if(_rcaNomeEhGpcInterno(rNome)) return;
@@ -276,45 +273,57 @@ function renderRecebimentos(){
       if(info && info.cod != null){
         // Aplica filtro de supervisores ignorados (config Administração) — escopo desta página
         if(_isSupervisorIgnorado('recebimentos', info.loja, info.cod)) return;
-        if(!supsSet.has(info.cod)) supsSet.set(info.cod, info.nome);
+        const chave = (info.loja||'?')+'|'+info.cod;
+        if(!supsSet.has(chave)) supsSet.set(chave, {loja:info.loja, cod:info.cod, nome:info.nome});
       }
     });
     return Object.assign({}, c, {
-      _supervisores: Array.from(supsSet.entries()).map(function(e){return {cod:e[0], nome:e[1]};})
+      _supervisores: Array.from(supsSet.values())
     });
   });
 
-  // Popular os "chips" de supervisor (multi-select por toggle)
-  const supsArr = Array.from(supsUnicos.entries())
-    .map(function(e){return {cod:e[0], nome:e[1]};})
-    .sort(function(a,b){return a.cod - b.cod;});
+  // Popular os "chips" de supervisor — chave (loja, cod) pra distinguir
+  // VAREJO #1 (ATP-V) de CESTAO 01 #1 (CP3/CP40), por exemplo.
+  const supsUnicos = new Map(); // "loja|cod" → {loja, cod, nome}
+  clientesEnriquecidos.forEach(function(c){
+    (c._supervisores || []).forEach(function(s){
+      const chave = (s.loja||'?')+'|'+s.cod;
+      if(!supsUnicos.has(chave)) supsUnicos.set(chave, s);
+    });
+  });
+  const supsArr = Array.from(supsUnicos.values())
+    .sort(function(a,b){
+      if(a.loja !== b.loja) return (a.loja||'').localeCompare(b.loja||'');
+      return a.cod - b.cod;
+    });
 
   // Estado dos filtros (sessão)
-  if(typeof window._recSupAtivos === 'undefined') window._recSupAtivos = null;     // null = todos
-  if(typeof window._recMesesAtivos === 'undefined') window._recMesesAtivos = null; // null = todos
-
-  // Lista de meses presentes em mensal
-  const mesesYms = (R.mensal || []).map(function(r){return r.ym;}).filter(Boolean).sort();
+  if(typeof window._recSupAtivos === 'undefined') window._recSupAtivos = null;     // null = todos · array = chaves "loja|cod"
 
   function _renderSupBox(){
     const box = document.getElementById('rec-sup-box');
     if(!box) return;
-    const ativos = window._recSupAtivos; // null = todos
+    const ativos = window._recSupAtivos; // null = todos · array = chaves "loja|cod"
     let h = '<button class="rec-sup-shortcut" data-act="todos" style="padding:4px 9px;font-size:11px;border:1px solid var(--border);border-radius:4px;cursor:pointer;background:transparent;color:var(--text-muted);">Todos</button>';
     h += supsArr.map(function(s){
-      const isOn = ativos === null || ativos.indexOf(s.cod) >= 0;
-      return '<button class="rec-sup-btn" data-cod="'+s.cod+'" style="padding:4px 9px;font-size:11px;border:1px solid var(--border-strong);border-radius:4px;cursor:pointer;'
+      const chave = (s.loja||'?')+'|'+s.cod;
+      const isOn = ativos === null || ativos.indexOf(chave) >= 0;
+      const lojaLbl = s.loja ? (s.loja+' · ') : '';
+      return '<button class="rec-sup-btn" data-chave="'+esc(chave)+'" style="padding:4px 9px;font-size:11px;border:1px solid var(--border-strong);border-radius:4px;cursor:pointer;'
         + (isOn?'background:var(--accent);color:white;border-color:var(--accent);':'background:var(--surface);color:var(--text);')
-        + 'font-weight:600;">#'+s.cod+' '+esc((s.nome||'').substring(0,18))+'</button>';
+        + 'font-weight:600;" title="'+esc(s.loja||'')+' #'+s.cod+' '+esc(s.nome||'')+'">'
+        + esc(lojaLbl)+'#'+s.cod+' '+esc((s.nome||'').substring(0,18))
+        +'</button>';
     }).join('');
     box.innerHTML = h;
+    const todasChaves = supsArr.map(function(x){return (x.loja||'?')+'|'+x.cod;});
     box.querySelectorAll('.rec-sup-btn').forEach(function(b){
       b.addEventListener('click', function(){
-        const cod = Number(b.getAttribute('data-cod'));
-        let cur = (window._recSupAtivos === null) ? supsArr.map(function(x){return x.cod;}) : window._recSupAtivos.slice();
-        const i = cur.indexOf(cod);
-        if(i >= 0) cur.splice(i, 1); else cur.push(cod);
-        window._recSupAtivos = (cur.length === 0 || cur.length === supsArr.length) ? null : cur;
+        const chave = b.getAttribute('data-chave');
+        let cur = (window._recSupAtivos === null) ? todasChaves.slice() : window._recSupAtivos.slice();
+        const i = cur.indexOf(chave);
+        if(i >= 0) cur.splice(i, 1); else cur.push(chave);
+        window._recSupAtivos = (cur.length === 0 || cur.length === todasChaves.length) ? null : cur;
         _renderSupBox();
         _renderTopClientesAtraso();
       });
@@ -328,53 +337,14 @@ function renderRecebimentos(){
     });
   }
 
-  function _renderMesesBox(){
-    const box = document.getElementById('rec-meses-box');
-    if(!box) return;
-    const ativos = window._recMesesAtivos;
-    let h = '<button class="rec-mes-shortcut" data-act="todos" style="padding:4px 9px;font-size:11px;border:1px solid var(--border);border-radius:4px;cursor:pointer;background:transparent;color:var(--text-muted);">Todos</button>';
-    h += '<button class="rec-mes-shortcut" data-act="ult3" style="padding:4px 9px;font-size:11px;border:1px solid var(--border);border-radius:4px;cursor:pointer;background:transparent;color:var(--text-muted);">Últimos 3</button>';
-    h += mesesYms.map(function(ym){
-      const isOn = ativos === null || ativos.indexOf(ym) >= 0;
-      return '<button class="rec-mes-btn" data-ym="'+esc(ym)+'" style="padding:4px 9px;font-size:11px;border:1px solid var(--border-strong);border-radius:4px;cursor:pointer;'
-        + (isOn?'background:var(--accent);color:white;border-color:var(--accent);':'background:var(--surface);color:var(--text);')
-        + 'font-weight:600;">'+esc(_ymToLabel(ym))+'</button>';
-    }).join('');
-    box.innerHTML = h;
-    box.querySelectorAll('.rec-mes-btn').forEach(function(b){
-      b.addEventListener('click', function(){
-        const ym = b.getAttribute('data-ym');
-        let cur = (window._recMesesAtivos === null) ? mesesYms.slice() : window._recMesesAtivos.slice();
-        const i = cur.indexOf(ym);
-        if(i >= 0) cur.splice(i, 1); else cur.push(ym);
-        window._recMesesAtivos = (cur.length === 0 || cur.length === mesesYms.length) ? null : cur;
-        _renderMesesBox();
-        _renderTopClientesAtraso();
-      });
-    });
-    box.querySelectorAll('.rec-mes-shortcut').forEach(function(b){
-      b.addEventListener('click', function(){
-        const act = b.getAttribute('data-act');
-        if(act === 'todos'){
-          window._recMesesAtivos = null;
-        } else if(act === 'ult3'){
-          window._recMesesAtivos = mesesYms.slice(-3);
-          if(window._recMesesAtivos.length === mesesYms.length) window._recMesesAtivos = null;
-        }
-        _renderMesesBox();
-        _renderTopClientesAtraso();
-      });
-    });
-  }
-
   // Função que renderiza tbody com filtros aplicados
   function _renderTopClientesAtraso(){
     let lista = clientesEnriquecidos;
-    const supSel = window._recSupAtivos;
+    const supSel = window._recSupAtivos; // null = todos · array = chaves "loja|cod"
     if(supSel !== null && supSel.length > 0){
       const setSup = new Set(supSel);
       lista = lista.filter(function(c){
-        return c._supervisores.some(function(s){return setSup.has(s.cod);});
+        return c._supervisores.some(function(s){return setSup.has((s.loja||'?')+'|'+s.cod);});
       });
     }
     // Nota: filtro de mês de vencimento atua como filtro informativo no aviso da tabela.
@@ -397,7 +367,10 @@ function renderRecebimentos(){
       const valCls = c.dias_atraso_max>90 ? 'val-neg' : c.dias_atraso_max>60 ? 'hl' : '';
       const supsTxt = c._supervisores.length === 0
         ? '<span class="val-dim">—</span>'
-        : c._supervisores.map(function(s){return '#'+s.cod+' '+esc((s.nome||'').substring(0,16));}).join('<br>');
+        : c._supervisores.map(function(s){
+            const lojaLbl = s.loja ? (s.loja+' ') : '';
+            return esc(lojaLbl)+'#'+s.cod+' '+esc((s.nome||'').substring(0,16));
+          }).join('<br>');
       return '<tr'+(isTop1?' style="background:#fee2e2;"':'')+'>'
         + '<td class="L" style="color:var(--text-muted);font-weight:700;">'+(i+1)+'</td>'
         + '<td class="L"><strong>'+esc(c.cod)+'</strong></td>'
@@ -414,7 +387,6 @@ function renderRecebimentos(){
     }).join('');
   }
   _renderSupBox();
-  _renderMesesBox();
   _renderTopClientesAtraso();
 
   // ─── Tabela RCAs ───

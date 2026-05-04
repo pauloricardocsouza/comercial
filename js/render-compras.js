@@ -1441,7 +1441,18 @@ function _diagBuildIdx(){
 function _renderDiagAvisoConsolidado(containerId, tituloPagina){
   const cont = document.getElementById(containerId);
   if(!cont) return;
-  const filiaisDispon = (_filiaisDisponiveis || []).filter(function(f){return !f.placeholder;});
+  // Filtra: tira placeholders e tira consolidados (raiz/base com filhos), pois
+  // diagnóstico só faz sentido em loja específica. Restam: ATP, CP1, CP3, CP5, CP40.
+  const filiaisDispon = (_filiaisDisponiveis || []).filter(function(f){
+    if(f.placeholder) return false;
+    if(f.tipo === 'raiz') return false;       // GPC Consolidado
+    // 'base' que tem filhos é consolidado também (ex: cp tem cp1/cp3/cp5/cp40)
+    if(f.tipo === 'base'){
+      const temFilhos = (_filiaisDisponiveis || []).some(function(g){return g.parent === f.sigla;});
+      if(temFilhos) return false;
+    }
+    return true;
+  });
   let html = '<div class="ph"><div class="pk">'+esc(tituloPagina)+'</div><h2>Escolha uma <em>loja</em> para diagnosticar</h2></div>'
     + '<div class="ph-sep"></div>'
     + '<div class="page-body" style="padding:40px 20px;">'

@@ -2420,22 +2420,32 @@ function renderVBenchmarking(){
   }).filter(function(y){return ymsAll.indexOf(y) >= 0;});
   const mesesComparaSet = new Set(mesesCompara);
 
-  // Lista de supervisores únicos no cadastro
-  const supsMap = new Map();
+  // Lista de supervisores únicos por (loja, cod_supervisor)
+  // ATENÇÃO: cod_supervisor não é único entre lojas. cod=1 é VAREJO em ATP-V e
+  // CESTAO 01 em CP3/CP40. A chave precisa incluir a loja pra distinguir.
+  const supsMap = new Map(); // "loja|cod" → {loja, cod, nome}
   cad.forEach(function(v){
-    if(v.cod_supervisor != null && !supsMap.has(v.cod_supervisor)){
-      supsMap.set(v.cod_supervisor, v.supervisor || ('Sup. '+v.cod_supervisor));
+    if(v.cod_supervisor == null) return;
+    const chave = (v.loja||'?')+'|'+v.cod_supervisor;
+    if(!supsMap.has(chave)){
+      supsMap.set(chave, {loja:v.loja, cod:v.cod_supervisor, nome:v.supervisor || ('Sup. '+v.cod_supervisor)});
     }
   });
-  const supsArr = Array.from(supsMap.entries())
-    .map(function(e){return {cod:e[0], nome:e[1]};})
-    .sort(function(a,b){return a.cod - b.cod;});
+  const supsArr = Array.from(supsMap.values())
+    .sort(function(a,b){
+      if(a.loja !== b.loja) return (a.loja||'').localeCompare(b.loja||'');
+      return a.cod - b.cod;
+    });
 
-  // Aplicar filtro de supervisores ao cadastro filtrado
+  // Aplicar filtro de supervisores ao cadastro filtrado.
+  // window._rcaSupAtivos é null (todos) ou array de chaves "loja|cod_supervisor".
   const supSel = window._rcaSupAtivos;
   const cadFilt = (supSel === null || supSel.length === 0)
     ? cad
-    : cad.filter(function(v){return supSel.indexOf(v.cod_supervisor) >= 0;});
+    : cad.filter(function(v){
+        const chave = (v.loja||'?')+'|'+v.cod_supervisor;
+        return supSel.indexOf(chave) >= 0;
+      });
 
   // Indexar mensal por cod
   const mensalIdx = new Map();
@@ -2522,14 +2532,18 @@ function renderVBenchmarking(){
 
   // Supervisor multi-select
   html += '<div style="flex:1;min-width:280px;">';
-  html += '<div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;font-weight:700;margin-bottom:6px;">Supervisor (multi-select)</div>';
+  html += '<div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;font-weight:700;margin-bottom:6px;">Supervisor por loja (multi-select)</div>';
   html += '<div style="display:flex;flex-wrap:wrap;gap:5px;">';
   html += '<button class="rca-sup-shortcut" data-act="todos" style="padding:4px 9px;font-size:11px;border:1px solid var(--border);border-radius:4px;cursor:pointer;background:transparent;color:var(--text-muted);">Todos</button>';
   supsArr.forEach(function(s){
-    const isOn = (supSel === null || supSel.indexOf(s.cod) >= 0);
-    html += '<button class="rca-sup-btn" data-cod="'+s.cod+'" style="padding:4px 9px;font-size:11px;border:1px solid var(--border-strong);border-radius:4px;cursor:pointer;'
+    const chave = (s.loja||'?')+'|'+s.cod;
+    const isOn = (supSel === null || supSel.indexOf(chave) >= 0);
+    const lojaLbl = s.loja ? (s.loja+' · ') : '';
+    html += '<button class="rca-sup-btn" data-chave="'+esc(chave)+'" style="padding:4px 9px;font-size:11px;border:1px solid var(--border-strong);border-radius:4px;cursor:pointer;'
          +   (isOn?'background:var(--accent);color:white;border-color:var(--accent);':'background:var(--surface);color:var(--text);')
-         + 'font-weight:600;">#'+s.cod+' '+esc((s.nome||'').substring(0,20))+'</button>';
+         + 'font-weight:600;" title="'+esc(s.loja||'')+' · #'+s.cod+' '+esc(s.nome||'')+'">'
+         + esc(lojaLbl)+'#'+s.cod+' '+esc((s.nome||'').substring(0,20))
+         +'</button>';
   });
   html += '</div>';
   html += '</div>';
@@ -2671,11 +2685,12 @@ function renderVBenchmarking(){
   });
   document.querySelectorAll('.rca-sup-btn').forEach(function(btn){
     btn.addEventListener('click', function(){
-      const cod = Number(btn.getAttribute('data-cod'));
-      let cur = (window._rcaSupAtivos === null) ? supsArr.map(function(x){return x.cod;}) : window._rcaSupAtivos.slice();
-      const i = cur.indexOf(cod);
-      if(i >= 0) cur.splice(i, 1); else cur.push(cod);
-      window._rcaSupAtivos = (cur.length === 0 || cur.length === supsArr.length) ? null : cur;
+      const chave = btn.getAttribute('data-chave');
+      const todasChaves = supsArr.map(function(x){return (x.loja||'?')+'|'+x.cod;});
+      let cur = (window._rcaSupAtivos === null) ? todasChaves.slice() : window._rcaSupAtivos.slice();
+      const i = cur.indexOf(chave);
+      if(i >= 0) cur.splice(i, 1); else cur.push(chave);
+      window._rcaSupAtivos = (cur.length === 0 || cur.length === todasChaves.length) ? null : cur;
       renderVBenchmarking();
     });
   });

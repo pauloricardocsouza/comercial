@@ -4,6 +4,26 @@ Lista das melhorias do sistema de BI da R2 Soluções para o Grupo Pinto Cerquei
 
 ---
 
+## v4.48 · 03/mai/2026
+
+**Correção de bugs no filtro de supervisores e pins, após revisão profunda**
+
+1. **Inadimplência voltou a renderizar.** Bug crítico introduzido na v4.47 — uma variável (`supsUnicos`) era referenciada antes de ser declarada e a página simplesmente travava ao abrir. Corrigido. A página agora abre normalmente e os filtros aparecem.
+
+2. **Filtro de supervisor agora distingue lojas.** Bug semântico encontrado: o `cod_supervisor=1` é "VAREJO" no ATP-V mas "CESTAO 01 - IRARA" no CP3 e CP40. Antes o filtro juntava todos com mesmo número e quando você marcava "#1 VAREJO" estava também filtrando os RCAs do CESTAO 01. Agora a chave é a combinação **(loja, código de supervisor)** e os chips mostram com clareza: "ATP-V · #1 VAREJO" separado de "CP3 · #1 CESTAO 01 - IRARA". Aplicado em RCA e Inadimplência.
+
+3. **Catálogo de Administração só lista páginas que de fato filtram.** Antes apareciam 25 páginas no dropdown de "Configurar página", mas só 3 (Inadimplência, RCA e Drill-Down) realmente respeitavam a configuração. Marcar nas outras 22 não tinha efeito. Para evitar essa frustração, agora o seletor mostra somente as páginas que efetivamente aplicam o filtro. Quando uma página nova ganhar essa capacidade, ela aparece automaticamente.
+
+4. **Pins na home: snapshot do valor é capturado ao fixar.** Antes, fixar um pin guardava só título e link. Se você recarregava e ia direto pra home sem antes visitar a página de origem, aparecia o aviso "Visite a página de origem". Agora ao clicar pra fixar, o sistema renderiza o pin numa área invisível e guarda o HTML do valor atual no Firestore. Se em alguma sessão futura o renderer não estiver disponível, o último valor visto é mostrado com o rótulo "Valor salvo · visite a página para atualizar". Toda vez que você visita a página de origem o snapshot é renovado.
+
+5. **Race condition no carregamento da config.** O carregamento da configuração de supervisores ignorados era feito em paralelo com a renderização das páginas. Em conexões lentas a página podia renderizar antes do cache chegar, ignorando a config. Agora o init aguarda a config terminar antes de mostrar as páginas.
+
+6. **Picker do diagnóstico só mostra lojas finais.** Antes o picker oferecia "GPC Consolidado" e "Comercial Pinto" como opções, mas clicar lá não resolvia (caía de novo no aviso de loja consolidada). Agora só aparecem as lojas finais: ATP, CP1, CP3, CP5, CP40.
+
+7. **Filtro de período removido da Inadimplência.** Era decorativo — o JSON de inadimplência atual não traz o vínculo cliente×mês de vencimento individual, então clicar em um mês não mudava a tabela. Foi removido pra não enganar. Quando o ETL evoluir trazendo essa granularidade, o filtro volta funcionando de verdade.
+
+---
+
 ## v4.47 · 03/mai/2026
 
 **8 ajustes em Vendas**
