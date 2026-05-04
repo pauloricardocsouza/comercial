@@ -4,6 +4,22 @@ Lista das melhorias do sistema de BI da R2 Soluções para o Grupo Pinto Cerquei
 
 ---
 
+## v4.49 · 04/mai/2026
+
+**Configuração de supervisores ignorados expandida e Compras × Vendas agora desconta**
+
+1. **Compras × Vendas passou a descontar supervisores ignorados.** Era a queixa principal: a página somava todos os RCAs sem respeitar a marcação de "supervisores ignorados" da Administração. Causa identificada: `V.mensal` é agregado por `(loja, ym)` sem campo de vendedor, então o desconto não podia ser feito linha-a-linha como em RCA/Inadimplência. Solução implementada: novo helper `Filtros.fatLiqIgnoradoPorLojaYm(pagina)` que usa `V.vendedores.supervisores_por_filial[loja][cod].fat_liq` (fonte autoritativa, gerada do FATO de vendas) e ratea o total pelos meses da loja proporcionalmente ao perfil de venda. Aplicado em Compras × Vendas, Visão Executiva, Visão Consolidada, Evolução Mensal e Análise 2026.
+
+2. **Lista de páginas no admin foi reformulada.** Antes só apareciam 3 páginas (Inadimplência, RCA, Drill-Down) — todas baseadas em iteração linha-a-linha sobre vendedores. Agora aparecem 8: as 3 antigas + Compras × Vendas, Visão Executiva, Visão Consolidada, Evolução Mensal, Análise 2026. Páginas baseadas em estoque por SKU (Estoque, Excesso, Departamentos, Curva ABC, Fornecedores, GPC) e em vendas diárias por loja (Vendas Diárias, Dias C&P, Metas, Itens & Deptos, Cubo, Diag. Produto, Diag. Fornecedor) **continuam fora da lista** porque o ETL não traz vendedor por SKU/dia — ainda. O texto de ajuda da admin foi reescrito explicando o que entra e o que não entra hoje.
+
+3. **Fonte autoritativa: `supervisores_por_filial`, não cruzamento de cadastro.** Identifiquei que cruzar `V.vendedores.cadastro` × `V.vendedores.mensal` deixaria de fora supervisores como INATIVOS e GPC INTRAGRUPO, que aparecem em `supervisores_por_filial` (gerado do FATO) mas não têm vendedor ativo no cadastro atual do WinThor. Por isso o helper usa diretamente o total já calculado pelo ETL e distribui pelos meses pela proporção mensal de venda da loja. Validado: marcar "CP1 · #9 INATIVOS" desconta exatamente R$ 1.530.601,17 no acumulado, batendo com a fonte.
+
+4. **Cache invalida automaticamente quando você muda a config.** Ao salvar nova seleção em Administração, o cache de evo (`_evoCache`) e do helper agregado (`_fatIgnCache`) são invalidados. Próxima abertura de página recalcula com a config nova sem precisar dar F5.
+
+5. **Aviso explícito sobre limitação ATP no admin.** A nota da página Administração agora informa que os supervisores de ATP-V (VAREJO, GPC INTRAGRUPO) e ATP-A (ATACADO BALCÃO) aparecem na lista mas com `fat_liq=0` no ETL, então marcá-los lá não tem efeito até esse bug ser corrigido no Python.
+
+---
+
 ## v4.48 · 03/mai/2026
 
 **Correção de bugs no filtro de supervisores e pins, após revisão profunda**

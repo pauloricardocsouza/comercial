@@ -2768,10 +2768,15 @@ function _ymToLabel(ym){
 // COMPRAS × VENDAS (com gráfico semanal - item 5)
 // ================================================================
 function renderCV(){
-  const evo=getEvo();
-  const tv=sumE('vdo'),tl=sumE('luc');
+  const evo=getEvo('cv');
+  // Totais derivados de evo (já com filtro aplicado), em vez de sumE() global
+  const tv=evo.reduce((s,e)=>s+(e.vdo||0),0);
+  const tl=evo.reduce((s,e)=>s+(e.luc||0),0);
   const tc_liq=evo.reduce((s,e)=>s+comLiq(e.com,e.dvf),0);
-  const tp=sumE('pag'),ta=sumE('abr'),tdvc=sumE('dvc'),tdvf=sumE('dvf');
+  const tp=evo.reduce((s,e)=>s+(e.pag||0),0);
+  const ta=evo.reduce((s,e)=>s+(e.abr||0),0);
+  const tdvc=evo.reduce((s,e)=>s+(e.dvc||0),0);
+  const tdvf=evo.reduce((s,e)=>s+(e.dvf||0),0);
   const lbl=evo.map(e=>PLBL[PERS.indexOf(e.m)]);
   const cob_geral=tv>0?tc_liq/tv*100:0;
 

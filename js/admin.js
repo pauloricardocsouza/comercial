@@ -1858,7 +1858,10 @@ function _renderSupIgnUI(){
     html += '</div>';
 
     html += '<div style="margin-top:10px;padding:8px 10px;background:var(--surface-2);border-left:3px solid var(--accent);border-radius:4px;font-size:11px;color:var(--text-dim);line-height:1.5;">';
-    html += '<strong>Como funciona:</strong> a configuração de supervisores ignorados agora é por página. Cada página da lista acima tem sua própria lista. Páginas que não aparecem no seletor consideram todos os supervisores. Útil para esconder grupos como INATIVOS, NEGOCIAÇÕES ESPECIAIS ou GPC INTRAGRUPO em algumas análises mas mantê-los visíveis em outras.';
+    html += '<strong>Como funciona:</strong> a configuração é por página. Cada página da lista acima tem sua própria seleção. Útil para esconder grupos como INATIVOS, NEGOCIAÇÕES ESPECIAIS ou GPC INTRAGRUPO em algumas análises mas mantê-los visíveis em outras.';
+    html += '<br><br><strong>Páginas listadas (8):</strong> Compras × Vendas, Visão executiva, Visão Consolidada, Evolução Mensal, Inadimplência, RCA, Análise 2026, Drill-Down. Para essas o sistema desconta os supervisores marcados aqui dos totais agregados (cruzando <code>V.vendedores.supervisores_por_filial</code> e ratendo pelo perfil mensal de cada loja).';
+    html += '<br><br><strong>Páginas que não estão aqui</strong> (Estoque, Excesso, Departamentos, Fornecedores, Curva ABC, Cubo, Diag. Produto, Diag. Fornecedor, Itens & Deptos, Vendas Diárias, Dias C&amp;P, Metas) usam fontes que ainda não trazem cod_supervisor por SKU/dia. Quando o ETL passar a fornecer essa quebra, basta adicionar ao catálogo em <code>core.js</code>.';
+    html += '<br><br><strong>Aviso ATP:</strong> os supervisores de ATP-V (VAREJO, GPC INTRAGRUPO) e ATP-A (ATACADO BALCÃO) aparecem na lista mas com <code>fat_liq=0</code> no ETL atual. Marcá-los aqui não tem efeito até esse bug ser corrigido no ETL.';
     html += '</div>';
 
     cont.innerHTML = html;

@@ -216,7 +216,7 @@ const AUTH_MODE = 'firebase'; // 'mock' | 'firebase'
 // Convenção:
 //   X.x → alteração grande (quebra de compatibilidade, nova feature grande)
 //   x.X → alteração suave (fix, ajuste visual, pequeno refinamento)
-const APP_VERSION = '4.48-comercial';
+const APP_VERSION = '4.49-comercial';
 
 // ================================================================
 // HELPERS DE CHART.JS — compatíveis com Safari/iOS (sem spread ops)
@@ -324,10 +324,32 @@ function _auditLog(tipo, detalhes, identidadeOverride){
 // Quando uma página nova começar a aplicar o filtro, basta adicioná-la aqui.
 //
 // A ORDEM aqui segue a ordem do menu lateral (index.html). Mantenha sincronizado.
+//
+// DUAS CATEGORIAS de aplicação do filtro:
+//
+// 1) DIRETO (_isSupervisorIgnorado): páginas que iteram V.vendedores e excluem
+//    linhas individuais. Ex: RCA, Drill-Down, Inadimplência.
+//
+// 2) AGREGADO (Filtros.fatLiqIgnoradoPorLojaYm): páginas que usam V.mensal
+//    (agregado sem cod_supervisor). Subtraímos a parcela de venda dos
+//    supervisores ignorados via cruzamento com V.vendedores.mensal.
+//
+// IMPORTANTE: só inclua aqui páginas onde o filtro REALMENTE aplica no
+// resultado visível. Páginas baseadas em E.produtos (Estoque, Excesso,
+// Departamentos por SKU, Curva ABC, Fornecedores) NÃO têm como descontar
+// supervisor — o ETL não traz vendedor por SKU. Não inclua essas.
+// Páginas baseadas em V.diario (Vendas Diárias, Dias C&P) também não.
 const _SUP_IGN_PAGINAS_CATALOGO = [
-  {id:'recebimentos',   label:'Inadimplência',          grupo:'Vendas',       aplicaFiltro:true},
-  {id:'v-benchmarking', label:'RCA',                    grupo:'Vendas',       aplicaFiltro:true},
-  {id:'v-drilldown',    label:'Drill-Down por Vendedor',grupo:'Vendas',       aplicaFiltro:true},
+  // Compras (cv consome via getEvo + V.mensal)
+  {id:'cv',             label:'Compras × Vendas',        grupo:'Compras',      aplicaFiltro:true},
+  // Vendas (todas usam V.mensal via _vendasMensalPor com pagina, ou aplicaFiltroSupVMensalRow)
+  {id:'executivo',      label:'Visão executiva',         grupo:'Vendas',       aplicaFiltro:true},
+  {id:'v-visao-grupo',  label:'Visão Consolidada',       grupo:'Vendas',       aplicaFiltro:true},
+  {id:'v-evolucao',     label:'Evolução Mensal',         grupo:'Vendas',       aplicaFiltro:true},
+  {id:'recebimentos',   label:'Inadimplência',           grupo:'Vendas',       aplicaFiltro:true},
+  {id:'v-benchmarking', label:'RCA',                     grupo:'Vendas',       aplicaFiltro:true},
+  {id:'v-ano2026',      label:'Análise 2026',            grupo:'Vendas',       aplicaFiltro:true},
+  {id:'v-drilldown',    label:'Drill-Down por Vendedor', grupo:'Vendas',       aplicaFiltro:true},
 ];
 
 let _supIgnoradosCache = null;     // {paginas: {pagina: {loja: [cod, ...]}}}
@@ -374,6 +396,14 @@ async function _salvarSupervisoresIgnorados(novoMapa){
   if(!novoMapa) novoMapa = {paginas:{}};
   if(!novoMapa.paginas) novoMapa.paginas = {};
   _supIgnoradosCache = novoMapa;
+  // Invalida cache do helper agregado, que indexa por (pagina, cfg snapshot)
+  if(typeof Filtros !== 'undefined'){
+    Filtros._fatIgnCache = null;
+    Filtros._fatIgnCacheKey = null;
+  }
+  // Invalida cache do evo, que depende de V/C/F mas também do filtro aplicado
+  _evoCache = null;
+  _evoCacheKey = null;
   // localStorage sempre
   try { localStorage.setItem(SUP_IGN_LS_KEY, JSON.stringify(_supIgnoradosCache)); } catch(e){}
   // Firestore se disponível
@@ -618,10 +648,158 @@ const Filtros = {
     const cad = cadIdx && cadIdx[cod];
     return Filtros.vendedorEhValido(cad);
   },
+
+  /**
+   * Calcula o agregado de fat_liq, lucro, devol, qt e nfs dos supervisores
+   * IGNORADOS na página `pagina`, indexado por (loja, ym).
+   *
+   * Usado por agregados que não têm cod_supervisor (V.mensal, V.deptos etc):
+   * basta SUBTRAIR esse delta do total agregado.
+   *
+   * Ambiguidade: V.vendedores.mensal não traz `loja`, e ~12 cods aparecem em
+   * mais de uma loja. Estratégia:
+   *   - cods com loja única no cadastro: atribuição direta
+   *   - cods em múltiplas lojas: rateamos proporcionalmente ao fat_liq dessas
+   *     lojas em V.mensal naquele ym (o fat agregado da loja é a verdade).
+   *   - se TODAS as lojas onde o cod aparece tiverem o supervisor ignorado:
+   *     subtrai 100%. Se NENHUMA: 0%.
+   *
+   * FONTE AUTORITATIVA: V.vendedores.supervisores_por_filial[loja][cod].fat_liq
+   * traz o TOTAL real do supervisor (gerado direto do FATO de vendas, mais
+   * confiável que cruzar cadastro × mensal — porque o cadastro só lista RCAs
+   * ATIVOS, deixando supervisores como INATIVOS sem nenhum vendedor associado).
+   *
+   * Como `supervisores_por_filial` traz só o total acumulado e precisamos
+   * ratear por ym, distribuímos proporcionalmente ao perfil de venda da loja
+   * (V.mensal[loja].fat_liq por ym ÷ total da loja).
+   *
+   * Cacheado por (pagina, snapshot do cfg) — recalcula quando user muda admin.
+   *
+   * @param {string} pagina - id da página (ex: 'cv', 'deptos')
+   * @returns {Map<string, {fat_liq, lucro, devol, qt, nfs}>}
+   *           chave = "loja|ym"
+   */
+  fatLiqIgnoradoPorLojaYm: function(pagina){
+    if(!pagina || !V || !V.vendedores) return new Map();
+
+    // Cache por (pagina + cfg snapshot)
+    const cfgSnap = JSON.stringify(_supIgnoradosCache && _supIgnoradosCache.paginas || {});
+    const cacheKey = pagina + '||' + cfgSnap;
+    if(Filtros._fatIgnCache && Filtros._fatIgnCacheKey === cacheKey){
+      return Filtros._fatIgnCache;
+    }
+
+    const out = new Map();
+    function getOrInit(k){
+      if(!out.has(k)) out.set(k, {fat_liq:0, lucro:0, devol:0, qt:0, nfs:0});
+      return out.get(k);
+    }
+
+    const spf = V.vendedores.supervisores_por_filial || {};
+    const vmensal = V.mensal || [];
+
+    // Pra cada loja, calcular o perfil mensal: pesoLojaYm = fat_liq(loja,ym) / total(loja)
+    // (usado pra ratear o total do supervisor pelos ym da loja)
+    const pesoLojaYm = new Map();    // "loja|ym" → 0..1
+    const totalLoja  = new Map();    // "loja" → total fat_liq
+    vmensal.forEach(function(r){
+      totalLoja.set(r.loja, (totalLoja.get(r.loja)||0) + (r.fat_liq||0));
+    });
+    vmensal.forEach(function(r){
+      const tot = totalLoja.get(r.loja) || 0;
+      pesoLojaYm.set(r.loja+'|'+r.ym, tot>0 ? (r.fat_liq||0)/tot : 0);
+    });
+
+    // Pra cada (loja, supervisor) ignorado, distribuir o total pelos ym da loja
+    Object.keys(spf).forEach(function(loja){
+      const sups = spf[loja] || [];
+      sups.forEach(function(s){
+        const cod = Number(s.cod);
+        if(!_isSupervisorIgnorado(pagina, loja, cod)) return;
+        const fat = s.fat_liq || 0;
+        if(fat <= 0) return;
+        // Distribui pelos ym da loja
+        const ymsDaLoja = vmensal.filter(function(r){return r.loja === loja;});
+        ymsDaLoja.forEach(function(r){
+          const peso = pesoLojaYm.get(r.loja+'|'+r.ym) || 0;
+          if(peso <= 0) return;
+          const k = r.loja+'|'+r.ym;
+          const acc = getOrInit(k);
+          acc.fat_liq += fat * peso;
+          // Lucro/qt/nfs: aproximamos pela margem média da loja naquele ym
+          const margemYm = (r.fat_liq||0) > 0 ? (r.lucro||0)/(r.fat_liq||0) : 0;
+          acc.lucro   += fat * peso * margemYm;
+          // qt/nfs: rateio proporcional ao fat_liq da loja no ym (aproximação)
+          if((r.fat_liq||0) > 0){
+            acc.qt    += (r.qt||0)  * (fat * peso) / (r.fat_liq||0);
+            acc.nfs   += Math.round((r.nfs||0) * (fat * peso) / (r.fat_liq||0));
+          }
+        });
+      });
+    });
+
+    Filtros._fatIgnCache = out;
+    Filtros._fatIgnCacheKey = cacheKey;
+    return out;
+  },
+
+  /**
+   * Soma o delta a subtrair em todas as lojas/ym, dado um filtro de pagina.
+   * Útil pra um total agregado simples.
+   * @returns {{fat_liq, lucro, devol, qt, nfs}}
+   */
+  fatLiqIgnoradoTotal: function(pagina, lojaFilter, ymSet){
+    const m = Filtros.fatLiqIgnoradoPorLojaYm(pagina);
+    const acc = {fat_liq:0, lucro:0, devol:0, qt:0, nfs:0};
+    m.forEach(function(v, k){
+      const parts = k.split('|');
+      const loja = parts[0], ym = parts[1];
+      if(lojaFilter && loja !== lojaFilter) return;
+      if(ymSet && !ymSet.has(ym)) return;
+      acc.fat_liq += v.fat_liq;
+      acc.lucro   += v.lucro;
+      acc.devol   += v.devol;
+      acc.qt      += v.qt;
+      acc.nfs     += v.nfs;
+    });
+    return acc;
+  },
 };
 
 // Expor pra console pra debug
 window._supIgnDebug = function(){ return _supIgnoradosCache; };
+
+/**
+ * Helper de uso geral pelas páginas de Vendas: aplica desconto de supervisores
+ * ignorados em uma linha de V.mensal (ou similar com {loja, ym, fat_liq, lucro, qt, nfs}).
+ *
+ * @param {object} r - linha original com {loja, ym, fat_liq, lucro, qt, nfs}
+ * @param {string} pagina - id da página
+ * @returns {object} cópia da linha com valores descontados (não-negativos)
+ */
+function aplicaFiltroSupVMensalRow(r, pagina){
+  if(!pagina || !r) return r;
+  const m = Filtros.fatLiqIgnoradoPorLojaYm(pagina);
+  if(!m || !m.size) return r;
+  const d = m.get((r.loja||'')+'|'+(r.ym||''));
+  if(!d) return r;
+  return {
+    loja: r.loja, ym: r.ym,
+    fat_brt: r.fat_brt,  // não temos como descontar, mantém
+    fat_liq: Math.max(0, (r.fat_liq||0) - d.fat_liq),
+    devol:   r.devol,    // sem quebra por vendedor; mantém
+    lucro:   (r.lucro||0) - d.lucro,
+    marg:    null,       // recalcular fora se precisar
+    qt:      Math.max(0, (r.qt||0) - d.qt),
+    nfs:     Math.max(0, (r.nfs||0) - d.nfs),
+    clientes_pdv: r.clientes_pdv,
+    skus: r.skus,
+    vendedores_ativos: r.vendedores_ativos,
+    cmv: r.cmv,
+    qt_dev: r.qt_dev
+  };
+}
+window.aplicaFiltroSupVMensalRow = aplicaFiltroSupVMensalRow;
 
 
 // ================================================================
@@ -4799,10 +4977,16 @@ let _evoCacheKey = null;
  *
  * Filtrado nos meses presentes em V.mensal (jan/2025 a abr/2026).
  * Reaproveitado por todas as funções de Compras (renderCV, renderDeptos, etc).
+ *
+ * @param {string} pagina - id da página (opcional). Se passado e estiver no
+ *   catálogo de filtro de supervisor, subtrai a parcela ignorada.
  */
-function _construirEvoFromNovo(){
-  // Cache key baseada em quais JSONs estão carregados
-  const key = (V?'V':'')+(C?'C':'')+(F?'F':'');
+function _construirEvoFromNovo(pagina){
+  // Cache key baseada em quais JSONs estão carregados E na pagina+cfg.
+  // Cada página tem seu próprio cache (mas todas apontam pro mesmo storage).
+  const cfgSnap = (typeof _supIgnoradosCache !== 'undefined' && _supIgnoradosCache)
+    ? JSON.stringify(_supIgnoradosCache.paginas || {}) : '';
+  const key = (V?'V':'')+(C?'C':'')+(F?'F':'')+'||'+(pagina||'')+'||'+cfgSnap;
   if(_evoCache && _evoCacheKey === key) return _evoCache;
 
   if(!V || !V.mensal){
@@ -4811,15 +4995,27 @@ function _construirEvoFromNovo(){
     return _evoCache;
   }
 
-  // Agregar V.mensal por ym (somando ATP-V + ATP-A)
+  // Mapa pra subtrair de cada (loja, ym) — vazio se nenhuma página passada
+  const ignDelta = pagina ? Filtros.fatLiqIgnoradoPorLojaYm(pagina) : null;
+
+  // Agregar V.mensal por ym (somando ATP-V + ATP-A) e descontando supervisores ignorados
   const m = new Map();
   V.mensal.forEach(function(r){
     if(!m.has(r.ym)) m.set(r.ym, {m:r.ym, vdo:0, luc:0, dvc:0, ni_v:0});
     const x = m.get(r.ym);
-    x.vdo += r.fat_liq||0;
-    x.luc += r.lucro||0;
+    let fat = r.fat_liq||0, luc = r.lucro||0, qtNfs = r.nfs||0;
+    if(ignDelta){
+      const d = ignDelta.get(r.loja+'|'+r.ym);
+      if(d){
+        fat   = Math.max(0, fat - d.fat_liq);
+        luc   = luc - d.lucro;
+        qtNfs = Math.max(0, qtNfs - d.nfs);
+      }
+    }
+    x.vdo += fat;
+    x.luc += luc;
     x.dvc += r.devol||0;
-    x.ni_v += r.nfs||0;
+    x.ni_v += qtNfs;
   });
 
   // Agregar compras por ym (de C.mensal)
@@ -4878,9 +5074,11 @@ function _construirEvoFromNovo(){
   return out;
 }
 
-function getEvo(){
+function getEvo(pagina){
   // Se temos D legado, usa ele. Se não, monta a partir dos JSONs novos.
-  const fonte = (D && D.evo_mensal) ? D.evo_mensal : _construirEvoFromNovo();
+  // Quando `pagina` é passada, aplica filtro de supervisores ignorados
+  // dessa página (subtraindo o agregado dos vendedores).
+  const fonte = (D && D.evo_mensal) ? D.evo_mensal : _construirEvoFromNovo(pagina);
   return fonte.filter(function(e){return activePers.has(e.m);});
 }
 

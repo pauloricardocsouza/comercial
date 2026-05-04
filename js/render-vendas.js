@@ -270,30 +270,40 @@ const VENDAS_PANELS_STRUCTURE = {
 /**
  * Helper interno: agrega V.mensal por (loja, ym) ou só por ym.
  * Útil para gerar séries mensais consolidadas vs por loja.
+ *
+ * @param {string} loja - sigla da loja (null = consolidado de todas)
+ * @param {string} pagina - id da página pra aplicar filtro de supervisor (opcional)
  */
 // Cache memoizado para _vendasMensalPor — invalida quando V muda (verifica V.meta.geradoEm)
+// ou quando o cfg de supervisores ignorados muda (snapshot na chave).
 let _vmpCache = null;
 let _vmpCacheKey = null;
-function _vendasMensalPor(loja){
+function _vendasMensalPor(loja, pagina){
   if(!V || !V.mensal) return [];
-  // Chave do cache: identificador único do dataset V atual
-  const cacheKey = (V.meta && V.meta.geradoEm) || 'noKey';
+  // Chave do cache: dataset V + cfg de supervisores ignorados (afeta resultados)
+  const cfgSnap = (typeof _supIgnoradosCache !== 'undefined' && _supIgnoradosCache)
+    ? JSON.stringify(_supIgnoradosCache.paginas || {}) : '';
+  const cacheKey = ((V.meta && V.meta.geradoEm) || 'noKey') + '||' + cfgSnap;
   if(_vmpCacheKey !== cacheKey){
     _vmpCache = new Map();
     _vmpCacheKey = cacheKey;
   }
-  const k = loja || '__GRUPO__';
+  const k = (loja || '__GRUPO__') + '|' + (pagina || '');
   const cached = _vmpCache.get(k);
   if(cached) return cached;
 
   let resultado;
+  // Se pagina foi passada e o helper de filtro existe, transforma cada linha
+  const aplica = pagina && typeof aplicaFiltroSupVMensalRow === 'function';
   if(loja){
     resultado = V.mensal.filter(function(r){return r.loja === loja;})
+                       .map(function(r){ return aplica ? aplicaFiltroSupVMensalRow(r, pagina) : r; })
                        .sort(function(a,b){return a.ym<b.ym?-1:1;});
   } else {
     // Consolida grupo (somando todas as lojas por ym)
     const m = new Map();
-    V.mensal.forEach(function(r){
+    V.mensal.forEach(function(rRaw){
+      const r = aplica ? aplicaFiltroSupVMensalRow(rRaw, pagina) : rRaw;
       if(!m.has(r.ym)) m.set(r.ym, {ym:r.ym, fat_brt:0, fat_liq:0, devol:0, lucro:0, qt:0, nfs:0});
       const x = m.get(r.ym);
       x.fat_brt += r.fat_brt||0;
@@ -444,7 +454,7 @@ function renderVVisaoGrupo(){
     return {
       label: loja==='ATP-V'?'ATP Varejo':'ATP Atacado',
       data: anosBars.map(function(ano){
-        const m = _vendasMensalPor(loja).filter(function(r){return r.ym >= ano+'-01' && r.ym <= ano+'-03';});
+        const m = _vendasMensalPor(loja, 'v-visao-grupo').filter(function(r){return r.ym >= ano+'-01' && r.ym <= ano+'-03';});
         return m.reduce(function(s,r){return s+r.fat_liq;}, 0);
       }),
       backgroundColor: idx===0 ? _PAL.ac+'CC' : _PAL.hl+'CC',
@@ -504,8 +514,8 @@ function renderVVisaoGrupo(){
   // ─── Tabela 2: jan-mar 26 vs jan-mar 25 ───
   const linhasT2 = [];
   ['ATP-V', 'ATP-A'].forEach(function(loja){
-    const m25 = _vendasMensalPor(loja).filter(function(r){return r.ym >= '2025-01' && r.ym <= '2025-03';});
-    const m26 = _vendasMensalPor(loja).filter(function(r){return r.ym >= '2026-01' && r.ym <= '2026-03';});
+    const m25 = _vendasMensalPor(loja, 'v-visao-grupo').filter(function(r){return r.ym >= '2025-01' && r.ym <= '2025-03';});
+    const m26 = _vendasMensalPor(loja, 'v-visao-grupo').filter(function(r){return r.ym >= '2026-01' && r.ym <= '2026-03';});
     const f25 = m25.reduce(function(s,r){return s+r.fat_liq;}, 0);
     const f26 = m26.reduce(function(s,r){return s+r.fat_liq;}, 0);
     const dif = f26 - f25;
@@ -643,7 +653,7 @@ function renderVEvolucao(){
   // GRÁFICOS
   // ═══════════════════════════════════════════════════════════
 
-  const grupo = _vendasMensalPor(null);
+  const grupo = _vendasMensalPor(null, 'v-evolucao');
   const lblG = grupo.map(function(r){return _ymToLabel(r.ym);});
 
   // Cores fixas por loja (consistência visual)
@@ -667,7 +677,7 @@ function renderVEvolucao(){
     }
   ];
   lojasDisp.forEach(function(l){
-    const m = _vendasMensalPor(l);
+    const m = _vendasMensalPor(l, 'v-evolucao');
     // Alinhar pelo eixo do grupo (preencher 0 onde não tiver mês)
     const data = lblG.map(function(_, i){
       const ym = grupo[i].ym;
@@ -705,7 +715,7 @@ function renderVEvolucao(){
 
   // ── Cards individuais por loja ──
   lojasDisp.forEach(function(l){
-    const m = _vendasMensalPor(l);
+    const m = _vendasMensalPor(l, 'v-evolucao');
     if(!m.length) return;
     const lbl = m.map(function(r){return _ymToLabel(r.ym);});
     mkC('c-vevo-loja-'+l, {
@@ -736,7 +746,7 @@ function renderVEvolucao(){
       const dsComp = [];
       const dadosLojas = {};
       lojasDisp.forEach(function(l){
-        const m = _vendasMensalPor(l);
+        const m = _vendasMensalPor(l, 'v-evolucao');
         dadosLojas[l] = m;
       });
       // Datasets: lojas não-destacadas em cinza claro fino, loja destaque colorida grossa
@@ -816,7 +826,7 @@ function renderVEvolucao(){
 
   // ── Tabela mensal com seletor de loja ──
   function renderTabelaVevo(loja){
-    const dados = _vendasMensalPor(loja || null);
+    const dados = _vendasMensalPor(loja || null, 'v-evolucao');
     const tb = document.getElementById('tb-vevo');
     if(!tb) return;
     tb.innerHTML = dados.slice().reverse().map(function(r){
@@ -1172,8 +1182,8 @@ function renderVAno2026(){
   const grupo2025 = (V.resumo && V.resumo.grupo && V.resumo.grupo.por_ano && V.resumo.grupo.por_ano['2025']) || {};
 
   // Janela jan-abr (período coberto em 2026)
-  const m2026 = _vendasMensalPor(null).filter(function(r){return r.ym.startsWith('2026-');});
-  const m2025JanAbr = _vendasMensalPor(null).filter(function(r){return r.ym >= '2025-01' && r.ym <= '2025-04';});
+  const m2026 = _vendasMensalPor(null, 'v-ano2026').filter(function(r){return r.ym.startsWith('2026-');});
+  const m2025JanAbr = _vendasMensalPor(null, 'v-ano2026').filter(function(r){return r.ym >= '2025-01' && r.ym <= '2025-04';});
 
   const fat26 = m2026.reduce(function(s,r){return s+r.fat_liq;}, 0);
   const fat25JA = m2025JanAbr.reduce(function(s,r){return s+r.fat_liq;}, 0);
@@ -1789,11 +1799,13 @@ function renderExecutivo(){
 
   // ─── helpers internos ─────────────────────────────────────────────
   // Mensal de vendas: V.mensal é [{loja, ym, fat_liq, lucro, marg, qt, nfs}, ...]
-  // Agregamos por ym (somando ATP-V + ATP-A).
+  // Agregamos por ym (somando ATP-V + ATP-A), descontando supervisores ignorados
+  // configurados pra página 'executivo' em Administração.
   function _vendasMensalGrupo(){
     if(!V || !V.mensal) return [];
     const m = new Map();
-    V.mensal.forEach(function(r){
+    V.mensal.forEach(function(rRaw){
+      const r = aplicaFiltroSupVMensalRow(rRaw, 'executivo');
       if(!m.has(r.ym)) m.set(r.ym, {ym:r.ym, fat_liq:0, lucro:0, qt:0, nfs:0});
       const x = m.get(r.ym);
       x.fat_liq += r.fat_liq||0;
