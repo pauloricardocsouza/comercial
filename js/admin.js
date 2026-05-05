@@ -2146,9 +2146,13 @@ document.getElementById('btn-pdf').addEventListener('click',function(){
 injectFilterBars();
 (function(){
   const perfilU = _getPerfilUsuario();
-  let pgInicial = 'home';
-  if(perfilU && perfilU.paginasPermitidas && !perfilU.paginasPermitidas.includes('home')){
-    pgInicial = perfilU.paginasPermitidas[0] || 'home';
+  // Home oculta nesta versão — abre direto Visão Executiva
+  let pgInicial = 'executivo';
+  if(perfilU && perfilU.paginasPermitidas && perfilU.paginasPermitidas.length){
+    // respeita perfil restrito; se 'executivo' não permitido, usa primeira página permitida
+    if(!perfilU.paginasPermitidas.includes('executivo')){
+      pgInicial = perfilU.paginasPermitidas.find(function(p){return p !== 'home';}) || 'executivo';
+    }
   }
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
   const pageEl = document.getElementById('page-'+pgInicial);

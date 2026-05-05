@@ -4,6 +4,24 @@ Lista das melhorias do sistema de BI da R2 Soluções para o Grupo Pinto Cerquei
 
 ---
 
+## v4.51 · 05/mai/2026
+
+**Badge "ATP · Filial 1" removido do cabeçalho**
+
+1. **Badge fixo "ATP · Filial 1" tirado do topo.** Era um span estático no `index.html` (ao lado dos botões XLSX/PDF), não refletia a base/loja realmente ativa — apenas poluía o cabeçalho. Removido. As regras CSS de responsividade da classe `.base-badge` ficaram no arquivo (sem efeito), prontas pra reuso futuro caso queiramos um badge dinâmico de fato.
+
+---
+
+## v4.50 · 04/mai/2026
+
+**Página Home oculta**
+
+1. **Página Home foi ocultada por enquanto.** O botão "Home" no menu lateral foi escondido (`display:none`), a página inicial padrão passou a ser **Visão Executiva**, e qualquer chamada interna a `renderPage('home')` é redirecionada automaticamente pra Visão Executiva. Se o usuário tinha "home" gravado como última página em `localStorage._paginaAtual`, na próxima abertura cai direto na Visão Executiva. Botão "← Voltar para Home" do Excesso de estoque virou "← Voltar para Visão Executiva".
+
+2. **Configuração reversível em uma linha.** Pra mostrar a Home de novo no futuro, basta remover o `style="display:none;"` do botão em `index.html` linha 1499 e tirar o redirect no topo de `renderPage` em `render-compras.js`.
+
+---
+
 ## v4.49 · 04/mai/2026
 
 **Configuração de supervisores ignorados expandida e Compras × Vendas agora desconta**

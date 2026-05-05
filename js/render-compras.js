@@ -57,7 +57,7 @@ function _renderComprasIndisponivel(pg){
 
   html += '<div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center;margin-top:6px;">'
        + '<button class="ebtn" style="background:var(--surface);border:1px solid var(--border-strong);color:var(--text);padding:8px 14px;border-radius:7px;font-weight:600;cursor:pointer;font-size:11px;" onclick="document.querySelector(\'.sb-link[data-p=cubo]\').click()">📊 Análise Dinâmica (cubo OLAP)</button>'
-       + '<button class="ebtn" style="background:var(--surface);border:1px solid var(--border-strong);color:var(--text);padding:8px 14px;border-radius:7px;font-weight:600;cursor:pointer;font-size:11px;" onclick="document.querySelector(\'.sb-link[data-p=home]\').click()">← Voltar para Home</button>'
+       + '<button class="ebtn" style="background:var(--surface);border:1px solid var(--border-strong);color:var(--text);padding:8px 14px;border-radius:7px;font-weight:600;cursor:pointer;font-size:11px;" onclick="document.querySelector(\'.sb-link[data-p=executivo]\').click()">← Voltar para Visão Executiva</button>'
        + '</div>'
        + '</div></div></div>';
 
@@ -4475,6 +4475,8 @@ function renderFornGPCNovo(){
 }
 
 function renderPage(pg){
+  // Home oculta nesta versão — qualquer chamada cai em Visão Executiva
+  if(pg === 'home') pg = 'executivo';
   // Cleanup ao sair da Análise Dinâmica: destrói chart e cancela debounce
   if(pg !== 'cubo'){
     if(typeof _pvChart !== 'undefined' && _pvChart){

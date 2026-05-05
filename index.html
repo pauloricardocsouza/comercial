@@ -1479,7 +1479,6 @@ textarea.proc-inp{resize:vertical;min-height:44px}
   <div style="display:flex;align-items:center;gap:10px;margin-left:auto;">
     <span id="fil-sum" style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#c9d0da;"></span>
     <span id="snapshot-info" style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#c9d0da;display:none;" title="Data dos dados carregados"></span>
-    <span class="base-badge">ATP · Filial 1</span>
     <div class="exp-btns">
       <button class="ebtn xlsx" id="btn-xlsx" aria-label="Exportar para Excel"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>XLSX</button>
       <button class="ebtn pdf" id="btn-pdf" aria-label="Exportar para PDF"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>PDF</button>
@@ -1496,8 +1495,8 @@ textarea.proc-inp{resize:vertical;min-height:44px}
         <span class="ico-close" style="display:none;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M13 5l7 7-7 7"/><path d="M3 12h16" opacity=".5"/></svg></span>
       </button>
     </div>
-    <button class="sb-link active" data-p="home"><span class="sbi"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg></span>Home</button>
-    <button class="sb-link" data-p="executivo"><span class="sbi"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg></span>Visão executiva</button>
+    <button class="sb-link" data-p="home" style="display:none;"><span class="sbi"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg></span>Home</button>
+    <button class="sb-link active" data-p="executivo"><span class="sbi"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg></span>Visão executiva</button>
   </div>
   <div class="sb-group" data-group="compras">
     <button class="sb-group-toggle" type="button" onclick="_toggleSbGroup('compras')">
@@ -1889,10 +1888,10 @@ textarea.proc-inp{resize:vertical;min-height:44px}
      JS principal · dividido em 5 arquivos pela auditoria v4.6
      Ordem importa: core declara as globais; render-* dependem de core.
      ════════════════════════════════════════════════════════════════════════════ -->
-<script src="js/core.js?v=4.49"></script>
-<script src="js/render-compras.js?v=4.49"></script>
-<script src="js/render-vendas.js?v=4.49"></script>
-<script src="js/render-outros.js?v=4.49"></script>
-<script src="js/admin.js?v=4.49"></script>
+<script src="js/core.js?v=4.51"></script>
+<script src="js/render-compras.js?v=4.51"></script>
+<script src="js/render-vendas.js?v=4.51"></script>
+<script src="js/render-outros.js?v=4.51"></script>
+<script src="js/admin.js?v=4.51"></script>
 </body>
 </html>
