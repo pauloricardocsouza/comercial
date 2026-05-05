@@ -4,6 +4,26 @@ Lista das melhorias do sistema de BI da R2 Soluções para o Grupo Pinto Cerquei
 
 ---
 
+## v4.53 · 05/mai/2026
+
+**Cabeçalho enxuto + carga inicial de Metas e Dias C&P**
+
+1. **Removido do cabeçalho:** os meses ativos (`Jan/26, Fev/26, Mar/26, Abr/26`) e a data de retrato (`📅 29/04/2026`) que apareciam o tempo todo. Agora o topo só mostra o widget de usuário e os botões XLSX/PDF. As regras CSS dos elementos `#fil-sum` e `#snapshot-info` foram fixadas com `!important` pra prevalecer sobre os scripts que tentavam mostrá-los de novo.
+
+2. **Metas iniciais carregadas (4 lojas, 17 meses cada):**
+   - **Cestão Inhambupe (CP5):** R$ 29,3 mi total
+   - **Cestão Loja 1 / Irará (CP3):** R$ 115,6 mi total
+   - **ATP Varejo (ATP-V):** R$ 110,1 mi total
+   - **ATP Atacado (ATP-A):** R$ 42,7 mi total
+   
+   Para 2026, ATP-V e ATP-A foram derivados rateando a meta consolidada de cada mês pelo perfil VAREJO/ATACADO de 2025 do mesmo mês (porque o Excel só trouxe o split V/A pra 2025 e o consolidado pra 2026). Edite manualmente na página Metas se quiser ajustar os percentuais. CP1 e CP40 ficaram sem metas — o sistema só comporta as 4 lojas listadas em `_METAS_LOJAS`.
+
+3. **Dias C&P iniciais carregados (16 meses, jan/2025 a abr/2026):** os mesmos dias foram aplicados pra todas as 7 lojas (GRUPO, ATP-V, ATP-A, CP1, CP3, CP5, CP40) já que são decisões corporativas. Caso varie por loja, basta editar pela página Dias C&P.
+
+4. **Mecanismo de seed:** ambos os dados foram entregues como arquivos `metas_seed.json` e `dias_cp_seed.json` no diretório raiz do dist. Na primeira abertura de cada página (Metas ou Dias C&P) com Firestore vazio, o sistema lê o seed e grava no Firestore automaticamente. Idempotente — não sobrescreve dados existentes. Ricardo abre a página Metas uma vez, dá meio segundo pra gravar, e tudo aparece.
+
+---
+
 ## v4.52 · 05/mai/2026
 
 **Correção: botão Home continuava aparecendo na v4.50/v4.51**

@@ -3303,9 +3303,45 @@ async function _dcpCarregarFirestore(){
       _dcpDiasCadastrados[loja][ym] = d.dias || [];
     });
     _dcpFirestoreCarregado = true;
+    // Se Firestore vazio, tentar seed
+    const totalEntries = Object.keys(_dcpDiasCadastrados).reduce(function(s,l){
+      return s + Object.keys(_dcpDiasCadastrados[l]||{}).length;
+    }, 0);
+    if(totalEntries === 0){
+      await _dcpTentarCarregarSeed();
+    }
   } catch(e){
     console.warn('[dcp] erro carregando:', e);
     _dcpFirestoreCarregado = true;
+  }
+}
+
+// Carrega dias_cp_seed.json (estático no dist) e grava cada (loja,ym) faltante
+// no Firestore. Idempotente: só cria docs que ainda não existem.
+async function _dcpTentarCarregarSeed(){
+  try {
+    const resp = await fetch('dias_cp_seed.json?ts='+Date.now());
+    if(!resp.ok) return;
+    const seed = await resp.json();
+    const dpl = seed && seed.dias_por_loja_ym;
+    if(!dpl) return;
+    let importou = 0;
+    const promises = [];
+    Object.keys(dpl).forEach(function(loja){
+      Object.keys(dpl[loja] || {}).forEach(function(ym){
+        const dias = dpl[loja][ym];
+        if(!dias || !dias.length) return;
+        // Só importa se ainda não existir
+        if(_dcpDiasCadastrados[loja] && _dcpDiasCadastrados[loja][ym]) return;
+        promises.push(_dcpSalvar(loja, ym, dias).then(function(ok){ if(ok) importou++; }));
+      });
+    });
+    await Promise.all(promises);
+    if(importou > 0){
+      console.log('[dcp] seed inicial: '+importou+' (loja,mês) importados');
+    }
+  } catch(e){
+    console.warn('[dcp] seed indisponível:', e.message);
   }
 }
 
@@ -3952,10 +3988,44 @@ async function _metasCarregarFirestore(){
       _metasDados = {lojas:{}};
     }
     _metasFirestoreCarregado = true;
+    // Se Firestore está vazio, tenta carregar seed e gravar de volta
+    const totalLojasComMeta = Object.keys(_metasDados.lojas || {})
+      .filter(function(l){ return Object.keys(_metasDados.lojas[l]||{}).length > 0; }).length;
+    if(totalLojasComMeta === 0){
+      await _metasTentarCarregarSeed();
+    }
   } catch(e){
     console.warn('[metas] erro carregando:', e);
     _metasDados = {lojas:{}};
     _metasFirestoreCarregado = true;
+  }
+}
+
+// Carrega metas_seed.json (arquivo estático no dist) e mescla em _metasDados.
+// Salva no Firestore se o usuário estiver autenticado. Idempotente: se rodar
+// 2x e o Firestore já tiver dados, não sobrescreve.
+async function _metasTentarCarregarSeed(){
+  try {
+    const resp = await fetch('metas_seed.json?ts='+Date.now());
+    if(!resp.ok) return;
+    const seed = await resp.json();
+    if(!seed || !seed.lojas) return;
+    // Merge: seed entra apenas onde a loja ainda não tem nenhuma meta
+    if(!_metasDados.lojas) _metasDados.lojas = {};
+    let importou = false;
+    Object.keys(seed.lojas).forEach(function(loja){
+      const atual = _metasDados.lojas[loja] || {};
+      if(Object.keys(atual).length === 0){
+        _metasDados.lojas[loja] = Object.assign({}, seed.lojas[loja]);
+        importou = true;
+      }
+    });
+    if(importou){
+      console.log('[metas] seed inicial carregado e gravado no Firestore');
+      await _metasSalvarFirestore();
+    }
+  } catch(e){
+    console.warn('[metas] seed indisponível:', e.message);
   }
 }
 

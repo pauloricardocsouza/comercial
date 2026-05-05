@@ -127,6 +127,8 @@ body {
 .nav a.active { color: #fff; background: rgba(245,134,52,0.22); font-weight: 600; }
 /* Home oculta nesta versão — !important pra prevalecer sobre _aplicarPermissoesPaginas */
 .sb-link[data-p="home"] { display: none !important; }
+/* Cabeçalho: meses ativos e data de retrato escondidos a pedido */
+#fil-sum, #snapshot-info { display: none !important; }
 .topbar-meta { display: flex; align-items: center; gap: 14px; flex-shrink: 0; }
 .base-badge {
   display: inline-flex; align-items: center; gap: 6px;
@@ -1479,8 +1481,8 @@ textarea.proc-inp{resize:vertical;min-height:44px}
     </div>
   </div>
   <div style="display:flex;align-items:center;gap:10px;margin-left:auto;">
-    <span id="fil-sum" style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#c9d0da;"></span>
-    <span id="snapshot-info" style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#c9d0da;display:none;" title="Data dos dados carregados"></span>
+    <span id="fil-sum" style="display:none;"></span>
+    <span id="snapshot-info" style="display:none;" title="Data dos dados carregados"></span>
     <div class="exp-btns">
       <button class="ebtn xlsx" id="btn-xlsx" aria-label="Exportar para Excel"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>XLSX</button>
       <button class="ebtn pdf" id="btn-pdf" aria-label="Exportar para PDF"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>PDF</button>
@@ -1890,10 +1892,10 @@ textarea.proc-inp{resize:vertical;min-height:44px}
      JS principal · dividido em 5 arquivos pela auditoria v4.6
      Ordem importa: core declara as globais; render-* dependem de core.
      ════════════════════════════════════════════════════════════════════════════ -->
-<script src="js/core.js?v=4.52"></script>
-<script src="js/render-compras.js?v=4.52"></script>
-<script src="js/render-vendas.js?v=4.52"></script>
-<script src="js/render-outros.js?v=4.52"></script>
-<script src="js/admin.js?v=4.52"></script>
+<script src="js/core.js?v=4.53"></script>
+<script src="js/render-compras.js?v=4.53"></script>
+<script src="js/render-vendas.js?v=4.53"></script>
+<script src="js/render-outros.js?v=4.53"></script>
+<script src="js/admin.js?v=4.53"></script>
 </body>
 </html>
