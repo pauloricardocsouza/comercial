@@ -4,6 +4,16 @@ Lista das melhorias do sistema de BI da R2 Soluções para o Grupo Pinto Cerquei
 
 ---
 
+## v4.52 · 05/mai/2026
+
+**Correção: botão Home continuava aparecendo na v4.50/v4.51**
+
+1. **Diagnóstico:** o `style="display:none;"` inline que coloquei no botão era sobrescrito por `_aplicarPermissoesPaginas` (core.js:2640), que faz `btn.style.display = ''` em todos os `.sb-link` permitidos no perfil. Como o template de perfil incluía `'home'` na lista de páginas permitidas, o botão era reabilitado a cada render.
+
+2. **Correção:** adicionada regra CSS `.sb-link[data-p="home"] { display: none !important; }` no `<style>` do `index.html`, que tem precedência sobre o inline manipulado pelo JS. Também removi `'home'` da lista `paginas` do template do perfil "Visualizador" em `core.js`. Agora a Home está oculta em qualquer cenário (admin, visualizador, perfis customizados).
+
+---
+
 ## v4.51 · 05/mai/2026
 
 **Badge "ATP · Filial 1" removido do cabeçalho**

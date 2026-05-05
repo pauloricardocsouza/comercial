@@ -125,6 +125,8 @@ body {
 }
 .nav a:hover { color: #fff; background: rgba(255,255,255,0.08); }
 .nav a.active { color: #fff; background: rgba(245,134,52,0.22); font-weight: 600; }
+/* Home oculta nesta versão — !important pra prevalecer sobre _aplicarPermissoesPaginas */
+.sb-link[data-p="home"] { display: none !important; }
 .topbar-meta { display: flex; align-items: center; gap: 14px; flex-shrink: 0; }
 .base-badge {
   display: inline-flex; align-items: center; gap: 6px;
@@ -1888,10 +1890,10 @@ textarea.proc-inp{resize:vertical;min-height:44px}
      JS principal · dividido em 5 arquivos pela auditoria v4.6
      Ordem importa: core declara as globais; render-* dependem de core.
      ════════════════════════════════════════════════════════════════════════════ -->
-<script src="js/core.js?v=4.51"></script>
-<script src="js/render-compras.js?v=4.51"></script>
-<script src="js/render-vendas.js?v=4.51"></script>
-<script src="js/render-outros.js?v=4.51"></script>
-<script src="js/admin.js?v=4.51"></script>
+<script src="js/core.js?v=4.52"></script>
+<script src="js/render-compras.js?v=4.52"></script>
+<script src="js/render-vendas.js?v=4.52"></script>
+<script src="js/render-outros.js?v=4.52"></script>
+<script src="js/admin.js?v=4.52"></script>
 </body>
 </html>

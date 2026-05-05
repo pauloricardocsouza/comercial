@@ -216,7 +216,7 @@ const AUTH_MODE = 'firebase'; // 'mock' | 'firebase'
 // Convenção:
 //   X.x → alteração grande (quebra de compatibilidade, nova feature grande)
 //   x.X → alteração suave (fix, ajuste visual, pequeno refinamento)
-const APP_VERSION = '4.51-comercial';
+const APP_VERSION = '4.52-comercial';
 
 // ================================================================
 // HELPERS DE CHART.JS — compatíveis com Safari/iOS (sem spread ops)
@@ -1043,7 +1043,7 @@ const PERFIS_DEFAULT_TEMPLATE = {
   visualizador: {
     nome: 'Visualizador',
     descricao: 'Vê apenas painéis principais',
-    paginas: ['home','executivo','deptos','estoque','fornecedores','v-visao-grupo','v-evolucao','ajuda'],
+    paginas: ['executivo','deptos','estoque','fornecedores','v-visao-grupo','v-evolucao','ajuda'],
     filiais: ['__todas__'],
     pode_consolidado: true,
     pode_gerenciar_usuarios: false
