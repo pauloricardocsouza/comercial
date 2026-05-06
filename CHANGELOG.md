@@ -4,6 +4,20 @@ Lista das melhorias do sistema de BI da R2 Soluções para o Grupo Pinto Cerquei
 
 ---
 
+## v4.59 · 06/mai/2026
+
+**Evolução Mensal: linha da loja com destaque em CP3/CP5/CP1/CP40**
+
+1. **Diagnóstico do que estava acontecendo no v4.58.** A correção anterior fez o GPC consolidado real aparecer como linha preta grossa, mas a linha da loja própria (cyan/verde/etc) ficou pequena, fina e atrás da linha grossa preta. Em CP40 a linha da loja chegava a ~R$ 9-11 mi e a do GPC a ~R$ 30-40 mi — visualmente ela existia mas era difícil ver.
+
+2. **Correção:** quando estamos numa loja-folha (CP1, CP3, CP5, CP40, ATP-V ou ATP-A vista isoladamente — ou seja, `lojasDisp.length === 1`), o protagonismo do gráfico se inverte:
+   - **A loja vira a estrela**: linha grossa colorida (3px), com fill, pontos visíveis, ordem 1.
+   - **GPC consolidado vira referência**: linha tracejada cinza fina, sem pontos, ordem 2 (atrás da loja).
+   
+   Em GPC Consolidado, ATP e CP (consolidados parciais com 2-4 lojas) o comportamento antigo é mantido: linha grossa preta do total + linhas finas coloridas das lojas filhas.
+
+---
+
 ## v4.58 · 06/mai/2026
 
 **Evolução Mensal: gráfico correto em CP3, CP5, CP1, CP40**

@@ -675,9 +675,14 @@ function renderVEvolucao(){
   const sigAtual = (typeof _filialAtual !== 'undefined' && _filialAtual && _filialAtual.sigla)
     ? _filialAtual.sigla.toLowerCase() : 'grupo';
   const ehGrupoConsolidado = (sigAtual === 'grupo');
+  const ehFolhaUnica = (lojasDisp.length === 1);
 
-  const datasetsMulti = [
-    {
+  const datasetsMulti = [];
+
+  // Cabeçalho do gráfico
+  if(ehGrupoConsolidado || !ehFolhaUnica){
+    // GRUPO real ou consolidado parcial (ATP/CP): mostra linha grossa do total
+    datasetsMulti.push({
       label: ehGrupoConsolidado ? 'GRUPO (total)' : 'GPC consolidado (referência)',
       data: grupo.map(function(r){return r.fat_liq;}),
       borderColor: '#1f2937',
@@ -686,38 +691,61 @@ function renderVEvolucao(){
       tension: 0.3,
       fill: false,
       pointRadius: 3
-    }
-  ];
+    });
+  } else {
+    // Folha-única: linha de referência GPC (tracejada, cinza) — fica atrás
+    // da loja, que vira o protagonista
+    datasetsMulti.push({
+      label: 'GPC consolidado (referência)',
+      data: grupo.map(function(){return null;}), // será preenchido pelo fetch
+      borderColor: '#94a3b8',
+      backgroundColor: 'rgba(148,163,184,0.06)',
+      borderWidth: 1.5,
+      borderDash: [6,4],
+      tension: 0.3,
+      fill: false,
+      pointRadius: 0,
+      hidden: true,                 // invisível até o fetch chegar
+      order: 2                      // atrás da loja
+    });
+  }
+
+  // Datasets das lojas presentes na base
   lojasDisp.forEach(function(l){
     const m = _vendasMensalPor(l, 'v-evolucao');
-    // Alinhar pelo eixo do grupo (preencher 0 onde não tiver mês)
     const data = lblG.map(function(_, i){
       const ym = grupo[i].ym;
       const linha = m.find(function(x){return x.ym === ym;});
       return linha ? linha.fat_liq : 0;
     });
-    datasetsMulti.push({
-      label: labelDe(l),
-      data: data,
-      borderColor: cores[l] || '#999',
-      backgroundColor: (cores[l] || '#999') + '20',
-      borderWidth: 1.5,
-      tension: 0.3,
-      fill: false,
-      pointRadius: 2
-    });
+    if(ehFolhaUnica && !ehGrupoConsolidado){
+      // Folha-única vira protagonista: cor da loja, traço grosso, com fill
+      datasetsMulti.push({
+        label: labelDe(l),
+        data: data,
+        borderColor: cores[l] || '#1f2937',
+        backgroundColor: (cores[l] || '#1f2937') + '20',
+        borderWidth: 3,
+        tension: 0.3,
+        fill: true,
+        pointRadius: 4,
+        order: 1
+      });
+    } else {
+      datasetsMulti.push({
+        label: labelDe(l),
+        data: data,
+        borderColor: cores[l] || '#999',
+        backgroundColor: (cores[l] || '#999') + '20',
+        borderWidth: 1.5,
+        tension: 0.3,
+        fill: false,
+        pointRadius: 2
+      });
+    }
   });
 
-  // Se NÃO for o consolidado real do grupo, vamos buscar vendas_grupo.json
-  // assincronamente pra substituir a linha "GPC consolidado (referência)".
-  // Enquanto não chega, a linha mostra a soma da base atual (que é igual à
-  // própria loja quando há só uma — daí o efeito "linhas sobrepostas" antigo).
-  // Quando chegar, trocamos data da primeira série e atualizamos o chart.
   let chartMulti = null;
-  if(!ehGrupoConsolidado){
-    // Esconder a linha "consolidado" inicialmente — só plotamos depois do fetch
-    datasetsMulti[0].hidden = true;
-  }
 
   chartMulti = mkC('c-vevo-multi', {
     type:'line',
