@@ -4,6 +4,26 @@ Lista das melhorias do sistema de BI da R2 Soluções para o Grupo Pinto Cerquei
 
 ---
 
+## v4.54 · 05/mai/2026
+
+**Três correções a partir do feedback dos prints**
+
+1. **Página Metas agora respeita o filtro VISÃO.** Era o bug do "valor muito maior" no gráfico: o seletor estava em CP3 mas a página mostrava R$ 297,7 mi (soma das 4 lojas) e o gráfico tinha barras de R$ 16-25 mi. Causa: `_metasRenderConteudo` iterava `_METAS_LOJAS` (sempre as 4) e ignorava `_filialAtual`. Agora a página usa o helper `_metasLojasNaBase()` que filtra:
+   - GPC Consolidado / GRUPO → 4 lojas (CP3, CP5, ATP-V, ATP-A)
+   - ATP → ATP-V + ATP-A
+   - Comercial Pinto → CP3 + CP5
+   - CP3 / Cestão Loja 1 → só CP3
+   - CP5 / Inhambupe → só CP5
+   - CP1 ou CP40 → mensagem "Sem metas para a base selecionada" (CP1 e CP40 não têm metas cadastradas)
+   
+   Os títulos dos gráficos, KPIs, tabela comparativa e histórico detalhado também passaram a usar a label dinâmica do escopo (ex: "Cestão Loja 1 · Meta vs Realizado mensal" no lugar de "GPC ·"). A coluna "GPC" da tabela comparativa só aparece se houver mais de uma loja no escopo.
+
+2. **Visão Consolidada GPC parou de aparecer com o aviso indevido.** O bug era na detecção da base: a página testava só `if (_filialAtual)`, e mesmo na visão GPC Consolidado o `_filialAtual` é `{sigla:'grupo', tipo:'raiz'}` (não-null). Resultado: a página mostrava o aviso "Você está na base GRUPO. Trocar para base GRUPO" e o botão não fazia nada porque já estava lá. Agora a detecção considera GRUPO quando `_filialAtual` é null OU `sigla==='grupo'` OU `tipo` é `'consolidado'/'raiz'`.
+
+3. **CP1 (Comercial Pinto) e CP40 (Barros 40) removidos do seed de Dias C&P.** Você apontou que essas duas lojas não participam de Campanha & Promoção (são atacado). O `dias_cp_seed.json` agora aplica os dias só em GRUPO, ATP-V, ATP-A, CP3 e CP5. **Atenção:** se você já abriu a página Dias C&P na v4.53 antes deste pacote, os docs `CP1_*` e `CP40_*` já foram gravados no Firestore. Apague-os manualmente no console Firestore ou abra a página Dias C&P, selecione CP1/CP40 e remova os dias pelo botão da UI.
+
+---
+
 ## v4.53 · 05/mai/2026
 
 **Cabeçalho enxuto + carga inicial de Metas e Dias C&P**

@@ -343,8 +343,11 @@ function renderVVisaoGrupo(){
   if(!cont) return;
 
   // Verifica se a base ativa é GRUPO. Se não for, mostra aviso.
-  // _filialAtual === null indica modo consolidado/grupo (definido em core.js).
-  if(typeof _filialAtual !== 'undefined' && _filialAtual){
+  // Modo consolidado: _filialAtual é null OU _filialAtual.sigla === 'grupo'.
+  const _ehGrupo = !_filialAtual
+    || (typeof _filialAtual.sigla === 'string' && _filialAtual.sigla.toLowerCase() === 'grupo')
+    || (typeof _filialAtual.tipo === 'string' && (_filialAtual.tipo === 'consolidado' || _filialAtual.tipo === 'raiz'));
+  if(typeof _filialAtual !== 'undefined' && _filialAtual && !_ehGrupo){
     const baseLabel = (_filialAtual.sigla || '').toUpperCase();
     cont.innerHTML = '<div class="ph"><div class="pk">Vendas · Grupo</div><h2>Visão <em>Consolidada</em> GPC</h2></div>'
       + '<div class="ph-sep"></div>'
@@ -3962,6 +3965,26 @@ const _METAS_LOJAS = [
   {cod:'CP5',   label:'Inhambupe',      curto:'INH'}
 ];
 
+// Filtra _METAS_LOJAS pela base ativa (sigla do _filialAtual).
+// Retorna o subconjunto das 4 lojas com meta que pertence à base atual.
+//   grupo / consolidado  → todas as 4
+//   atp                  → ATP-V, ATP-A
+//   cp                   → CP3, CP5 (CP1 e CP40 não têm meta)
+//   cp3 | cp5            → só ela
+//   cp1 | cp40           → nenhuma (sem meta cadastrada para essa loja)
+function _metasLojasNaBase(){
+  const sig = (typeof _filialAtual !== 'undefined' && _filialAtual && _filialAtual.sigla)
+    ? _filialAtual.sigla.toLowerCase() : 'grupo';
+  if(sig === 'grupo') return _METAS_LOJAS.slice();
+  if(sig === 'atp')   return _METAS_LOJAS.filter(function(l){return l.cod === 'ATP-V' || l.cod === 'ATP-A';});
+  if(sig === 'cp')    return _METAS_LOJAS.filter(function(l){return l.cod === 'CP3'   || l.cod === 'CP5';});
+  if(sig === 'cp3')   return _METAS_LOJAS.filter(function(l){return l.cod === 'CP3';});
+  if(sig === 'cp5')   return _METAS_LOJAS.filter(function(l){return l.cod === 'CP5';});
+  if(sig === 'atp-v' || sig === 'atpv') return _METAS_LOJAS.filter(function(l){return l.cod === 'ATP-V';});
+  if(sig === 'atp-a' || sig === 'atpa') return _METAS_LOJAS.filter(function(l){return l.cod === 'ATP-A';});
+  return []; // cp1, cp40 ou outras siglas não mapeadas
+}
+
 // Estado global das metas
 let _metasDados = null;        // {lojas: {ATP-V: {YYYY-MM: meta}, ...}, atualizadoEm, ...}
 let _metasFirestoreCarregado = false;
@@ -4127,7 +4150,20 @@ function _metasRenderConteudo(){
     return;
   }
 
-  // ─── Calcula KPIs gerais (consolidado GPC) ───
+  // ─── Lojas ativas conforme base selecionada (filtro VISÃO) ───
+  const lojasAtivas = _metasLojasNaBase();
+  if(lojasAtivas.length === 0){
+    body.innerHTML = '<div class="cc" style="text-align:center;padding:40px;">'
+      + '<div style="font-size:32px;margin-bottom:8px;opacity:.4;">📊</div>'
+      + '<div style="font-size:14px;font-weight:700;margin-bottom:6px;">Sem metas para a base selecionada</div>'
+      + '<div style="font-size:12px;color:var(--text-muted);max-width:420px;margin:0 auto 12px;line-height:1.5;">'
+      + 'A loja escolhida (CP1 Comercial Pinto ou CP40 Barros 40) não tem metas cadastradas. '
+      + 'Troque a visão no topo (GPC Consolidado, ATP, Comercial Pinto, Cestão Loja 1 ou Inhambupe) para ver a análise.</div>'
+      + '</div>';
+    return;
+  }
+
+  // ─── Calcula KPIs gerais (somente lojas da base ativa) ───
   let totMeta = 0, totReal = 0;
   let mesesComMeta = 0, mesesAtingidos = 0;
   const atingPorAno = {}; // {2024:{soma, count}, ...}
@@ -4136,7 +4172,7 @@ function _metasRenderConteudo(){
   yms.forEach(function(ym){
     let metaMes = 0, realMes = 0;
     const lojasMes = {};
-    _METAS_LOJAS.forEach(function(l){
+    lojasAtivas.forEach(function(l){
       const m = _metasGetMeta(l.cod, ym);
       const r = _metasGetRealizado(l.cod, ym);
       lojasMes[l.cod] = {meta:m, real:r, at: _metasCalcAt(r, m)};
@@ -4169,13 +4205,23 @@ function _metasRenderConteudo(){
   // ─── Cabeçalho do escopo ───
   const ymIni = mesesComMetaList[0] ? _ymToLabel(mesesComMetaList[0].ym) : '—';
   const ymFim = mesesComMetaList.length ? _ymToLabel(mesesComMetaList[mesesComMetaList.length-1].ym) : '—';
-  const lojasComMeta = _METAS_LOJAS.filter(function(l){
+  const lojasComMeta = lojasAtivas.filter(function(l){
     return Object.keys((_metasDados.lojas||{})[l.cod] || {}).length > 0;
   });
 
+  // Label dinâmica do escopo conforme base ativa
+  const _sig = (typeof _filialAtual !== 'undefined' && _filialAtual && _filialAtual.sigla) ? _filialAtual.sigla.toLowerCase() : 'grupo';
+  let escopoLbl = 'GPC Consolidado';
+  if(_sig === 'atp')      escopoLbl = 'ATP (Varejo + Atacado)';
+  else if(_sig === 'cp')  escopoLbl = 'Comercial Pinto (Cestão Loja 1 + Inhambupe)';
+  else if(_sig === 'cp3') escopoLbl = 'Cestão Loja 1';
+  else if(_sig === 'cp5') escopoLbl = 'Cestão Inhambupe';
+  else if(_sig === 'atp-v' || _sig === 'atpv') escopoLbl = 'ATP Varejo';
+  else if(_sig === 'atp-a' || _sig === 'atpa') escopoLbl = 'ATP Atacado';
+
   html += '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:8px;">';
   html += '<div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;font-weight:700;">'
-    + 'Resultado global · GPC consolidado · '+esc(ymIni)+' a '+esc(ymFim)+' · '+fI(mesesComMeta)+' meses · '+fI(lojasComMeta.length)+' lojas'
+    + 'Resultado · '+esc(escopoLbl)+' · '+esc(ymIni)+' a '+esc(ymFim)+' · '+fI(mesesComMeta)+' meses · '+fI(lojasComMeta.length)+(lojasComMeta.length===1?' loja':' lojas')
     + '</div>';
   html += '<div style="display:flex;gap:6px;">';
   html += '<button id="metas-btn-cad" class="ebtn" style="background:var(--accent);color:white;border:none;padding:6px 12px;font-size:11.5px;font-weight:700;">📝 Cadastrar metas</button>';
@@ -4210,14 +4256,14 @@ function _metasRenderConteudo(){
 
   // ─── Gráfico 1: Meta vs Realizado mensal ───
   html += '<div class="cc" style="margin-bottom:14px;">'
-    + '<div class="cct">GPC · Meta vs Realizado mensal (R$ Milhões)</div>'
+    + '<div class="cct">'+esc(escopoLbl)+' · Meta vs Realizado mensal (R$ Milhões)</div>'
     + '<div class="ccs">Barras = meta · Linha azul = realizado · Linha laranja = atingimento %</div>'
     + '<div style="height:300px;margin-top:8px;"><canvas id="metas-chart-mensal"></canvas></div>'
     + '</div>';
 
   // ─── Gráfico 2: Desvio mensal ───
   html += '<div class="cc" style="margin-bottom:14px;">'
-    + '<div class="cct">GPC · Desvio mensal da meta (R$k)</div>'
+    + '<div class="cct">'+esc(escopoLbl)+' · Desvio mensal da meta (R$k)</div>'
     + '<div class="ccs">Verde = acima · Vermelho = abaixo da meta</div>'
     + '<div style="height:240px;margin-top:8px;"><canvas id="metas-chart-desvio"></canvas></div>'
     + '</div>';
@@ -4238,7 +4284,7 @@ function _metasRenderConteudo(){
     // Pior mês
     const piorMes = mesesComMetaList.slice().sort(function(a,b){return a.at - b.at;})[0];
     if(piorMes){
-      const lojasPior = _METAS_LOJAS.map(function(l){
+      const lojasPior = lojasAtivas.map(function(l){
         const lm = piorMes.lojas[l.cod];
         if(!lm || !lm.meta) return null;
         return l.curto+': '+fP((lm.at||0)*100,1);
@@ -4254,24 +4300,25 @@ function _metasRenderConteudo(){
   // ─── Comparativo entre lojas (linhas) ───
   html += '<div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;font-weight:700;margin:14px 0 8px;">Comparativo por loja · atingimento mensal</div>';
   html += '<div class="cc" style="margin-bottom:14px;">'
-    + '<div class="cct">Atingimento mensal (%) · 4 lojas</div>'
+    + '<div class="cct">Atingimento mensal (%) · '+fI(lojasAtivas.length)+(lojasAtivas.length===1?' loja':' lojas')+'</div>'
     + '<div class="ccs">Linha tracejada = 100% de meta</div>'
     + '<div style="height:300px;margin-top:8px;"><canvas id="metas-chart-comp"></canvas></div>'
     + '</div>';
 
   // ─── Tabela comparativa ───
   html += '<div class="cc" style="margin-bottom:14px;">'
-    + '<div class="cct">Tabela comparativa · todas as lojas por mês</div>'
+    + '<div class="cct">Tabela comparativa · '+(lojasAtivas.length===1?'loja':'lojas da base')+' por mês</div>'
     + '<div class="tscroll" style="margin-top:8px;">'
     + '<table class="t"><thead><tr><th class="L">Mês</th>';
-  _METAS_LOJAS.forEach(function(l){
+  lojasAtivas.forEach(function(l){
     html += '<th>'+esc(l.curto)+'</th>';
   });
-  html += '<th>GPC</th></tr></thead><tbody>';
+  if(lojasAtivas.length > 1) html += '<th>'+esc(escopoLbl)+'</th>';
+  html += '</tr></thead><tbody>';
   atingMensal.forEach(function(m){
     if(m.meta === 0) return;
     html += '<tr><td class="L"><strong>'+_ymToLabel(m.ym)+'</strong></td>';
-    _METAS_LOJAS.forEach(function(l){
+    lojasAtivas.forEach(function(l){
       const lm = m.lojas[l.cod];
       if(!lm || !lm.meta){
         html += '<td style="color:var(--text-muted);">—</td>';
@@ -4280,17 +4327,21 @@ function _metasRenderConteudo(){
         html += '<td style="color:'+st.cor+';font-weight:600;">'+fP((lm.at||0)*100,1)+' '+st.sigla+'</td>';
       }
     });
-    const stG = _metasStatus(m.at);
-    html += '<td style="color:'+stG.cor+';font-weight:700;">'+fP((m.at||0)*100,1)+' '+stG.sigla+'</td>';
+    if(lojasAtivas.length > 1){
+      const stG = _metasStatus(m.at);
+      html += '<td style="color:'+stG.cor+';font-weight:700;">'+fP((m.at||0)*100,1)+' '+stG.sigla+'</td>';
+    }
     html += '</tr>';
   });
   html += '</tbody></table></div></div>';
 
-  // ─── Histórico detalhado por loja (consolidado + cada loja) ───
-  html += '<div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;font-weight:700;margin:14px 0 8px;">Histórico detalhado · GPC consolidado</div>';
-  html += _metasRenderTabelaDetalhe(atingMensal.map(function(m){return {ym:m.ym, meta:m.meta, real:m.real, at:m.at};}), 'GPC Consolidado');
+  // ─── Histórico detalhado por loja (consolidado + cada loja da base) ───
+  if(lojasAtivas.length > 1){
+    html += '<div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;font-weight:700;margin:14px 0 8px;">Histórico detalhado · '+esc(escopoLbl)+'</div>';
+    html += _metasRenderTabelaDetalhe(atingMensal.map(function(m){return {ym:m.ym, meta:m.meta, real:m.real, at:m.at};}), escopoLbl);
+  }
 
-  _METAS_LOJAS.forEach(function(l){
+  lojasAtivas.forEach(function(l){
     const semMeta = !lojasComMeta.find(function(x){return x.cod === l.cod;});
     if(semMeta) return;
     const dados = atingMensal.map(function(m){
@@ -4413,7 +4464,8 @@ function _metasRenderGraficos(atingMensal){
   // Gráfico 3: Comparativo entre lojas (atingimento %)
   if(document.getElementById('metas-chart-comp')){
     const cores = ['#1a2f5c','#7c3aed','#dc2626','#f58634'];
-    const datasets = _METAS_LOJAS.map(function(l, i){
+    const _lojasAtivas = _metasLojasNaBase();
+    const datasets = _lojasAtivas.map(function(l, i){
       return {
         label: l.label,
         data: dadosCom.map(function(m){
