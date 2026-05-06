@@ -4,6 +4,79 @@ Lista das melhorias do sistema de BI da R2 Soluções para o Grupo Pinto Cerquei
 
 ---
 
+## v4.58 · 06/mai/2026
+
+**Evolução Mensal: gráfico correto em CP3, CP5, CP1, CP40**
+
+1. **Bug:** em CP3, CP5, CP1, CP40 o gráfico "Faturamento líquido mensal · todas as lojas" mostrava duas linhas idênticas sobrepostas. ATP funcionava porque `vendas_atp.json` traz 2 lojas (ATP-V + ATP-A); nas filhotes-folhas o JSON da base só tem aquela loja, então a linha "GRUPO (total)" virava só a soma dela mesma.
+
+2. **Correção:** quando a base ativa não é GRUPO consolidado, o sistema agora busca `vendas_grupo.json` em paralelo e plota a linha do GPC consolidado real como referência. A linha grossa preta passou a se chamar "GPC consolidado (referência)" em vez de "GRUPO (total)" quando estamos numa loja específica, deixando claro que é uma linha de comparação. O fetch é assíncrono — primeiro o gráfico aparece só com a loja, depois (≈100-300ms) a linha de referência se materializa.
+
+3. **Nada muda no GPC Consolidado e no ATP**: continuam exatamente como antes. ATP segue mostrando GRUPO (total) + ATP-V + ATP-A, cada um com sua linha. CP consolidado mostra GRUPO (total) + 4 linhas das lojas filhas.
+
+---
+
+## v4.57 · 06/mai/2026
+
+**Status pago/aberto agora vem de fonte autoritativa (contas pagas detalhadas)**
+
+1. **311.540 linhas de contas pagas processadas.** Você mandou os 7 CSVs com cada pagamento individual (ATP em 2 partes + CP1 + CP3 em 2 partes + CP5 + CP40). Filtrei só os do grupo 100 (COMPRA DE MERCADORIAS) — os demais grupos são tributos, salários, despesas administrativas etc. que têm `NUM_NOTA` mas não correspondem a entradas de produto. Total: 17.839 pagamentos de mercadorias indexados por (NF, fornecedor).
+
+2. **Status agora tem 4 valores autoritativos** em cada entrada, não mais inferência:
+   - **pago**: a NF aparece em pagas pelo valor cheio (~99% do valor da entrada). Vem com `dt_pagto` (data do último pagamento dela) — exposto como tooltip do badge.
+   - **aberto**: NF aparece em aberto pelo valor cheio, sem nenhum pagamento.
+   - **parcial**: parte paga + parte aberta. Mostro o valor em aberto à direita do badge.
+   - **desconhecido** (—): NF não bateu em pagas (grupo 100) nem em aberto. Pode ser pagamento por outra conta contábil, lançamento intragrupo ou NF cancelada. Antes eu chutava "pago" — agora marco honestamente. No GRUPO ficaram ~12.890 entradas nessa categoria (cerca de 18% do total), majoritariamente do CP3 (7.263).
+
+3. **Card Financeiro com 3 segmentos.** A barra de progresso agora pode ter três cores: verde (pago), amarelo (aberto) e cinza (desconhecido/outros). Quando há valores em "Outros", aparece nota explicativa logo abaixo da barra. Para produtos com tudo identificado, fica idêntico ao print da referência.
+
+4. **Validação Cerveja Amstel cod 40350 ATP:** 39 entradas → 25 pagas, 8 abertas, 6 parciais, 0 desconhecidas. NF 2090999 do dia 20/04/2026 sai como "Aberto · R$ 59.070" exatamente como na referência.
+
+5. **Resumo dos status mesclados em todas as bases:**
+   - ATP: 18.600 entradas → 11.548 pago / 3.804 aberto / 866 parcial / 2.382 outros
+   - CP1: 4.835 → 2.512 / 1.159 / 71 / 1.093
+   - CP3: 31.190 → 21.408 / 2.402 / 117 / 7.263
+   - CP5: 14.703 → 12.600 / 8 / 25 / 2.070
+   - CP40: 917 → 743 / 72 / 19 / 83
+
+---
+
+## v4.56 · 06/mai/2026
+
+**Diagnóstico de Produto reformulado com entradas detalhadas (igual à referência)**
+
+1. **Entradas detalhadas NF×SKU mescladas no JSON.** Você mandou os 5 CSVs (ATP + CP1/CP3/CP5/CP40) com 70.250 linhas de entrada do período jan-abr/2026. Processei e mesclei dentro de cada `estoque_*.json.gz` num campo novo `entradas_detalhadas` por SKU. No total 15.873 produtos no GRUPO ganharam o detalhamento. Cada entrada tem: data, fornecedor (cod+nome), NF, qtde, preço unit, valor, cod_oper.
+
+2. **Status pago/aberto/parcial inferido cruzando com financeiro.** Para cada NF do CSV, busquei a NF nos `aberto.titulos` do `financeiro_*.json` (chave `num_nota` + `parceiro.cod`). Se a NF aparece em aberto pelo valor cheio → **aberto**; se aparece com valor parcial → **parcial** (com o valor em aberto destacado); se não aparece → **pago**. Validação: Cerveja Amstel cod 40350 do ATP — somei as 39 entradas detalhadas e bate em R$ 1.483.567,79 contra os R$ 1.483.567,81 do agregado `compras_12m` (diferença de R$ 0,02 de arredondamento). NF 2090999 do dia 20/04 (R$ 59.070,29) reconhecida como aberta, NF 2091000 do mesmo dia como parcial — exatamente como no print da referência. **Nota:** títulos pagos não vêm detalhados no `financeiro_*.json` (só agregados por mês/dia/grupo), então pra NFs muito antigas a inferência é "pago" por exclusão. Tudo dentro do esperado pra o período em análise.
+
+3. **Diagnóstico de Produto agora tem 4 blocos novos:**
+   - **Extrato do produto** agrupado por mês (Janeiro/Fevereiro/Março/Abril 2026), cada NF listada individualmente com data, fornecedor, NF, qtde, preço unit, total e badge de status. Linha "↑ SAÍDA MÊS" abaixo das entradas com qt vendida no período + lucro/margem aproximados. Linha-resumo de cada mês com Entrou / Vendido / Saldo.
+   - **Estoque + Financeiro lado a lado** com KPIs em grid (Disponível, Valor custo, Cobertura, Custo real unit, Preço venda cad., Markup cadastro) à esquerda, e à direita TOTAL COMPRADO / JÁ PAGO / EM ABERTO com **barra de progresso** verde/amarela.
+   - **Evolução do preço de compra** com 5 KPIs (P. médio compra ponderado, P. médio venda, Markup, Variação min→max, Desc. financeiro) e gráfico de linha cronológico das entradas com linha tracejada do preço de venda cadastrado.
+   - **Fornecedores do item** detalhado: tabela com cada fornecedor mostrando entradas (NFs), quantidade, total, pago, aberto.
+
+4. **Saiu do diagnóstico:** o gráfico antigo de "Saídas/Entradas mensais" (que distribuía o agregado `compras_12m` num único mês — virou inútil agora que há detalhamento real) e a tabela de "Estoque atual" tipo planilha (substituída pelo grid visual). A tabela "Compras 12 meses" também saiu (o detalhamento da extrato já cobre isso).
+
+5. **Todos os JSONs ficaram maiores:** estoque_atp.json.gz (1349 KB), cp3 (3264 KB) — o aumento é o esperado pelos ~16k produtos com listas detalhadas. Carregamento continua tranquilo via gzip.
+
+---
+
+## v4.55 · 06/mai/2026
+
+**Curva ABC reformulada + card Fornecedores do item no Diagnóstico**
+
+1. **Curva ABC reescrita no estilo enxuto da referência.** Saiu o cabeçalho com 6 KPIs grandes, os 3 cards de "Composição por classe" e o gráfico Pareto. Entrou uma página direta com **uma única tabela de Ranking de SKUs** (CLASSE | SKU | PRODUTO | DEPT | SEÇÃO | FATURADO | % INDIV | % ACUM | QTD VENDIDA), com filtros segmentados **Todas | A | B | C** no canto superior direito do card e o filtro de meses inline acima. Cabeçalho da tabela fica fixo (`sticky`) durante scroll. Cliques no nome do produto abrem o Diagnóstico daquele SKU. O modo "Quantidade" foi removido — o ranking agora é sempre por faturamento (estimado quando o usuário filtra meses específicos, conforme a regra antiga).
+
+2. **Diagnóstico de Produto: card "Fornecedores do item" adicionado no final.** Mostra o fornecedor cadastrado, número de entradas (NFs), quantidade total comprada e valor total dos últimos 12 meses, alinhado à direita.
+
+3. **O que NÃO foi feito e por quê.** A referência mostra também um **extrato de produto com cada entrada listada individualmente por mês** (data, fornecedor, NF, qtde, preço unitário, total, status pago/aberto), uma seção de **evolução do preço de compra** com gráfico de linha + 5 KPIs (P. médio compra, P. médio venda, Markup, Variação, Desc. financeiro) e um card **Financeiro** com TOTAL COMPRADO / JÁ PAGO / EM ABERTO + barra. Esses três blocos exigem dados que o ETL atual **não exporta**:
+   - **Lista NF×SKU detalhada**: hoje `compras_*.json` agrega por loja+ym+fornecedor; `estoque_*.json` traz só `compras_12m` agregado por SKU. Não há a granularidade NF + data + qtde + preço unit por SKU.
+   - **Status pago/aberto vinculado à NF×SKU**: `financeiro_*.json` tem por fornecedor/conta/grupo, mas não amarra título a SKU.
+   
+   Quando o ETL passar a exportar (a) `entradas_por_sku: [{data, fornecedor, nf, qt, preco_unit, valor, status_titulo}]` e (b) algum vínculo título→SKU, eu adiciono os três cards exatamente como a referência. Por enquanto o que está visível são os agregados que temos, sem inventar detalhamento.
+
+---
+
 ## v4.54 · 05/mai/2026
 
 **Três correções a partir do feedback dos prints**

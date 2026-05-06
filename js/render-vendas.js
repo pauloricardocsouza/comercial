@@ -667,9 +667,18 @@ function renderVEvolucao(){
   };
 
   // ── Multi-line chart: total + cada loja ──
+  // Detectar se a base atual já É o GRUPO consolidado (todas as 6 lojas estão presentes).
+  // Se for filhote-folha (CP3, CP5, CP1, CP40, ATP-V, ATP-A) ou consolidado parcial
+  // (ATP com 2 lojas, CP com 4), o "GRUPO (total)" desta visão é só a soma das
+  // lojas presentes — diferente do GRUPO consolidado real do GPC. Precisamos
+  // buscar o vendas_grupo.json pra plotar a linha de referência correta.
+  const sigAtual = (typeof _filialAtual !== 'undefined' && _filialAtual && _filialAtual.sigla)
+    ? _filialAtual.sigla.toLowerCase() : 'grupo';
+  const ehGrupoConsolidado = (sigAtual === 'grupo');
+
   const datasetsMulti = [
     {
-      label: 'GRUPO (total)',
+      label: ehGrupoConsolidado ? 'GRUPO (total)' : 'GPC consolidado (referência)',
       data: grupo.map(function(r){return r.fat_liq;}),
       borderColor: '#1f2937',
       backgroundColor: 'rgba(31,41,55,0.10)',
@@ -699,7 +708,18 @@ function renderVEvolucao(){
     });
   });
 
-  mkC('c-vevo-multi', {
+  // Se NÃO for o consolidado real do grupo, vamos buscar vendas_grupo.json
+  // assincronamente pra substituir a linha "GPC consolidado (referência)".
+  // Enquanto não chega, a linha mostra a soma da base atual (que é igual à
+  // própria loja quando há só uma — daí o efeito "linhas sobrepostas" antigo).
+  // Quando chegar, trocamos data da primeira série e atualizamos o chart.
+  let chartMulti = null;
+  if(!ehGrupoConsolidado){
+    // Esconder a linha "consolidado" inicialmente — só plotamos depois do fetch
+    datasetsMulti[0].hidden = true;
+  }
+
+  chartMulti = mkC('c-vevo-multi', {
     type:'line',
     data:{labels: lblG, datasets: datasetsMulti},
     options:{
@@ -715,6 +735,26 @@ function renderVEvolucao(){
       }
     }
   });
+
+  // Buscar GRUPO consolidado real quando estamos em base não-grupo
+  if(!ehGrupoConsolidado){
+    _fetchJsonComGz('vendas_grupo.json').then(function(vGrupo){
+      if(!vGrupo || !vGrupo.mensal || !chartMulti) return;
+      // Agregar V.mensal do grupo por ym
+      const porYm = new Map();
+      vGrupo.mensal.forEach(function(r){
+        if(!porYm.has(r.ym)) porYm.set(r.ym, 0);
+        porYm.set(r.ym, porYm.get(r.ym) + (r.fat_liq||0));
+      });
+      // Alinha pelos ym do gráfico atual
+      const novoData = grupo.map(function(r){return porYm.get(r.ym) || 0;});
+      chartMulti.data.datasets[0].data = novoData;
+      chartMulti.data.datasets[0].hidden = false;
+      chartMulti.update('none');
+    }).catch(function(e){
+      console.warn('[v-evolucao] vendas_grupo.json não disponível:', e && e.message);
+    });
+  }
 
   // ── Cards individuais por loja ──
   lojasDisp.forEach(function(l){

@@ -642,92 +642,50 @@ function renderABCNovo(){
 
   // Se _abcMesesSel é null, considera todos os meses de 2026.
   const mesesAtivos = (Array.isArray(_abcMesesSel) && _abcMesesSel.length)
-    ? _abcMesesSel.filter(function(ym){return ymsSet[ym];}) // só aceita meses de 2026
+    ? _abcMesesSel.filter(function(ym){return ymsSet[ym];})
     : ymsTodos;
   const mesesSet = new Set(mesesAtivos.length ? mesesAtivos : ymsTodos);
 
-  // Calcula ranking de acordo com o modo
-  // No modo "valor" agora também acumulamos só os meses selecionados de 2026.
-  // Limitação: vendas_por_mes só traz QT (sem valor). Pra "valor" usamos
-  // p.vendas.valor (12m total) — mas se o usuário filtrar meses, recalculamos
-  // proporcionalmente: valor_estimado = vendas.valor * (qt_periodo / qt_12m).
-  // Isso é uma estimativa enquanto o ETL não exporta valor por mês.
-  let comVenda, ordenado, totalGeral;
-  if(_abcModo === 'qt'){
-    // Ranking por quantidade vendida nos meses selecionados (de 2026)
-    comVenda = produtos.map(function(p){
-      const qtPeriodo = (p.vendas_por_mes||[]).reduce(function(s,v){
-        return s + (mesesSet.has(v.ym) ? (v.qt||0) : 0);
-      }, 0);
-      return {p:p, _qtPeriodo:qtPeriodo};
-    }).filter(function(x){return x._qtPeriodo > 0;});
-    ordenado = comVenda.slice().sort(function(a,b){return b._qtPeriodo - a._qtPeriodo;});
-    totalGeral = ordenado.reduce(function(t,x){return t + x._qtPeriodo;}, 0);
-    let acum = 0;
-    ordenado.forEach(function(x){
-      acum += x._qtPeriodo;
-      x._pctAcum = totalGeral>0?(acum/totalGeral*100):0;
-      x._classe = x._pctAcum<=80?'A':x._pctAcum<=95?'B':'C';
-    });
-  } else {
-    // Modo valor (faturamento). Estima valor 2026 a partir da proporção
-    // qt_periodo / qt_12m_total * vendas.valor.
-    comVenda = produtos.map(function(p){
-      const vds = p.vendas || {};
-      const valor12m = vds.valor || 0;
-      const qt12m = vds.qt || 0;
-      const qtPeriodo = (p.vendas_por_mes||[]).reduce(function(s,v){
-        return s + (mesesSet.has(v.ym) ? (v.qt||0) : 0);
-      }, 0);
-      let valEstimado = 0;
-      if(qt12m > 0 && valor12m > 0){
-        valEstimado = valor12m * (qtPeriodo / qt12m);
-      }
-      return {p:p, _valEstimado:valEstimado, _qtPeriodo:qtPeriodo};
-    }).filter(function(x){return x._valEstimado > 0;});
-    ordenado = comVenda.slice().sort(function(a,b){return b._valEstimado - a._valEstimado;});
-    totalGeral = ordenado.reduce(function(t,x){return t + x._valEstimado;}, 0);
-    let acum = 0;
-    ordenado.forEach(function(x){
-      acum += x._valEstimado;
-      x._pctAcum = totalGeral>0?(acum/totalGeral*100):0;
-      x._classe = x._pctAcum<=80?'A':x._pctAcum<=95?'B':'C';
-    });
-  }
+  // Calcula ranking. Sempre por VALOR (faturamento estimado a partir de qt do período × markup do agregado)
+  const comVenda = produtos.map(function(p){
+    const vds = p.vendas || {};
+    const valor12m = vds.valor || 0;
+    const qt12m = vds.qt || 0;
+    const qtPeriodo = (p.vendas_por_mes||[]).reduce(function(s,v){
+      return s + (mesesSet.has(v.ym) ? (v.qt||0) : 0);
+    }, 0);
+    let valEstimado = 0;
+    if(qt12m > 0 && valor12m > 0){
+      valEstimado = valor12m * (qtPeriodo / qt12m);
+    }
+    return {p:p, _valEstimado:valEstimado, _qtPeriodo:qtPeriodo};
+  }).filter(function(x){return x._valEstimado > 0;});
+  const ordenado = comVenda.slice().sort(function(a,b){return b._valEstimado - a._valEstimado;});
+  const totalGeral = ordenado.reduce(function(t,x){return t + x._valEstimado;}, 0);
+  let acum = 0;
+  ordenado.forEach(function(x){
+    acum += x._valEstimado;
+    x._pctAcum = totalGeral>0?(acum/totalGeral*100):0;
+    x._pctIndiv = totalGeral>0?(x._valEstimado/totalGeral*100):0;
+    x._classe = x._pctAcum<=80?'A':x._pctAcum<=95?'B':'C';
+  });
 
-  const cA = ordenado.filter(function(x){return x._classe==='A';});
-  const cB = ordenado.filter(function(x){return x._classe==='B';});
-  const cC = ordenado.filter(function(x){return x._classe==='C';});
+  // Filtro de classe: window._abcClasseSel ('Todas'|'A'|'B'|'C')
+  if(typeof window._abcClasseSel === 'undefined') window._abcClasseSel = 'Todas';
+  const classeSel = window._abcClasseSel;
+  const filtrados = classeSel === 'Todas' ? ordenado : ordenado.filter(function(x){return x._classe === classeSel;});
 
-  function sumEst(arr){return arr.reduce(function(t,x){return t+(x.p.estoque?x.p.estoque.vl_custo:0);},0);}
-  const vlA = sumEst(cA), vlB = sumEst(cB), vlC = sumEst(cC);
-
-  const isQt = _abcModo === 'qt';
   const labelMes = (mesesAtivos.length === ymsTodos.length)
     ? 'todos os meses de 2026'
     : mesesAtivos.length+' de '+ymsTodos.length+' meses de 2026';
-  const subTitleSufixo = isQt
-    ? ' · ranking por quantidade · '+labelMes
-    : ' · ranking por faturamento estimado · '+labelMes;
 
-  let html = '<div class="ph"><div class="pk">Compras</div><h2>Curva ABC · '+fI(comVenda.length)+' SKUs com venda<span style="font-size:11px;color:var(--text-muted);font-weight:400;display:block;margin-top:2px;">'+esc(subTitleSufixo)+'</span></h2></div>'
+  // ── Header da página ──
+  let html = '<div class="ph"><div class="pk">Compras</div><h2>Curva <em>ABC</em><span style="font-size:11px;color:var(--text-muted);font-weight:400;display:block;margin-top:2px;">'+fI(comVenda.length)+' SKUs com venda · '+esc(labelMes)+'</span></h2></div>'
            + '<div class="ph-sep"></div>'
            + '<div class="page-body">';
 
-  // ── Toggle modo + filtro de mês ──
-  html += '<div class="cc" style="padding:12px 14px;margin-bottom:12px;">';
-  html += '<div style="display:flex;flex-wrap:wrap;gap:14px;align-items:center;">';
-  // Toggle modo
-  html += '<div style="display:flex;align-items:center;gap:8px;">';
-  html += '<span style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;font-weight:700;">Ranking por:</span>';
-  html += '<div style="display:inline-flex;border:1px solid var(--border-strong);border-radius:6px;overflow:hidden;">';
-  html += '<button class="abc-modo-btn" data-modo="valor" style="padding:6px 12px;font-size:12px;border:none;cursor:pointer;background:'+(isQt?'transparent':'var(--accent)')+';color:'+(isQt?'var(--text)':'white')+';font-weight:600;">Faturamento</button>';
-  html += '<button class="abc-modo-btn" data-modo="qt" style="padding:6px 12px;font-size:12px;border:none;cursor:pointer;background:'+(isQt?'var(--accent)':'transparent')+';color:'+(isQt?'white':'var(--text)')+';font-weight:600;border-left:1px solid var(--border-strong);">Quantidade</button>';
-  html += '</div>';
-  html += '</div>';
-
-  // Filtro de meses (sempre disponível agora, em ambos os modos, modelo CV)
-  html += '<div style="display:flex;align-items:center;gap:8px;flex:1;min-width:280px;flex-wrap:wrap;">';
+  // ── Filtro de meses (linha enxuta no topo) ──
+  html += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap;">';
   html += '<span style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;font-weight:700;">Período:</span>';
   ymsTodos.forEach(function(ym){
     const ativo = mesesSet.has(ym);
@@ -739,107 +697,96 @@ function renderABCNovo(){
     html += '<button id="abc-meses-clear" style="padding:5px 8px;font-size:11px;border:1px solid var(--border);border-radius:4px;cursor:pointer;background:transparent;color:var(--text-muted);">Limpar</button>';
   }
   html += '</div>';
-  html += '</div>';
 
-  // Aviso sobre estimativa no modo Faturamento
-  if(!isQt){
-    html += '<div style="margin-top:10px;font-size:11.5px;color:var(--text-dim);font-style:italic;">'
-         +   'Modo Faturamento: o ETL atual exporta valor de venda apenas no agregado dos 12 meses. '
-         +   'Para acumular só 2026, o sistema estima o valor proporcional pela quantidade vendida no período. '
-         +   'É uma aproximação — para números exatos por mês, use o modo Quantidade.'
-         + '</div>';
-  }
-  html += '</div>';
+  // ── Card único: ranking de SKUs ──
+  html += '<div class="cc" style="padding:0;overflow:hidden;">';
 
-  // ── Card de critério ──
-  html += '<div style="background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:10px 14px;margin-bottom:14px;font-size:12px;color:var(--text-dim);">'
-       + '<strong>Critério:</strong> SKUs ordenados por '+(isQt?'quantidade vendida':'faturamento')+'. <strong>A</strong> = primeiros 80% do '+(isQt?'volume':'faturamento')+' · '
-       + '<strong>B</strong> = próximos 15% (até 95%) · <strong>C</strong> = restante (5%). '
-       + 'Total '+(isQt?'de unidades':'faturado')+' considerado: <strong>'+(isQt?fI(totalGeral)+' un':fK(totalGeral))+'</strong>.'
-       + '</div>';
-
-  html += '<div class="kg" style="grid-template-columns:repeat(6,1fr);margin-bottom:14px;" id="kg-abc-novo"></div>';
-
-  html += '<div class="cc"><div class="cct">Composição por classe</div>'
-       +    '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-top:10px;">';
-  [['A',cA,vlA,_PAL.ok],['B',cB,vlB,_PAL.hl],['C',cC,vlC,_PAL.dn]].forEach(function(t){
-    const cls = t[0], arr = t[1], vl = t[2], color = t[3];
-    const tot = arr.reduce(function(s,x){return s + (isQt ? x._qtPeriodo : (x._valEstimado||0));}, 0);
-    const pctSku = comVenda.length>0?(arr.length/comVenda.length*100):0;
-    const pctTot = totalGeral>0?(tot/totalGeral*100):0;
-    html += '<div style="background:var(--surface-2);border-left:4px solid '+color+';padding:12px 14px;border-radius:6px;">'
-         +    '<div style="font-size:24px;font-weight:800;color:'+color+';">Classe '+cls+'</div>'
-         +    '<div style="font-size:11px;color:var(--text-muted);margin-top:4px;">SKUs</div>'
-         +    '<div style="font-size:18px;font-weight:700;color:var(--text);">'+fI(arr.length)+' <span style="font-size:11px;color:var(--text-muted);font-weight:400;">('+fP(pctSku)+')</span></div>'
-         +    '<div style="font-size:11px;color:var(--text-muted);margin-top:8px;">'+(isQt?'Quantidade':'Faturamento')+'</div>'
-         +    '<div style="font-size:14px;font-weight:600;color:var(--text);">'+(isQt?fI(tot)+' un':fK(tot))+' <span style="font-size:11px;color:var(--text-muted);font-weight:400;">('+fP(pctTot)+')</span></div>'
-         +    '<div style="font-size:11px;color:var(--text-muted);margin-top:8px;">Estoque a custo</div>'
-         +    '<div style="font-size:14px;font-weight:600;color:var(--text);">'+fK(vl)+'</div>'
-         +  '</div>';
-  });
+  // Header do card com filtro de classe à direita
+  html += '<div style="display:flex;align-items:center;justify-content:space-between;padding:14px 18px;border-bottom:1px solid var(--border);">';
+  html += '<div style="display:flex;align-items:center;gap:10px;">';
+  html += '<div style="width:28px;height:28px;border-radius:6px;background:var(--surface-2);display:flex;align-items:center;justify-content:center;color:var(--text-muted);">'
+       +    '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg>'
+       +  '</div>';
+  html += '<div>';
+  html += '<div style="font-size:14px;font-weight:700;color:var(--text);">Ranking de SKUs</div>';
+  const totalExibir = Math.min(filtrados.length, 1000);
+  html += '<div style="font-size:11px;color:var(--text-muted);">Mostrando '+(filtrados.length>0?'1-'+fI(totalExibir):'0')+' de '+fI(filtrados.length)+' itens · ordenado por faturamento</div>';
   html += '</div></div>';
 
-  // Tabela Classe A
-  html += '<div class="cc"><div class="cct">Classe A · '+fI(cA.length)+' SKUs (80% do '+(isQt?'volume':'faturamento')+')</div>'
-       +    '<div class="tscroll" style="margin-top:8px;max-height:480px;overflow-y:auto;"><table class="t"><thead><tr>'
-       +      '<th class="L" style="width:24px;">#</th>'
-       +      '<th class="L">Produto</th>'
-       +      '<th>Depto</th>'
-       +      '<th>'+(isQt?'Qtde no período':'Faturamento')+'</th>'
-       +      '<th>% acumulado</th>'
-       +      '<th>Margem %</th>'
-       +      '<th>Estoque (custo)</th>'
+  // Botões de filtro de classe (estilo segmented)
+  html += '<div style="display:inline-flex;border:1px solid var(--border-strong);border-radius:6px;overflow:hidden;">';
+  ['Todas','A','B','C'].forEach(function(c){
+    const isAtivo = c === classeSel;
+    let bg = 'transparent', cor = 'var(--text)';
+    if(isAtivo){
+      if(c === 'Todas') { bg = 'var(--surface-2)'; cor = 'var(--text)'; }
+      else if(c === 'A') { bg = '#dcfce7'; cor = '#166534'; }
+      else if(c === 'B') { bg = '#fef3c7'; cor = '#92400e'; }
+      else if(c === 'C') { bg = '#fee2e2'; cor = '#991b1b'; }
+    }
+    html += '<button class="abc-classe-btn" data-classe="'+esc(c)+'" style="padding:6px 14px;font-size:12px;border:none;cursor:pointer;background:'+bg+';color:'+cor+';font-weight:600;'+(c!=='Todas'?'border-left:1px solid var(--border-strong);':'')+'">'+esc(c)+'</button>';
+  });
+  html += '</div>';
+  html += '</div>';
+
+  // Tabela
+  html += '<div class="tscroll" style="max-height:calc(100vh - 280px);overflow:auto;"><table class="t" style="margin:0;">'
+       +    '<thead style="position:sticky;top:0;background:var(--surface-2);z-index:1;"><tr>'
+       +      '<th style="width:64px;text-align:center;">CLASSE</th>'
+       +      '<th style="width:80px;">SKU</th>'
+       +      '<th class="L">PRODUTO</th>'
+       +      '<th>DEPT</th>'
+       +      '<th>SEÇÃO</th>'
+       +      '<th>FATURADO</th>'
+       +      '<th>% INDIV</th>'
+       +      '<th>% ACUM</th>'
+       +      '<th>QTD VENDIDA</th>'
        +    '</tr></thead><tbody>';
-  cA.slice(0, 100).forEach(function(x, i){
+
+  filtrados.slice(0, 1000).forEach(function(x){
     const p = x.p;
-    const e = p.estoque || {};
-    const valExibido = isQt ? fI(x._qtPeriodo)+' un' : fK(p.vendas.valor||0);
+    const dep = (p.depto && p.depto.nome) || '-';
+    const sec = (p.secao && p.secao.nome) || (p.categoria && p.categoria.nome) || '-';
+    let bgClasse = '#dcfce7', corClasse = '#166534';
+    if(x._classe === 'B'){ bgClasse = '#fef3c7'; corClasse = '#92400e'; }
+    else if(x._classe === 'C'){ bgClasse = '#fee2e2'; corClasse = '#991b1b'; }
     html += '<tr>'
-         +    '<td class="L" style="color:var(--text-muted);font-weight:700;">'+(i+1)+'</td>'
-         +    '<td class="L" data-prod-cod="'+esc(p.cod)+'" title="Clique para ver diagnóstico do produto"><strong>'+esc((p.desc||'').substring(0,40))+'</strong></td>'
-         +    '<td>'+esc((p.depto&&p.depto.nome)||'-')+'</td>'
-         +    '<td class="val-strong">'+valExibido+'</td>'
-         +    '<td>'+fP(x._pctAcum||0)+'</td>'
-         +    '<td>'+fP(p.vendas.marg||0)+'</td>'
-         +    '<td>'+fK(e.vl_custo||0)+'</td>'
+         +    '<td style="text-align:center;"><span style="display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:5px;background:'+bgClasse+';color:'+corClasse+';font-size:11px;font-weight:800;">'+x._classe+'</span></td>'
+         +    '<td style="font-family:JetBrains Mono,monospace;color:var(--text-dim);font-size:11.5px;">'+esc(p.cod)+'</td>'
+         +    '<td class="L" data-prod-cod="'+esc(p.cod)+'" title="Clique para abrir o diagnóstico"><strong>'+esc(p.desc||'')+'</strong></td>'
+         +    '<td>'+esc(dep)+'</td>'
+         +    '<td>'+esc(sec)+'</td>'
+         +    '<td class="val-strong">'+fK(x._valEstimado)+'</td>'
+         +    '<td>'+fP(x._pctIndiv,1)+'</td>'
+         +    '<td>'+fP(x._pctAcum,1)+'</td>'
+         +    '<td>'+fI(x._qtPeriodo)+'</td>'
          +  '</tr>';
   });
-  if(cA.length>100) html += '<tr><td colspan="7" style="text-align:center;color:var(--text-muted);font-size:11px;padding:10px;">... e mais '+(cA.length-100)+' SKUs na classe A. Use a Análise Dinâmica do cubo para ver tudo.</td></tr>';
-  html += '</tbody></table></div></div>';
+  if(filtrados.length > 1000){
+    html += '<tr><td colspan="9" style="text-align:center;color:var(--text-muted);font-size:11px;padding:10px;">... e mais '+fI(filtrados.length-1000)+' SKUs. Use a Análise Dinâmica para ver tudo.</td></tr>';
+  }
+  html += '</tbody></table></div>';
+  html += '</div>'; // fim card
 
-  html += '</div>';
+  html += '</div>'; // fim page-body
   cont.innerHTML = html;
 
-  // KPIs
-  document.getElementById('kg-abc-novo').innerHTML = kgHtml([
-    {l:'SKUs com venda',v:fI(comVenda.length),s:isQt?'No período selecionado':'No período de '+(E.meta&&E.meta.periodo_vendas?E.meta.periodo_vendas.meses+' meses':'?')},
-    {l:isQt?'Volume total':'Faturamento total',v:isQt?fI(totalGeral)+' un':fK(totalGeral),s:isQt?'Soma de unidades vendidas':'Soma de todos os SKUs'},
-    {l:'Classe A',v:fI(cA.length)+' SKUs',s:fP(comVenda.length>0?cA.length/comVenda.length*100:0)+' do total · 80% do '+(isQt?'volume':'faturamento'),cls:'ok'},
-    {l:'Classe B',v:fI(cB.length)+' SKUs',s:fP(comVenda.length>0?cB.length/comVenda.length*100:0)+' do total · 15% adicional',cls:'vio'},
-    {l:'Classe C',v:fI(cC.length)+' SKUs',s:fP(comVenda.length>0?cC.length/comVenda.length*100:0)+' do total · só 5% do '+(isQt?'volume':'faturamento'),cls:'dn'},
-    {l:'Cauda longa',v:fI(cC.length)+' SKUs',s:'Avalie descontinuação de itens classe C de baixo giro',cls:''},
-  ]);
-
-  // Bind toggle modo
-  document.querySelectorAll('.abc-modo-btn').forEach(function(btn){
+  // Bind toggle classe
+  document.querySelectorAll('.abc-classe-btn').forEach(function(btn){
     btn.addEventListener('click', function(){
-      const novoModo = btn.getAttribute('data-modo');
-      if(novoModo === _abcModo) return;
-      _abcModo = novoModo;
+      window._abcClasseSel = btn.getAttribute('data-classe');
       renderABCNovo();
     });
   });
 
-  // Bind toggle de mês (botões inline modelo CV)
+  // Bind toggle de mês
   document.querySelectorAll('.abc-mes-btn').forEach(function(btn){
     btn.addEventListener('click', function(){
       const ym = btn.getAttribute('data-ym');
-      // Se _abcMesesSel é null, considera todos selecionados; ao clicar, deseleciona o ym
       const atual = (_abcMesesSel && _abcMesesSel.length) ? _abcMesesSel.slice() : ymsTodos.slice();
       const idx = atual.indexOf(ym);
       if(idx >= 0) atual.splice(idx, 1);
       else atual.push(ym);
-      // Se acabou deselecionando tudo, volta pra todos
       _abcMesesSel = atual.length === 0 ? null : atual;
       renderABCNovo();
     });
@@ -847,31 +794,16 @@ function renderABCNovo(){
   const btnClear = document.getElementById('abc-meses-clear');
   if(btnClear) btnClear.addEventListener('click', function(){ _abcMesesSel = null; renderABCNovo(); });
 
-  const top100 = ordenado.slice(0, 100);
-  mkC('c-abc-pareto',{
-    type:'bar',
-    data:{
-      labels:top100.map(function(_,i){return (i+1).toString();}),
-      datasets:[
-        {label:isQt?'Quantidade':'Faturamento estimado (R$)',type:'bar',data:top100.map(function(x){return isQt?x._qtPeriodo:x._valEstimado;}),
-         backgroundColor:top100.map(function(x){return x._classe==='A'?_PAL.ok+'CC':x._classe==='B'?_PAL.hl+'CC':_PAL.dn+'CC';}),
-         yAxisID:'y'},
-        {label:'% acumulado',type:'line',data:top100.map(function(x){return x._pctAcum;}),
-         borderColor:_PAL.vi,backgroundColor:_PAL.vi+'33',tension:0.2,pointRadius:0,borderWidth:2,yAxisID:'y2'}
-      ]
-    },
-    options:{responsive:true,maintainAspectRatio:false,
-      plugins:{legend:{position:'top',labels:{padding:6,usePointStyle:true,boxWidth:8,font:{size:10}}},
-               tooltip:{callbacks:{title:function(ctx){var i=ctx[0].dataIndex;return '#'+(i+1)+' '+(top100[i].p.desc||'').substring(0,40);},
-                                   label:function(ctx){
-                                     if(ctx.dataset.type==='line') return ctx.dataset.label+': '+fP(ctx.raw);
-                                     return ctx.dataset.label+': '+(isQt?fI(ctx.raw)+' un':fK(ctx.raw));
-                                   }}}},
-      scales:{
-        x:{ticks:{display:false},grid:{display:false},title:{display:true,text:'Posição (rank de '+(isQt?'volume':'faturamento')+')',font:{size:10}}},
-        y:{position:'left',ticks:{callback:function(v){return isQt?fI(v):fAbbr(v);}},title:{display:true,text:isQt?'Unidades':'R$',font:{size:10}}},
-        y2:{position:'right',min:0,max:100,grid:{display:false},ticks:{callback:function(v){return v+'%';}},title:{display:true,text:'% acumulado',font:{size:10}}}
-      }}});
+  // Bind clique no nome do produto pra abrir diagnóstico
+  document.querySelectorAll('[data-prod-cod]').forEach(function(td){
+    td.style.cursor = 'pointer';
+    td.addEventListener('click', function(){
+      const cod = parseInt(td.getAttribute('data-prod-cod'), 10);
+      if(typeof window._openProdNovo === 'function'){
+        window._openProdNovo(cod);
+      }
+    });
+  });
 }
 
 // Modal de seleção de meses pra modo qt
@@ -1729,52 +1661,284 @@ window._openProdNovo = function(cod){
   // KPIs principais (5) — alinhado com a referência: Vendas Líq · Margem · Compras Líq · Estoque · Cobertura
   html += '<div class="kg c5" id="kp-diag-novo"></div>';
 
-  // Extrato resumido por mês (vendas qt + entradas) — versão visual aprimorada
-  html += '<div class="ds">'
-       +    '<div class="ds-hdr">'
-       +      '<div class="ds-ico" style="background:var(--accent-bg);color:var(--accent-text);">'
-       +        '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="20" x2="12" y2="10"/><line x1="18" y1="20" x2="18" y2="4"/><line x1="6" y1="20" x2="6" y2="16"/></svg>'
+  // ─── Extrato do produto (entradas detalhadas + saídas mensais) ───
+  // Agrupa entradas_detalhadas por ym e mostra cada NF individualmente, junto
+  // com a saída mensal e a devolução do mês.
+  const ent = (p.entradas_detalhadas || []).slice();
+  const vmes = (p.vendas_por_mes || []).slice();
+
+  if(ent.length || vmes.length){
+    // Agrupa entradas por ym
+    const entPorYm = {};
+    ent.forEach(function(x){
+      const ym = (x.data||'').substring(0,7);
+      if(!ym) return;
+      if(!entPorYm[ym]) entPorYm[ym] = [];
+      entPorYm[ym].push(x);
+    });
+    // Vendas por ym
+    const vendPorYm = {};
+    vmes.forEach(function(v){ vendPorYm[v.ym] = v; });
+    // Set de meses, ordenados desc
+    const ymsSet = new Set();
+    Object.keys(entPorYm).forEach(function(y){ ymsSet.add(y); });
+    Object.keys(vendPorYm).forEach(function(y){ ymsSet.add(y); });
+    const yms = Array.from(ymsSet).filter(function(y){return y >= '2026-01';}).sort().reverse();
+
+    if(yms.length){
+      html += '<div class="ds">'
+           +    '<div class="ds-hdr">'
+           +      '<div class="ds-ico" style="background:var(--accent-bg);color:var(--accent-text);">'
+           +        '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>'
+           +      '</div>'
+           +      '<div><div class="ds-title">Extrato do produto</div><div class="ds-sub">Entradas e saídas organizadas por mês · jan-abr/2026</div></div>'
+           +    '</div>'
+           +    '<div class="ds-body" style="padding:14px;">'
+           +      '<table class="t" style="margin:0;font-size:11.5px;">'
+           +        '<thead><tr>'
+           +          '<th class="L" style="width:90px;">Tipo</th>'
+           +          '<th class="L" style="width:90px;">Data</th>'
+           +          '<th class="L">Fornecedor / Item</th>'
+           +          '<th style="width:80px;">NF</th>'
+           +          '<th style="width:100px;">Qtde</th>'
+           +          '<th style="width:90px;">P. Unit</th>'
+           +          '<th style="width:110px;">Total</th>'
+           +          '<th style="width:120px;">Status</th>'
+           +        '</tr></thead><tbody>';
+
+      // Função pra renderizar status badge
+      function statusBadge(st, dtPagto){
+        if(st === 'pago')    return '<span class="kg-tag ok" style="font-size:10px;" title="'+(dtPagto?'Pago em '+fDt(dtPagto):'Pago')+'">Pago</span>';
+        if(st === 'aberto')  return '<span class="kg-tag wn" style="font-size:10px;">Aberto</span>';
+        if(st === 'parcial') return '<span class="kg-tag" style="font-size:10px;background:#fef3c7;color:#92400e;" title="'+(dtPagto?'Último pagamento em '+fDt(dtPagto):'Parcialmente pago')+'">Parcial</span>';
+        // desconhecido: NF não está em pagas (grupo 100) nem em aberto. Pode ser
+        // pagamento por outra conta, intragrupo, cancelamento, ou ETL incompleto.
+        return '<span style="font-size:10px;color:var(--text-muted);" title="Status não identificado nas tabelas de pagas (grupo 100) nem em aberto">—</span>';
+      }
+
+      yms.forEach(function(ym){
+        const entradasMes = (entPorYm[ym] || []).slice().sort(function(a,b){return (a.data||'').localeCompare(b.data||'');});
+        const vendaMes = vendPorYm[ym];
+        const ano = ym.substring(0,4);
+        const lblMes = _ymToLabel(ym).split('/')[0];
+        const lblMesPt = ({Jan:'Janeiro',Fev:'Fevereiro',Mar:'Março',Abr:'Abril',Mai:'Maio',Jun:'Junho',Jul:'Julho',Ago:'Agosto',Set:'Setembro',Out:'Outubro',Nov:'Novembro',Dez:'Dezembro'})[lblMes] || lblMes;
+
+        // Cabeçalho do mês
+        const totQtEnt = entradasMes.reduce(function(s,x){return s+(x.qt||0);}, 0);
+        const totValEnt = entradasMes.reduce(function(s,x){return s+(x.valor||0);}, 0);
+        html += '<tr style="background:var(--surface-2);"><td colspan="8" class="L" style="padding:10px 12px;">'
+             +    '<strong style="font-size:13px;color:var(--text);">'+esc(lblMesPt)+'</strong> '
+             +    '<span style="color:var(--text-muted);font-size:11px;">'+esc(ano)+'</span>'
+             +    ' <span class="kg-tag ok" style="font-size:10px;margin-left:8px;">'+fI(entradasMes.length)+' entrada'+(entradasMes.length!==1?'s':'')+'</span>'
+             +    ' <span class="kg-tag" style="font-size:10px;background:var(--surface);color:var(--text-dim);">Saída mês</span>'
+             +  '</td></tr>';
+
+        // Linhas de entrada
+        entradasMes.forEach(function(x){
+          html += '<tr>'
+               +    '<td class="L"><span style="color:var(--ok);font-weight:600;font-size:10px;">↓ ENTRADA</span></td>'
+               +    '<td class="L" style="font-family:JetBrains Mono,monospace;color:var(--text-dim);font-size:11px;">'+fDt(x.data)+'</td>'
+               +    '<td class="L">'+esc((x.fornecedor||'').substring(0,40))+(x.nf?' <span style="color:var(--text-muted);font-size:10px;">·#'+esc(x.nf)+'</span>':'')+'</td>'
+               +    '<td>'+esc(x.nf||'')+'</td>'
+               +    '<td>'+fI(x.qt||0)+' un</td>'
+               +    '<td>R$ '+(x.preco_unit?x.preco_unit.toFixed(4).replace('.', ','):'—')+'/un</td>'
+               +    '<td class="val-strong">'+fK(x.valor||0)+'</td>'
+               +    '<td>'+statusBadge(x.status, x.dt_pagto)+(x.status==='parcial'&&x.valor_aberto>0?' <span style="font-size:10px;color:var(--text-muted);">'+fK(x.valor_aberto)+' aberto</span>':(x.status==='aberto'?' <span style="font-size:10px;color:var(--text-muted);">'+fK(x.valor_aberto||x.valor||0)+'</span>':''))+'</td>'
+               +  '</tr>';
+        });
+
+        // Linha de saída do mês (vendas)
+        if(vendaMes){
+          // Estimar valor pela proporção qt/qt12m × valor12m
+          const vds = p.vendas || {};
+          const valEstSaida = (vds.qt > 0 && vds.valor > 0) ? vds.valor * (vendaMes.qt / vds.qt) : 0;
+          const margemAprox = vds.marg || 0;
+          const lucroAprox = valEstSaida * margemAprox / 100;
+          const precoMedSaida = vendaMes.qt > 0 ? valEstSaida / vendaMes.qt : 0;
+          html += '<tr>'
+               +    '<td class="L"><span style="color:var(--text-dim);font-weight:600;font-size:10px;">↑ SAÍDA MÊS</span></td>'
+               +    '<td class="L" style="font-family:JetBrains Mono,monospace;color:var(--text-muted);font-size:11px;">'+_ymToLabel(ym)+'</td>'
+               +    '<td class="L" style="color:var(--text-dim);font-style:italic;">Período completo</td>'
+               +    '<td>—</td>'
+               +    '<td>'+fI(vendaMes.qt||0)+' un</td>'
+               +    '<td>'+(precoMedSaida>0?'R$ '+precoMedSaida.toFixed(2).replace('.',',')+'/un':'—')+'</td>'
+               +    '<td class="val-strong">'+fK(valEstSaida)+'</td>'
+               +    '<td><span style="font-size:10px;color:var(--text-muted);">Lucro '+fP(margemAprox)+' · '+fK(lucroAprox)+'</span></td>'
+               +  '</tr>';
+        }
+
+        // Resumo do mês
+        const saldo = (totQtEnt) - ((vendaMes && vendaMes.qt) || 0);
+        const saldoCor = saldo >= 0 ? 'var(--ok)' : 'var(--dn)';
+        html += '<tr style="background:var(--surface);"><td colspan="8" class="L" style="padding:6px 12px;font-size:10.5px;color:var(--text-dim);font-family:JetBrains Mono,monospace;">'
+             +    'Entrou: <strong>'+fI(totQtEnt)+' un</strong> / <strong>'+fK(totValEnt)+'</strong>'
+             +    ' &nbsp;·&nbsp; Vendido: <strong>'+fI((vendaMes&&vendaMes.qt)||0)+' un</strong>'
+             +    ' &nbsp;·&nbsp; Saldo mês: <strong style="color:'+saldoCor+';">'+(saldo>=0?'+':'')+fI(saldo)+' un</strong>'
+             +  '</td></tr>';
+      });
+
+      html += '</tbody></table></div></div>';
+    }
+  }
+
+  // ─── Estoque + Financeiro lado a lado (estilo da referência) ───
+  // Calcula totais financeiros agregando entradas_detalhadas. Para entradas
+  // com status 'desconhecido' (NF não bate em pagas grupo 100 nem em aberto),
+  // somamos como "outros" — exibido separado, sem inflar pago nem aberto.
+  let finTotal = 0, finPago = 0, finAberto = 0, finOutros = 0;
+  ent.forEach(function(x){
+    finTotal += (x.valor || 0);
+    if(x.status === 'desconhecido'){
+      finOutros += (x.valor || 0);
+    } else {
+      finPago   += (x.valor_pago  || 0);
+      finAberto += (x.valor_aberto|| 0);
+    }
+  });
+  const finPagoPct   = finTotal > 0 ? (finPago/finTotal*100)   : 0;
+  const finAbertoPct = finTotal > 0 ? (finAberto/finTotal*100) : 0;
+  const finOutrosPct = finTotal > 0 ? (finOutros/finTotal*100) : 0;
+
+  html += '<div class="row2eq">';
+
+  // Card Estoque (visual estilo referência: KPIs em grid)
+  html += '<div class="cc">'
+       +    '<div class="cct" style="display:flex;align-items:center;gap:8px;">'
+       +      '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/></svg>'
+       +      'Estoque <span style="font-size:11px;color:var(--text-muted);font-weight:400;">· Posição em '+esc(e.dt_ult_entrada||'—')+'</span>'
+       +    '</div>'
+       +    '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-top:12px;">'
+       +      '<div style="background:var(--surface-2);border-radius:6px;padding:10px;">'
+       +        '<div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;font-weight:700;">Disponível</div>'
+       +        '<div style="font-size:18px;font-weight:800;color:var(--text);margin-top:3px;">'+fI(e.qt||0)+'</div>'
+       +        '<div style="font-size:10px;color:var(--text-muted);">unidades</div>'
        +      '</div>'
-       +      '<div><div class="ds-title">Extrato do produto</div><div class="ds-sub">Saídas mensais e entradas (compras + devoluções)</div></div>'
+       +      '<div style="background:var(--surface-2);border-radius:6px;padding:10px;">'
+       +        '<div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;font-weight:700;">Valor custo</div>'
+       +        '<div style="font-size:18px;font-weight:800;color:var(--text);margin-top:3px;">'+fK(e.vl_custo||0)+'</div>'
+       +        '<div style="font-size:10px;color:var(--text-muted);">imobilizado</div>'
+       +      '</div>'
+       +      '<div style="background:var(--surface-2);border-radius:6px;padding:10px;">'
+       +        '<div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;font-weight:700;">Cobertura</div>'
+       +        '<div style="font-size:18px;font-weight:800;color:var(--text);margin-top:3px;">'+esc(coberturaTxt)+'</div>'
+       +        '<div style="font-size:10px;color:var(--text-muted);">'+(coberturaDias!=null?fI((vds.qt||0)/((vds.meses||1)*30)).toString().replace(/(\d+)/, function(m){return parseFloat(m).toFixed(1).replace('.',',');})+' un/dia':'sem dados')+'</div>'
+       +      '</div>'
+       +      '<div style="background:var(--surface-2);border-radius:6px;padding:10px;">'
+       +        '<div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;font-weight:700;">Custo real unit.</div>'
+       +        '<div style="font-size:16px;font-weight:800;color:var(--text);margin-top:3px;">'+(e.custo>0?'R$ '+e.custo.toFixed(2).replace('.', ','):'—')+'</div>'
+       +      '</div>'
+       +      '<div style="background:var(--surface-2);border-radius:6px;padding:10px;">'
+       +        '<div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;font-weight:700;">Preço venda cad.</div>'
+       +        '<div style="font-size:16px;font-weight:800;color:var(--text);margin-top:3px;">'+(e.preco>0?'R$ '+e.preco.toFixed(2).replace('.', ','):'—')+'</div>'
+       +      '</div>'
+       +      '<div style="background:var(--surface-2);border-radius:6px;padding:10px;">'
+       +        '<div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;font-weight:700;">Markup cadastro</div>'
+       +        '<div style="font-size:16px;font-weight:800;color:var(--text);margin-top:3px;">'+(margPot>0?'+':'')+fP(margPot,1)+'</div>'
+       +      '</div>'
        +    '</div>'
-       +    '<div class="ds-body" style="padding:14px;"><div style="height:240px;"><canvas id="c-diag-hist"></canvas></div></div>'
-       +    '<div class="tscroll" style="border-top:1px solid var(--border);">'
-       +      '<table class="t" style="margin:0;">'
-       +        '<thead><tr><th class="L">Mês</th><th>Saídas (un)</th><th>Entradas (un)</th><th>Saldo</th></tr></thead>'
-       +        '<tbody id="diag-extrato-tbody"></tbody>'
-       +      '</table>'
-       +    '</div>'
-       + '</div>';
+       +    '<div style="margin-top:10px;font-size:11px;color:var(--text-muted);">Última entrada: <strong>'+esc(e.dt_ult_entrada||'—')+'</strong></div>'
+       +  '</div>';
 
-  // Estoque + Compras lado a lado
-  html += '<div class="row2eq">'
-       +    '<div class="cc"><div class="cct">Estoque atual</div>'
-       +      '<table class="t" style="margin-top:8px;"><tbody>'
-       +        '<tr><td class="L">Quantidade em estoque</td><td class="val-strong">'+fI(e.qt||0)+' '+esc(p.unidade||'')+'</td></tr>'
-       +        '<tr><td class="L">Valor a custo</td><td class="val-strong">'+fK(e.vl_custo||0)+'</td></tr>'
-       +        '<tr><td class="L">Valor a preço de venda</td><td>'+fK(e.vl_preco||0)+'</td></tr>'
-       +        '<tr><td class="L">Markup potencial</td><td>'+fP(margPot)+'</td></tr>'
-       +        '<tr><td class="L">Quantidade reservada</td><td>'+fI(e.qt_reservada||0)+'</td></tr>'
-       +        '<tr><td class="L">Quantidade bloqueada</td><td>'+fI(e.qt_bloq||0)+'</td></tr>'
-       +        '<tr><td class="L">Avarias</td><td>'+(e.qt_avaria>0?'<span class="kg-tag wn">'+fI(e.qt_avaria)+'</span>':'0')+'</td></tr>'
-       +        '<tr><td class="L">Última entrada</td><td>'+esc(e.dt_ult_entrada||'—')+'</td></tr>'
-       +        '<tr><td class="L">Giro</td><td><span class="kg-tag '+giroCls+'">'+esc(giroTxt)+'</span></td></tr>'
-       +      '</tbody></table>'
-       +    '</div>'
-       +    '<div class="cc"><div class="cct">Compras 12 meses</div>'
-       +      '<table class="t" style="margin-top:8px;"><tbody>'
-       +        '<tr><td class="L">Quantidade comprada</td><td class="val-strong">'+fI(c12.qt||0)+' '+esc(p.unidade||'')+'</td></tr>'
-       +        '<tr><td class="L">Valor total</td><td class="val-strong">'+fK(c12.valor||0)+'</td></tr>'
-       +        '<tr><td class="L">Notas fiscais</td><td>'+fI(c12.nfs||0)+'</td></tr>'
-       +        '<tr><td class="L">Preço médio de compra</td><td>'+(c12.preco_medio>0?fB(c12.preco_medio):'—')+'</td></tr>'
-       +        '<tr><td class="L">Última compra</td><td>'+fDt(c12.ult_data)+'</td></tr>'
-       +        '<tr><td colspan="2" style="height:8px;"></td></tr>'
-       +        '<tr><td class="L" style="font-weight:700;">Devoluções 2026</td><td>'+(dev.qt>0?'<span class="kg-tag dn">'+fI(dev.qt||0)+' un · '+fK(dev.valor||0)+'</span>':'<span style="color:var(--text-muted);">nenhuma</span>')+'</td></tr>'
-       +      '</tbody></table>'
-       +    '</div>'
-       + '</div>';
+  // Card Financeiro com TOTAL/PAGO/ABERTO + barra
+  if(finTotal > 0){
+    html += '<div class="cc">'
+         +    '<div class="cct" style="display:flex;align-items:center;gap:8px;">'
+         +      '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg>'
+         +      'Financeiro <span style="font-size:11px;color:var(--text-muted);font-weight:400;">· Status das duplicatas deste item</span>'
+         +    '</div>'
+         +    '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-top:12px;">'
+         +      '<div style="background:var(--surface-2);border-radius:6px;padding:10px;">'
+         +        '<div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;font-weight:700;">Total comprado</div>'
+         +        '<div style="font-size:16px;font-weight:800;color:var(--text);margin-top:3px;">'+fK(finTotal)+'</div>'
+         +      '</div>'
+         +      '<div style="background:#dcfce7;border-radius:6px;padding:10px;">'
+         +        '<div style="font-size:10px;color:#166534;text-transform:uppercase;letter-spacing:.05em;font-weight:700;">Já pago</div>'
+         +        '<div style="font-size:16px;font-weight:800;color:#166534;margin-top:3px;">'+fK(finPago)+'</div>'
+         +        '<div style="font-size:10px;color:#166534;">'+fP(finPagoPct,1)+'</div>'
+         +      '</div>'
+         +      '<div style="background:#fef3c7;border-radius:6px;padding:10px;">'
+         +        '<div style="font-size:10px;color:#92400e;text-transform:uppercase;letter-spacing:.05em;font-weight:700;">Em aberto</div>'
+         +        '<div style="font-size:16px;font-weight:800;color:#92400e;margin-top:3px;">'+fK(finAberto)+'</div>'
+         +        '<div style="font-size:10px;color:#92400e;">'+fP(finAbertoPct,1)+'</div>'
+         +      '</div>'
+         +    '</div>'
+         +    '<div style="margin-top:14px;height:8px;border-radius:4px;overflow:hidden;background:var(--surface-2);display:flex;">'
+         +      '<div style="width:'+finPagoPct.toFixed(2)+'%;background:#16a34a;" title="Pago"></div>'
+         +      '<div style="width:'+finAbertoPct.toFixed(2)+'%;background:#f59e0b;" title="Em aberto"></div>'
+         +      (finOutrosPct > 0 ? '<div style="width:'+finOutrosPct.toFixed(2)+'%;background:#9ca3af;" title="Status não identificado"></div>' : '')
+         +    '</div>'
+         +    '<div style="margin-top:6px;font-size:11px;color:var(--text-muted);">'
+         +      '● <span style="color:#16a34a;font-weight:600;">Pago: '+fP(finPagoPct,1)+'</span> ('+fK(finPago)+') &nbsp;'
+         +      '● <span style="color:#92400e;font-weight:600;">Em aberto: '+fP(finAbertoPct,1)+'</span> ('+fK(finAberto)+')'
+         +      (finOutrosPct > 0 ? ' &nbsp;● <span style="color:#6b7280;font-weight:600;">Outros: '+fP(finOutrosPct,1)+'</span> ('+fK(finOutros)+')' : '')
+         +    '</div>'
+         +    (finOutrosPct > 0 ? '<div style="margin-top:6px;font-size:10px;color:var(--text-muted);font-style:italic;line-height:1.4;">Outros: NFs que não constam nas tabelas de pagas (grupo 100) nem em aberto. Podem ser pagamentos por outras contas, intragrupo ou cancelamentos.</div>' : '')
+         +  '</div>';
+  } else {
+    // Fallback: card com aviso de dados não disponíveis
+    html += '<div class="cc"><div class="cct">Financeiro</div>'
+         +    '<div style="padding:14px;color:var(--text-muted);font-size:12px;text-align:center;">Sem entradas detalhadas neste produto no período.</div>'
+         +  '</div>';
+  }
 
-  // Diagnóstico automático
+  html += '</div>'; // fim row2eq
+
+  // ─── Evolução do preço de compra ───
+  if(ent.length >= 2){
+    // Preço médio compra ponderado por volume
+    const totQt = ent.reduce(function(s,x){return s+(x.qt||0);},0);
+    const totVal = ent.reduce(function(s,x){return s+(x.valor||0);},0);
+    const precoMedCompra = totQt > 0 ? totVal/totQt : 0;
+    const precoMedVenda = e.preco || 0;
+    const markup = precoMedCompra > 0 ? ((precoMedVenda - precoMedCompra)/precoMedCompra*100) : 0;
+
+    // Min e max preço
+    const precos = ent.map(function(x){return x.preco_unit || 0;}).filter(function(v){return v > 0;});
+    const precoMin = Math.min.apply(null, precos);
+    const precoMax = Math.max.apply(null, precos);
+    const variacao = precoMin > 0 ? ((precoMax - precoMin)/precoMin*100) : 0;
+
+    html += '<div class="ds">'
+         +    '<div class="ds-hdr">'
+         +      '<div class="ds-ico" style="background:var(--accent-bg);color:var(--accent-text);">'
+         +        '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>'
+         +      '</div>'
+         +      '<div><div class="ds-title">Evolução do preço de compra</div><div class="ds-sub">Histórico de entradas vs preço de venda</div></div>'
+         +    '</div>'
+         +    '<div class="ds-body" style="padding:14px;">'
+         +      '<div style="display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-bottom:14px;">'
+         +        '<div style="background:var(--surface-2);border-radius:6px;padding:10px;">'
+         +          '<div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;font-weight:700;">P. médio compra</div>'
+         +          '<div style="font-size:16px;font-weight:800;margin-top:3px;">R$ '+precoMedCompra.toFixed(2).replace('.',',')+'</div>'
+         +          '<div style="font-size:10px;color:var(--text-muted);">Ponderado por volume</div>'
+         +        '</div>'
+         +        '<div style="background:var(--surface-2);border-radius:6px;padding:10px;">'
+         +          '<div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;font-weight:700;">P. médio venda</div>'
+         +          '<div style="font-size:16px;font-weight:800;margin-top:3px;">'+(precoMedVenda>0?'R$ '+precoMedVenda.toFixed(2).replace('.',','):'—')+'</div>'
+         +          '<div style="font-size:10px;color:var(--text-muted);">No período</div>'
+         +        '</div>'
+         +        '<div style="background:var(--surface-2);border-radius:6px;padding:10px;">'
+         +          '<div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;font-weight:700;">Markup</div>'
+         +          '<div style="font-size:16px;font-weight:800;margin-top:3px;color:'+(markup<10?'var(--wn)':markup>20?'var(--ok)':'var(--text)')+';">'+(markup>=0?'+':'')+fP(markup,1)+'</div>'
+         +          '<div style="font-size:10px;color:var(--text-muted);">Venda vs compra</div>'
+         +        '</div>'
+         +        '<div style="background:var(--surface-2);border-radius:6px;padding:10px;">'
+         +          '<div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;font-weight:700;">Variação de preço</div>'
+         +          '<div style="font-size:16px;font-weight:800;margin-top:3px;">'+fP(variacao,1)+'</div>'
+         +          '<div style="font-size:10px;color:var(--text-muted);">Min→Max no período</div>'
+         +        '</div>'
+         +        '<div style="background:var(--surface-2);border-radius:6px;padding:10px;">'
+         +          '<div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;font-weight:700;">Desc. financeiro</div>'
+         +          '<div style="font-size:16px;font-weight:800;margin-top:3px;color:var(--text-muted);">—</div>'
+         +          '<div style="font-size:10px;color:var(--text-muted);">Sem desconto</div>'
+         +        '</div>'
+         +      '</div>'
+         +      '<div style="height:240px;"><canvas id="c-diag-precos"></canvas></div>'
+         +    '</div>'
+         +  '</div>';
+  }
+
+  // Diagnóstico automático (mantido)
   const obs = _diagGerarObservacoes(p);
   if(obs.length){
     html += '<div class="ds">'
@@ -1782,7 +1946,7 @@ window._openProdNovo = function(cod){
          +      '<div class="ds-ico" style="background:var(--highlight-bg);color:var(--highlight-text);">'
          +        '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>'
          +      '</div>'
-         +      '<div><div class="ds-title">Observações automáticas</div><div class="ds-sub">'+obs.length+' ponto'+(obs.length!==1?'s':'')+' identificado'+(obs.length!==1?'s':'')+'</div></div>'
+         +      '<div><div class="ds-title">Diagnóstico automático</div><div class="ds-sub">'+obs.length+' ponto'+(obs.length!==1?'s':'')+'</div></div>'
          +    '</div>'
          +    '<div class="ds-body" style="padding:14px;">'
          +      '<ul style="margin:0;padding-left:20px;line-height:1.7;font-size:13px;color:var(--text);">'
@@ -1790,6 +1954,41 @@ window._openProdNovo = function(cod){
          +      '</ul>'
          +    '</div>'
          + '</div>';
+  }
+
+  // Fornecedores do item — agora detalhado por fornecedor cruzando entradas
+  if(ent.length){
+    const porForn = {};
+    ent.forEach(function(x){
+      const k = x.fornecedor_cod;
+      if(!porForn[k]) porForn[k] = {cod:x.fornecedor_cod, nome:x.fornecedor, qt:0, valor:0, pago:0, aberto:0, nfs:new Set()};
+      porForn[k].qt    += (x.qt||0);
+      porForn[k].valor += (x.valor||0);
+      porForn[k].pago  += (x.valor_pago||0);
+      porForn[k].aberto+= (x.valor_aberto||0);
+      if(x.nf) porForn[k].nfs.add(x.nf);
+    });
+    const fornsList = Object.values(porForn).sort(function(a,b){return b.valor - a.valor;});
+    html += '<div class="ds">'
+         +    '<div class="ds-hdr">'
+         +      '<div class="ds-ico" style="background:var(--surface-2);color:var(--text-muted);">'
+         +        '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="8.5" cy="7" r="4"/><path d="M20 8v6"/><path d="M23 11h-6"/></svg>'
+         +      '</div>'
+         +      '<div><div class="ds-title">Fornecedores do item</div><div class="ds-sub">Quem vendeu e por quanto</div></div>'
+         +    '</div>'
+         +    '<table class="t" style="margin:0;font-size:11.5px;">'
+         +      '<thead><tr><th class="L">Fornecedor</th><th>Entradas</th><th>Quantidade</th><th>Total</th><th>Pago</th><th>Aberto</th></tr></thead><tbody>';
+    fornsList.forEach(function(f){
+      html += '<tr>'
+           +    '<td class="L"><strong>'+esc(f.nome||'')+'</strong>'+(f.cod?' <span style="color:var(--text-muted);font-size:10px;">#'+esc(f.cod)+'</span>':'')+'</td>'
+           +    '<td>'+fI(f.nfs.size)+'</td>'
+           +    '<td>'+fI(f.qt)+' un</td>'
+           +    '<td class="val-strong">'+fK(f.valor)+'</td>'
+           +    '<td style="color:#16a34a;font-weight:600;">'+fK(f.pago)+'</td>'
+           +    '<td style="color:#92400e;font-weight:600;">'+fK(f.aberto)+'</td>'
+           +  '</tr>';
+    });
+    html += '</tbody></table></div>';
   }
 
   cont.innerHTML = html;
@@ -1805,52 +2004,40 @@ window._openProdNovo = function(cod){
     {l:'Cobertura', v:coberturaTxt, s:coberturaDias!=null?'base: '+(mesesVend)+' meses de venda':'sem cálculo possível', cls:coberturaCls},
   ]);
 
-  // Chart histórico mensal — saídas (vendas) + entradas (compras se tem ult_data)
-  // Como compras_12m é só agregado, distribui no mês da última compra (ou mostra total)
-  const meses = (p.vendas_por_mes||[]).slice();
-  if(meses.length){
-    // Cria mapa de entradas por mês (estimativa: só o mês da última compra, mostrando o total)
-    // Nota: dados mais precisos exigiriam ETL com compras detalhadas por mês — futuro
-    const entradasPorMes = {};
-    if(c12.ult_data && c12.qt > 0){
-      const ymUlt = c12.ult_data.substring(0,7);
-      entradasPorMes[ymUlt] = c12.qt;
-    }
-    const labels = meses.map(function(m){return _ymToLabel(m.ym);});
-    const dadosSaidas = meses.map(function(m){return m.qt||0;});
-    const dadosEntradas = meses.map(function(m){return entradasPorMes[m.ym] || 0;});
+  // Chart: Evolução do preço de compra (linha cronológica das entradas)
+  if(ent.length >= 2){
+    const ordCron = ent.slice().sort(function(a,b){return (a.data||'').localeCompare(b.data||'');});
+    const labels = ordCron.map(function(x){return fDt(x.data);});
+    const dadosPreco = ordCron.map(function(x){return x.preco_unit||0;});
+    const precoVendaCad = e.preco || 0;
+    const dadosLinhaVenda = ordCron.map(function(){return precoVendaCad;});
 
-    mkC('c-diag-hist', {type:'bar',
-      data:{labels:labels,
-            datasets:[
-              {label:'Saídas (un)', data:dadosSaidas, backgroundColor:_PAL.ac+'CC', borderRadius:4},
-              {label:'Entradas (un)', data:dadosEntradas, backgroundColor:_PAL.ok+'B0', borderRadius:4}
-            ]},
+    mkC('c-diag-precos', {type:'line',
+      data:{labels:labels, datasets:[
+        {label:'Preço compra', data:dadosPreco,
+         borderColor:_PAL.ac, backgroundColor:_PAL.ac+'22',
+         tension:0.2, pointRadius:3, fill:true, borderWidth:2},
+        {label:'Preço venda (cadastro)', data:dadosLinhaVenda,
+         borderColor:_PAL.ok, backgroundColor:'transparent',
+         tension:0, pointRadius:0, borderDash:[5,3], borderWidth:1.5}
+      ]},
       options:{responsive:true,maintainAspectRatio:false,
-        plugins:{legend:{position:'bottom', labels:{padding:8, usePointStyle:true, boxWidth:8, font:{size:10}}},
-                 tooltip:{callbacks:{label:function(ctx){return ctx.dataset.label+': '+fI(ctx.raw)+' '+(p.unidade||'un');}}}},
-        scales:{x:{grid:{display:false},ticks:{font:{size:10}}},
-                y:{ticks:{callback:function(v){return fI(v);}}}}}});
-
-    // Popula tabela de extrato
-    const tbody = document.getElementById('diag-extrato-tbody');
-    if(tbody){
-      let saldo = 0;
-      let trs = '';
-      meses.forEach(function(m){
-        const sai = m.qt || 0;
-        const ent = entradasPorMes[m.ym] || 0;
-        const mov = ent - sai;
-        saldo += mov;
-        trs += '<tr>'
-          + '<td class="L"><strong>'+_ymToLabel(m.ym)+'</strong></td>'
-          + '<td style="color:#dc2626;">'+(sai>0?'-'+fI(sai):'—')+'</td>'
-          + '<td style="color:#15803d;">'+(ent>0?'+'+fI(ent):'—')+'</td>'
-          + '<td class="val-strong" style="color:'+(mov>=0?'#15803d':'#dc2626')+';">'+(mov>=0?'+':'')+fI(mov)+'</td>'
-          + '</tr>';
-      });
-      tbody.innerHTML = trs;
-    }
+        plugins:{
+          legend:{position:'bottom', labels:{padding:8, usePointStyle:true, boxWidth:8, font:{size:10}}},
+          tooltip:{callbacks:{
+            title:function(ctx){var i=ctx[0].dataIndex; return labels[i]+' · NF '+(ordCron[i].nf||'—');},
+            label:function(ctx){
+              if(ctx.datasetIndex===0){
+                var x = ordCron[ctx.dataIndex];
+                return 'Preço: R$ '+ctx.raw.toFixed(4).replace('.',',')+'/un · '+fI(x.qt||0)+' un · '+fK(x.valor||0);
+              }
+              return ctx.dataset.label+': R$ '+ctx.raw.toFixed(2).replace('.',',');
+            }}}
+        },
+        scales:{
+          x:{grid:{display:false},ticks:{font:{size:9}, maxRotation:45, minRotation:45}},
+          y:{ticks:{callback:function(v){return 'R$'+v.toFixed(2).replace('.',',');}, font:{size:10}}}
+        }}});
   }
 
   // Scroll pro topo da página
