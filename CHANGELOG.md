@@ -4,6 +4,68 @@ Lista das melhorias do sistema de BI da R2 Soluções para o Grupo Pinto Cerquei
 
 ---
 
+## v4.63 · 06/mai/2026
+
+**Diagnóstico de Produto e Fornecedor: bloqueio em GPC Consolidado**
+
+1. **Por quê:** ATP e Comercial Pinto têm cadastros distintos de itens e fornecedores. O mesmo fornecedor (ex: Nestlé) tem códigos diferentes em cada base, e o mesmo SKU pode existir em duas listas separadas. Ao pesquisar "Nestlé" no GPC Consolidado, o sistema sugere dois fornecedores e mostraria dados só de uma das bases — informação parcial e enganosa. Mesmo problema com itens.
+
+2. **Correção:** as duas páginas (Diagnóstico de Produto e Diagnóstico de Fornecedor) agora detectam corretamente quando o usuário está em GPC Consolidado (sigla `grupo`, tipo `raiz` ou `consolidado`) e mostram uma tela explicativa com botões pra escolher uma das bases (ATP, CP, ou loja-folha).
+
+3. **Por que essa verificação não estava funcionando antes:** a checagem anterior usava `!_filialAtual.base_sigla` — mas no `filiais.json` **todas** as filiais têm `base_sigla` (inclusive `grupo` com `base_sigla:'grupo'`), então o teste sempre passava e nunca bloqueava. A nova verificação testa diretamente `sigla === 'grupo'` ou `tipo === 'raiz'/'consolidado'`.
+
+4. **Onde continua funcionando normalmente:** ATP (consolidado de ATP-V + ATP-A — mesmo cadastro), CP (consolidado de CP1+CP3+CP5+CP40 — mesmo cadastro Comercial Pinto), e todas as lojas-folha (CP1, CP3, CP5, CP40, ATP-V, ATP-A vistas isoladamente).
+
+5. **Texto do aviso ajustado:** antes dizia "Diagnóstico é por loja específica" — agora explica a razão real ("ATP e Comercial Pinto têm cadastros distintos: o mesmo Nestlé aparece com códigos diferentes em cada base") e o label do botão troca de "loja" para "base", já que ATP e CP em si são bases válidas.
+
+---
+
+## v4.62 · 06/mai/2026
+
+**Inconsistência "Compras Líquidas R$ 0" mas estoque cheio + última entrada recente**
+
+1. **O caso reportado** (CP3, CERV P MALTE AMSTEL LAGER LT 350ML cod 22681): o card mostrava Compras Líquidas R$ 0 / 0 NFs mas Estoque Atual 10.387 un, Última Entrada 27/04/2026, Cobertura 13 dias. Tudo inconsistente.
+
+2. **Causa:** as 16 entradas detalhadas dele têm cod_oper variado — 6 ET (transferência entre lojas), 1 EB (bonificação), 1 ER (entrada de retorno) e 8 E (compra real). Mas o agregado `compras_12m` que vem do ETL está zerado pra esse SKU específico — possivelmente o ETL filtrou todos os lançamentos por uma regra que não casou. O dado bruto (entradas detalhadas) está correto: tem 124.527 un / R$ 374.302,50 entrando ao longo de jan-abr/2026, com 4 fornecedores envolvidos (ATP, Comercial Pinto, A P Cerqueira intragrupo + W P S Pingo real).
+
+3. **Correção (no front-end, sem depender do ETL):** quando `compras_12m.valor` está zerado mas há `entradas_detalhadas` no SKU, o card "Compras Líquidas" agora deriva os totais das próprias entradas. **Separamos compra real (cod_oper E) de transferência intragrupo (ET/EB/ER):** o valor principal mostra só a compra real; as transferências aparecem no subtítulo (ex: "+R$ 374k transf."). Quando o SKU só recebe via transferência, o subtítulo diz "só transferência intragrupo · 124k un · R$ 374k" — ficando claro que não é encalhe nem bug.
+
+4. **Observação automática "Sem compras 12m" refinada:** antes aparecia sempre que `compras_12m === 0`, gerando o sinal "encalhe" mesmo em SKUs que entram só por transferência. Agora detecta o caso e mostra "Reposição via transferência: todo o estoque entrou via transferência intragrupo (ET/EB/ER), sem compra direta de fornecedor" — informativo, não alarmista.
+
+5. **Limitação que segue:** o card "Última Entrada" no hero do produto continua puxando `e.dt_ult_entrada` do estoque (que conta toda entrada). Se quiser separar lá também ("última compra" vs "última entrada"), preciso de um campo novo no `estoque_*.json`. Por enquanto fica honesto porque o subtítulo do card "Compras Líquidas" já explica.
+
+---
+
+## v4.61 · 06/mai/2026
+
+**Cinco itens da última rodada**
+
+1. **Vendas Diárias: header dinâmico + filtro de período.** O header dizia "consolidado ATP-V + ATP-A" hardcoded mesmo em CP3, CP5, CP1, CP40 — corrigido pra mostrar o nome real da loja (ou "N lojas: X + Y" quando consolidado). Adicionei filtro de período com 7 opções (Tudo · Últimos 30/90 dias · Últimos 6/12 meses · Ano atual · Ano anterior). Clicar na faixa re-renderiza a página inteira (KPIs, Top 10 maiores, Top 10 menores, gráficos, tabelas).
+
+2. **Dias C&P: seed agora carrega sempre.** Antes só rodava quando o Firestore estava 100% vazio — se você navegou primeiro no GPC ou ATP, o doc daquela loja era criado e a verificação "Firestore vazio?" retornava falso. Como a função de importação do seed é idempotente por (loja, ym), agora ela roda em toda carga; se um (loja, mês) já existe ela ignora, se não existe importa. Resultado: as 16 lojas-mês do seed (jan/25 a abr/26 em GRUPO + ATP-V + ATP-A + CP3 + CP5) ficam disponíveis em qualquer base.
+
+3. **Metas: mesma correção.** Antes só importava o seed quando "totalLojasComMeta === 0". Agora roda toda carga (idempotente por loja). Os 17 meses × 4 lojas (CP3, CP5, ATP-V, ATP-A) viram visíveis em qualquer visão.
+
+4. **Inadimplência: filtros de período e supervisor.** Adicionei barra de filtros (Período: 6 opções de "Todo período" a "Ano anterior" + Supervisor: dropdown multi-select com checkboxes). Filtros aplicam em: KPIs principais (Total atrasado, Parcelas, Clientes inadimplentes, NFs, RCAs envolvidos), gráfico mensal e tabela de RCAs. Aging, top clientes, cobranças e departamentos continuam mostrando totais (limitação dos dados que vêm pré-agregados, sem quebra mensal nem por supervisor — quando você trouxer essas dimensões no ETL, eu ligo os filtros nesses blocos também).
+
+5. **Mensagem "modo modular" → "Aguarde"** durante o splash de carregamento.
+
+**Performance:** adicionei `dns-prefetch` + `preconnect` pros domínios do Firebase (encurta o handshake de auth/firestore em ~100-300ms na primeira carga). O cubo OLAP (23MB no CP, 11MB no ATP) já é lazy desde a v4.4 — só baixa quando você abre Análise Dinâmica. Os JSONs principais já estão otimizados (compressão gzip de 83-87%, ratio próximo do ótimo). Pra ganhos maiores precisaria implementar Service Worker (cache offline, primeira tela sem fetch). Posso fazer numa próxima sessão se quiser.
+
+---
+
+## v4.60 · 06/mai/2026
+
+**Bug grave de cache em `_vendasMensalPor` corrigido**
+
+1. **O bug:** o helper `_vendasMensalPor` (usado pra montar todos os gráficos da Evolução Mensal) tinha cache indexado por `V.meta.geradoEm + supervisores_ignorados`. Quando você navegava entre bases (ex: GPC Consolidado → Comercial Pinto → Cestão Inhambupe), o V global trocava, mas se as bases foram geradas pelo ETL próximas no tempo a chave de cache podia coincidir e devolver resultados da base anterior. No print que você mandou, o gráfico em CP5 mostrava a linha vermelha em R$ 22-32 mi (que é a soma das 4 lojas CP do `vendas_cp.json.gz`) em vez de R$ 1,3-2 mi (que é o real do CP5). O gráfico de barras embaixo "Cestão Inhambupe cód: CP5" mostrava o valor correto porque foi renderizado depois.
+
+2. **Correção:** a chave de cache agora usa a **referência do objeto V** (não mais `geradoEm`). Quando o usuário troca de base, V é substituído por outro objeto JavaScript, e a comparação `_vmpCacheV !== V` invalida o cache imediatamente. Adicionalmente, o snapshot de supervisores ignorados continua sendo monitorado em separado.
+
+3. **Onde mais isso era bug:** todas as páginas de Vendas que usam `_vendasMensalPor` (Evolução Mensal, Visão Consolidada, Análise 2026, Visão Executiva quando aplicável) podiam mostrar valores da base anterior em troca rápida de visão. Um único fix corrige todos.
+
+---
+
 ## v4.59 · 06/mai/2026
 
 **Evolução Mensal: linha da loja com destaque em CP3/CP5/CP1/CP40**

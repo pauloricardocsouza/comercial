@@ -216,7 +216,7 @@ const AUTH_MODE = 'firebase'; // 'mock' | 'firebase'
 // Convenção:
 //   X.x → alteração grande (quebra de compatibilidade, nova feature grande)
 //   x.X → alteração suave (fix, ajuste visual, pequeno refinamento)
-const APP_VERSION = '4.59-comercial';
+const APP_VERSION = '4.63-comercial';
 
 // ================================================================
 // HELPERS DE CHART.JS — compatíveis com Safari/iOS (sem spread ops)
@@ -2015,7 +2015,7 @@ async function _loadDados(){
     if(manifestSemArquivo || (!ehConsolidadoLegado && _MANIFEST && !_MANIFEST._ausente)){
       // Modo novo modular: D = null, páginas modulares funcionam, páginas antigas mostram aviso
       D = null;
-      if(dlProg) dlProg.textContent = 'modo modular';
+      if(dlProg) dlProg.textContent = 'Aguarde';
       return;
     }
 

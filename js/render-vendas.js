@@ -277,16 +277,25 @@ const VENDAS_PANELS_STRUCTURE = {
 // Cache memoizado para _vendasMensalPor — invalida quando V muda (verifica V.meta.geradoEm)
 // ou quando o cfg de supervisores ignorados muda (snapshot na chave).
 let _vmpCache = null;
-let _vmpCacheKey = null;
+let _vmpCacheV = null;     // referência do objeto V atual no cache
+let _vmpCacheCfg = null;   // snapshot do cfg de supervisores ignorados
 function _vendasMensalPor(loja, pagina){
   if(!V || !V.mensal) return [];
-  // Chave do cache: dataset V + cfg de supervisores ignorados (afeta resultados)
+  // Chave do cache: REFERÊNCIA do objeto V + cfg. Antes usávamos só
+  // V.meta.geradoEm, mas se duas bases foram geradas no mesmo segundo do ETL
+  // o cache não invalidava ao trocar de base — devolvia resultados da base
+  // anterior. Usando o objeto V em si garantimos que toda mudança de base
+  // (que substitui V por outro objeto) força recálculo.
+  if(!_vmpCacheV || _vmpCacheV !== V){
+    _vmpCache = new Map();
+    _vmpCacheV = V;
+    _vmpCacheCfg = null; // força recheck do cfg também
+  }
   const cfgSnap = (typeof _supIgnoradosCache !== 'undefined' && _supIgnoradosCache)
     ? JSON.stringify(_supIgnoradosCache.paginas || {}) : '';
-  const cacheKey = ((V.meta && V.meta.geradoEm) || 'noKey') + '||' + cfgSnap;
-  if(_vmpCacheKey !== cacheKey){
+  if(_vmpCacheCfg !== cfgSnap){
     _vmpCache = new Map();
-    _vmpCacheKey = cacheKey;
+    _vmpCacheCfg = cfgSnap;
   }
   const k = (loja || '__GRUPO__') + '|' + (pagina || '');
   const cached = _vmpCache.get(k);
@@ -3131,11 +3140,60 @@ function renderVDiarias(){
   const cont = document.getElementById('page-v-vendas-diarias');
   if(!cont) return;
 
-  const diario = V.diario || [];
-  if(!diario.length){
+  const diarioRaw = V.diario || [];
+  if(!diarioRaw.length){
     cont.innerHTML = '<div class="ph"><div class="pk">Vendas · Análise</div><h2>Vendas <em>Diárias</em></h2></div>'
       + '<div class="ph-sep"></div><div class="page-body">'
       + '<div class="cc" style="text-align:center;color:var(--text-muted);padding:30px;">Sem dados diários</div></div>';
+    return;
+  }
+
+  // Lojas presentes na base atual (pra label do escopo)
+  const lojasNaBase = Array.from(new Set(diarioRaw.map(function(r){return r.loja;}).filter(Boolean))).sort();
+  const lojaLabel = {
+    'ATP-V':'ATP Varejo', 'ATP-A':'ATP Atacado',
+    'CP1':'Comercial Pinto', 'CP3':'Cestão Loja 1',
+    'CP5':'Cestão Inhambupe', 'CP40':'Barros 40'
+  };
+  const escopoTxt = lojasNaBase.length === 1
+    ? (lojaLabel[lojasNaBase[0]] || lojasNaBase[0])
+    : lojasNaBase.length+' lojas: '+lojasNaBase.join(' + ');
+
+  // ── Filtro de período ──
+  // Faixas disponíveis: ['todo','30d','90d','6m','12m','ano-atual','ano-anterior']
+  // window._vdPeriodo guarda a seleção entre re-renders
+  if(typeof window._vdPeriodo === 'undefined') window._vdPeriodo = 'todo';
+  const periodoSel = window._vdPeriodo;
+
+  // Determinar data corte com base na faixa
+  const todasDatasOrd = diarioRaw.map(function(r){return r.data;}).sort();
+  const dataMaisRecente = todasDatasOrd[todasDatasOrd.length-1];
+  const refDt = new Date(dataMaisRecente + 'T12:00:00');
+  function isoDaysAgo(n){
+    const d = new Date(refDt.getTime() - n*86400000);
+    return d.toISOString().substring(0,10);
+  }
+  let dtIni = null;
+  if(periodoSel === '30d')         dtIni = isoDaysAgo(30);
+  else if(periodoSel === '90d')    dtIni = isoDaysAgo(90);
+  else if(periodoSel === '6m')     dtIni = isoDaysAgo(180);
+  else if(periodoSel === '12m')    dtIni = isoDaysAgo(365);
+  else if(periodoSel === 'ano-atual')    dtIni = refDt.getFullYear()+'-01-01';
+  else if(periodoSel === 'ano-anterior') dtIni = (refDt.getFullYear()-1)+'-01-01';
+
+  let dtFim = null;
+  if(periodoSel === 'ano-anterior') dtFim = (refDt.getFullYear()-1)+'-12-31';
+
+  const diario = diarioRaw.filter(function(r){
+    if(dtIni && r.data < dtIni) return false;
+    if(dtFim && r.data > dtFim) return false;
+    return true;
+  });
+
+  if(!diario.length){
+    cont.innerHTML = '<div class="ph"><div class="pk">Vendas · Análise</div><h2>Vendas <em>Diárias</em></h2></div>'
+      + '<div class="ph-sep"></div><div class="page-body">'
+      + '<div class="cc" style="text-align:center;color:var(--text-muted);padding:30px;">Sem dados no período selecionado.</div></div>';
     return;
   }
 
@@ -3203,8 +3261,28 @@ function renderVDiarias(){
   html += '<div style="background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:10px 14px;margin-bottom:14px;font-size:12px;color:var(--text-dim);">'
        +   '<strong>'+fI(dias.length)+' dias</strong> · '
        +   'período '+dias[0].data+' a '+dias[dias.length-1].data+' · '
-       +   'consolidado ATP-V + ATP-A'
+       +   esc(escopoTxt)
        + '</div>';
+
+  // Filtro de período (segmented buttons) — abate todos os blocos da página
+  const opcoesPer = [
+    {id:'todo', lbl:'Tudo'},
+    {id:'30d',  lbl:'Últimos 30 dias'},
+    {id:'90d',  lbl:'Últimos 90 dias'},
+    {id:'6m',   lbl:'Últimos 6 meses'},
+    {id:'12m',  lbl:'Últimos 12 meses'},
+    {id:'ano-atual',    lbl:'Ano atual'},
+    {id:'ano-anterior', lbl:'Ano anterior'},
+  ];
+  html += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;flex-wrap:wrap;">';
+  html += '<span style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;font-weight:700;">Período:</span>';
+  opcoesPer.forEach(function(o){
+    const ativo = o.id === periodoSel;
+    html += '<button class="vd-per-btn" data-per="'+esc(o.id)+'" style="padding:6px 11px;font-size:11.5px;border:1px solid var(--border-strong);border-radius:5px;cursor:pointer;'
+         +   (ativo?'background:var(--accent);color:white;':'background:var(--surface);color:var(--text);')
+         + 'font-weight:600;">'+esc(o.lbl)+'</button>';
+  });
+  html += '</div>';
 
   // KPIs
   html += '<div class="kg" style="grid-template-columns:repeat(4,1fr);margin-bottom:14px;" id="kg-vd"></div>';
@@ -3334,6 +3412,14 @@ function renderVDiarias(){
   }
   document.getElementById('tb-vd-top').innerHTML = top10.map(rowDay).join('');
   document.getElementById('tb-vd-bot').innerHTML = bot10.map(rowDay).join('');
+
+  // Bind dos filtros de período: clicar re-renderiza a página inteira com a faixa nova
+  document.querySelectorAll('.vd-per-btn').forEach(function(btn){
+    btn.addEventListener('click', function(){
+      window._vdPeriodo = btn.getAttribute('data-per');
+      renderVDiarias();
+    });
+  });
 }
 
 // ────────────────────────────────────────────────────────────────────
@@ -3374,13 +3460,8 @@ async function _dcpCarregarFirestore(){
       _dcpDiasCadastrados[loja][ym] = d.dias || [];
     });
     _dcpFirestoreCarregado = true;
-    // Se Firestore vazio, tentar seed
-    const totalEntries = Object.keys(_dcpDiasCadastrados).reduce(function(s,l){
-      return s + Object.keys(_dcpDiasCadastrados[l]||{}).length;
-    }, 0);
-    if(totalEntries === 0){
-      await _dcpTentarCarregarSeed();
-    }
+    // Sempre tenta carregar o seed: a fn é idempotente por (loja,ym)
+    await _dcpTentarCarregarSeed();
   } catch(e){
     console.warn('[dcp] erro carregando:', e);
     _dcpFirestoreCarregado = true;
@@ -4079,12 +4160,8 @@ async function _metasCarregarFirestore(){
       _metasDados = {lojas:{}};
     }
     _metasFirestoreCarregado = true;
-    // Se Firestore está vazio, tenta carregar seed e gravar de volta
-    const totalLojasComMeta = Object.keys(_metasDados.lojas || {})
-      .filter(function(l){ return Object.keys(_metasDados.lojas[l]||{}).length > 0; }).length;
-    if(totalLojasComMeta === 0){
-      await _metasTentarCarregarSeed();
-    }
+    // Sempre tenta carregar seed: a fn é idempotente por loja
+    await _metasTentarCarregarSeed();
   } catch(e){
     console.warn('[metas] erro carregando:', e);
     _metasDados = {lojas:{}};

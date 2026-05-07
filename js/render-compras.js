@@ -1385,20 +1385,22 @@ function _renderDiagAvisoConsolidado(containerId, tituloPagina){
     }
     return true;
   });
-  let html = '<div class="ph"><div class="pk">'+esc(tituloPagina)+'</div><h2>Escolha uma <em>loja</em> para diagnosticar</h2></div>'
+  let html = '<div class="ph"><div class="pk">'+esc(tituloPagina)+'</div><h2>Escolha uma <em>base</em> para diagnosticar</h2></div>'
     + '<div class="ph-sep"></div>'
     + '<div class="page-body" style="padding:40px 20px;">'
     + '<div style="max-width:560px;margin:20px auto;text-align:center;">'
     + '<div style="width:64px;height:64px;background:var(--accent-bg);border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto 18px;">'
     +   '<svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>'
     + '</div>'
-    + '<h3 style="font-size:18px;font-weight:800;margin-bottom:10px;color:var(--text);">Diagnóstico é por loja específica</h3>'
+    + '<h3 style="font-size:18px;font-weight:800;margin-bottom:10px;color:var(--text);">Escolha uma base para diagnosticar</h3>'
     + '<p style="font-size:13px;color:var(--text-muted);line-height:1.6;margin-bottom:24px;">'
-    +   'O diagnóstico analisa estoque, giro, ruptura e histórico de vendas/compras de itens. '
-    +   'Esses dados são por loja — em consolidado os números se misturam e não dão diagnóstico útil. '
-    +   'Selecione uma loja específica para começar.'
+    +   'O diagnóstico precisa de uma base com cadastro único de itens e fornecedores. '
+    +   'No GPC Consolidado, ATP e Comercial Pinto têm cadastros distintos: o mesmo fornecedor '
+    +   '(ex: Nestlé) aparece com códigos diferentes em cada base, e o mesmo SKU pode existir '
+    +   'em duas listas separadas. Pra evitar trazer informação parcial ou misturada, '
+    +   'selecione uma das bases abaixo.'
     + '</p>'
-    + '<div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.1em;font-weight:700;margin-bottom:10px;">Selecione a loja:</div>'
+    + '<div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.1em;font-weight:700;margin-bottom:10px;">Selecione a base:</div>'
     + '<div style="display:flex;flex-wrap:wrap;gap:8px;justify-content:center;">';
   filiaisDispon.forEach(function(f){
     html += '<button class="diag-pick-loja" data-sigla="'+escAttr(f.sigla)+'" '
@@ -1430,9 +1432,18 @@ function renderDiagNovo(){
   const cont = document.getElementById('page-diagnostico');
   if(!cont || !E) return;
 
-  // Bloqueio: diagnóstico só faz sentido por loja específica
-  // Em consolidado os dados de produtos não fazem sentido (estoque, vendas por SKU misturados)
-  if(typeof _filialAtual === 'undefined' || !_filialAtual || !_filialAtual.base_sigla){
+  // Bloqueio: diagnóstico só faz sentido em base com cadastro único de
+  // itens/fornecedores. ATP e Comercial Pinto têm cadastros diferentes —
+  // no GPC Consolidado o mesmo "Nestlé" pode aparecer com 2 códigos
+  // distintos, e o sistema sugeriria só o de uma base. Pra evitar
+  // confusão, bloqueamos a tela em GPC Consolidado e pedimos ao usuário
+  // pra escolher uma base (ATP, CP, ou loja-folha).
+  const sigAtual = (typeof _filialAtual !== 'undefined' && _filialAtual && _filialAtual.sigla)
+    ? _filialAtual.sigla.toLowerCase() : 'grupo';
+  const tipoAtual = (typeof _filialAtual !== 'undefined' && _filialAtual && _filialAtual.tipo)
+    ? _filialAtual.tipo.toLowerCase() : null;
+  const ehGpcConsolidado = (sigAtual === 'grupo') || (tipoAtual === 'raiz') || (tipoAtual === 'consolidado');
+  if(ehGpcConsolidado){
     _renderDiagAvisoConsolidado('page-diagnostico', 'Diagnóstico de Produto');
     return;
   }
@@ -1996,10 +2007,45 @@ window._openProdNovo = function(cod){
   // KPIs (5) — Vendas Líq · Margem · Compras Líq · Estoque · Cobertura
   const totVendas = vds.valor || 0;
   const lucro = vds.lucro || 0;
+
+  // Fallback: quando o ETL não populou compras_12m mas temos entradas_detalhadas
+  // (caso comum em CP3 com produtos que entram só via transferência intragrupo
+  // — cod_oper ET/EB/ER), derivamos os totais das entradas. Separamos compras
+  // reais (cod_oper E) de transferências (ET/EB/ER) pra mostrar info honesta.
+  let c12Eff = c12;
+  let kpiSubCompras = fI(c12.qt||0)+' '+esc(p.unidade||'un')+' · '+fI(c12.nfs||0)+' NFs';
+  if(!c12.valor && ent.length){
+    let qtCompra=0, valCompra=0, nfsCompra=new Set();
+    let qtTransf=0, valTransf=0, nfsTransf=new Set();
+    ent.forEach(function(x){
+      const op = (x.cod_oper||'').toUpperCase();
+      const ehTransf = (op === 'ET' || op === 'EB' || op === 'ER');
+      if(ehTransf){
+        qtTransf  += x.qt    || 0;
+        valTransf += x.valor || 0;
+        if(x.nf) nfsTransf.add(x.nf);
+      } else {
+        qtCompra  += x.qt    || 0;
+        valCompra += x.valor || 0;
+        if(x.nf) nfsCompra.add(x.nf);
+      }
+    });
+    c12Eff = {qt:qtCompra, valor:valCompra, nfs:nfsCompra.size, _derivado:true,
+              _qtTransf:qtTransf, _valTransf:valTransf, _nfsTransf:nfsTransf.size};
+    if(qtTransf > 0 && qtCompra === 0){
+      // Caso CP3 cod 22681: tudo entra via transferência intragrupo
+      kpiSubCompras = 'só transferência intragrupo · '+fI(qtTransf)+' '+esc(p.unidade||'un')+' · '+fK(valTransf);
+    } else if(qtTransf > 0){
+      kpiSubCompras = fI(qtCompra)+' '+esc(p.unidade||'un')+' · '+fI(nfsCompra.size)+' NFs · +'+fK(valTransf)+' transf.';
+    } else {
+      kpiSubCompras = fI(qtCompra)+' '+esc(p.unidade||'un')+' · '+fI(nfsCompra.size)+' NFs (derivado)';
+    }
+  }
+
   document.getElementById('kp-diag-novo').innerHTML = kgHtml([
     {l:'Vendas líquidas', v:fK(totVendas), s:fI(vds.qt||0)+' '+esc(p.unidade||'un')+' · '+(vds.meses||0)+' meses'},
     {l:'Margem bruta', v:fP(margReal), s:'Lucro '+fK(lucro), cls:margReal>10?'ok':margReal<5?'wn':''},
-    {l:'Compras líquidas', v:fK(c12.valor||0), s:fI(c12.qt||0)+' '+esc(p.unidade||'un')+' · '+fI(c12.nfs||0)+' NFs'},
+    {l:'Compras líquidas', v:fK(c12Eff.valor||0), s:kpiSubCompras},
     {l:'Estoque atual', v:fI(e.qt||0)+' '+esc(p.unidade||''), s:'R$ '+fK(e.vl_preco||0)+' p/ venda'},
     {l:'Cobertura', v:coberturaTxt, s:coberturaDias!=null?'base: '+(mesesVend)+' meses de venda':'sem cálculo possível', cls:coberturaCls},
   ]);
@@ -2085,7 +2131,21 @@ function _diagGerarObservacoes(p){
   }
 
   if(e.qt > 0 && c12.valor === 0){
-    obs.push({tag:'Sem compras 12m:', color:'#b45309', msg:'tem estoque mas não houve compra nos últimos 12 meses. Possível encalhe.'});
+    // Verifica se há entradas detalhadas — se sim, é só transferência intragrupo
+    const entCheck = p.entradas_detalhadas || [];
+    const temTransfRecente = entCheck.some(function(x){
+      const op = (x.cod_oper||'').toUpperCase();
+      return (op === 'ET' || op === 'EB' || op === 'ER');
+    });
+    const temCompraReal = entCheck.some(function(x){
+      const op = (x.cod_oper||'').toUpperCase();
+      return op && op !== 'ET' && op !== 'EB' && op !== 'ER';
+    });
+    if(temTransfRecente && !temCompraReal){
+      obs.push({tag:'Reposição via transferência:', color:'#0891b2', msg:'todo o estoque entrou via transferência intragrupo (ET/EB/ER), sem compra direta de fornecedor.'});
+    } else if(!entCheck.length){
+      obs.push({tag:'Sem compras 12m:', color:'#b45309', msg:'tem estoque mas não houve compra nos últimos 12 meses. Possível encalhe.'});
+    }
   }
 
   if(e.qt === 0 && vds.qt > 0){
@@ -3201,8 +3261,15 @@ function renderDiagFornNovo(){
   const cont = document.getElementById('page-diag-forn');
   if(!cont || !E) return;
 
-  // Bloqueio: diagnóstico só faz sentido por loja específica
-  if(typeof _filialAtual === 'undefined' || !_filialAtual || !_filialAtual.base_sigla){
+  // Bloqueio: cadastros de fornecedor de ATP e CP são distintos (mesmo nome,
+  // códigos diferentes) — em GPC Consolidado o "Nestlé" pode aparecer como
+  // 2 fornecedores e o sistema mostraria dados só de uma das bases.
+  const sigAtual = (typeof _filialAtual !== 'undefined' && _filialAtual && _filialAtual.sigla)
+    ? _filialAtual.sigla.toLowerCase() : 'grupo';
+  const tipoAtual = (typeof _filialAtual !== 'undefined' && _filialAtual && _filialAtual.tipo)
+    ? _filialAtual.tipo.toLowerCase() : null;
+  const ehGpcConsolidado = (sigAtual === 'grupo') || (tipoAtual === 'raiz') || (tipoAtual === 'consolidado');
+  if(ehGpcConsolidado){
     _renderDiagAvisoConsolidado('page-diag-forn', 'Diagnóstico de Fornecedor');
     return;
   }

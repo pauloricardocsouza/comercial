@@ -58,6 +58,94 @@ function renderRecebimentos(){
   const FAIXAS_LBL = ['1 a 30 dias', '31 a 60 dias', '61 a 90 dias', '> 90 dias'];
   const FAIXAS_COR = ['#fbbf24', '#f97316', '#dc2626', '#7c1d1d'];
 
+  // ── Filtros (estado entre re-renders) ──
+  if(typeof window._inadPeriodo === 'undefined') window._inadPeriodo = 'todo';
+  if(typeof window._inadSups === 'undefined') window._inadSups = null; // null = todos; array = lista de "loja|cod"
+  const periodoSel = window._inadPeriodo;
+  const supsSelArr = window._inadSups;
+
+  // Cruzar RCAs com cadastro de vendedores pra ter cod_supervisor de cada RCA
+  // Cadastro: {cod, nome, loja, supervisor, cod_supervisor}
+  const cadVendF = (V && V.vendedores && V.vendedores.cadastro) || [];
+  const cadByCod = new Map();
+  cadVendF.forEach(function(v){ cadByCod.set(v.cod, v); });
+
+  // Lista de supervisores únicos (loja + cod_supervisor + nome) — pra dropdown
+  const supsMap = new Map(); // "loja|cod" → {loja, cod, nome}
+  cadVendF.forEach(function(v){
+    if(v.cod_supervisor != null && v.supervisor){
+      const k = (v.loja||'?')+'|'+v.cod_supervisor;
+      if(!supsMap.has(k)) supsMap.set(k, {loja:v.loja||'', cod:v.cod_supervisor, nome:v.supervisor});
+    }
+  });
+  const supsLista = Array.from(supsMap.values()).sort(function(a,b){
+    if(a.loja !== b.loja) return a.loja.localeCompare(b.loja);
+    return a.nome.localeCompare(b.nome);
+  });
+
+  // Mapeia cada RCA -> "loja|cod_supervisor" pra filtragem
+  function rcaSupKey(rcaCod){
+    const v = cadByCod.get(rcaCod);
+    if(!v || v.cod_supervisor == null) return null;
+    return (v.loja||'?')+'|'+v.cod_supervisor;
+  }
+
+  // Aplicar filtros nos dados antes de renderizar
+  // PERÍODO: filtra mensal (lista por ym)
+  let mensalFilt = mensal.slice();
+  if(periodoSel !== 'todo' && mensal.length){
+    const ymsOrd = mensal.map(function(m){return m.ym;}).sort();
+    const ymMax = ymsOrd[ymsOrd.length-1];
+    function ymMinusMonths(ym, n){
+      const p = ym.split('-'); let y = parseInt(p[0],10), m = parseInt(p[1],10);
+      m -= n; while(m < 1){m += 12; y--;}
+      return y+'-'+String(m).padStart(2,'0');
+    }
+    let ymIni = null;
+    if(periodoSel === '3m')  ymIni = ymMinusMonths(ymMax, 2);  // últimos 3 meses
+    else if(periodoSel === '6m')  ymIni = ymMinusMonths(ymMax, 5);
+    else if(periodoSel === '12m') ymIni = ymMinusMonths(ymMax, 11);
+    else if(periodoSel === 'ano-atual')    ymIni = ymMax.substring(0,4)+'-01';
+    else if(periodoSel === 'ano-anterior'){
+      const ano = parseInt(ymMax.substring(0,4),10) - 1;
+      mensalFilt = mensal.filter(function(m){return m.ym >= ano+'-01' && m.ym <= ano+'-12';});
+    }
+    if(ymIni && periodoSel !== 'ano-anterior'){
+      mensalFilt = mensal.filter(function(m){return m.ym >= ymIni && m.ym <= ymMax;});
+    }
+  }
+
+  // SUPERVISOR: filtra rcas (mantém só os que estão no set selecionado)
+  const supsSel = (supsSelArr && supsSelArr.length) ? new Set(supsSelArr) : null;
+  let rcasFilt = rcas.slice();
+  if(supsSel){
+    rcasFilt = rcas.filter(function(r){
+      const k = rcaSupKey(r.cod);
+      return k && supsSel.has(k);
+    });
+  }
+
+  // Recálculo de KPIs com filtros aplicados
+  // - Total atrasado (período): soma do mensal filtrado.
+  // - Parcelas/Clientes/NFs (período): soma do mensal filtrado.
+  // - RCAs envolvidos: count distinto de rcasFilt.
+  const totPeriodo  = mensalFilt.reduce(function(s,m){return s + (m.valor||0);}, 0);
+  const parcPeriodo = mensalFilt.reduce(function(s,m){return s + (m.parcelas||0);}, 0);
+  const cliPeriodo  = mensalFilt.reduce(function(s,m){return s + (m.clientes||0);}, 0);
+  const nfsPeriodo  = mensalFilt.reduce(function(s,m){return s + (m.nfs||0);}, 0);
+
+  // Se há filtro de supervisor, abate KPIs proporcionalmente pela soma valor RCAs
+  // (aproximação: % do valor total de RCAs que está nos selecionados)
+  const totRcasGeral = rcas.reduce(function(s,r){return s + (r.valor||0);}, 0);
+  const totRcasFilt  = rcasFilt.reduce(function(s,r){return s + (r.valor||0);}, 0);
+  const fracSup = (supsSel && totRcasGeral > 0) ? (totRcasFilt / totRcasGeral) : 1;
+
+  const kpiTotal = (periodoSel !== 'todo' ? totPeriodo : (resumo.total_atrasado||0)) * fracSup;
+  const kpiParc  = (periodoSel !== 'todo' ? parcPeriodo : (resumo.parcelas||0)) * fracSup;
+  const kpiNfs   = (periodoSel !== 'todo' ? nfsPeriodo  : (resumo.nfs||0))      * fracSup;
+  const kpiCli   = (periodoSel !== 'todo' ? cliPeriodo  : (resumo.clientes_inadimplentes||0)) * fracSup;
+  const kpiRcas  = supsSel ? rcasFilt.length : (resumo.rcas_envolvidos||0);
+
   let html = '<div class="ph"><div class="pk">Vendas · Análise</div><h2><em>Inadimplência</em></h2></div>';
   html += '<div class="ph-sep"></div>';
   html += '<div class="page-body">';
@@ -69,6 +157,58 @@ function renderRecebimentos(){
        +   fI(meta.linhas_processadas||0)+' linhas processadas · '
        +   'gerado em '+esc((meta.geradoEm||'').substring(0,16).replace('T',' '))
        + '</div>';
+
+  // ── Barra de filtros ──
+  const opcoesPer = [
+    {id:'todo', lbl:'Todo período'},
+    {id:'3m',   lbl:'Últimos 3 meses'},
+    {id:'6m',   lbl:'Últimos 6 meses'},
+    {id:'12m',  lbl:'Últimos 12 meses'},
+    {id:'ano-atual',    lbl:'Ano atual'},
+    {id:'ano-anterior', lbl:'Ano anterior'},
+  ];
+  html += '<div style="display:flex;flex-direction:column;gap:8px;margin-bottom:14px;padding:10px 14px;background:var(--surface);border:1px solid var(--border);border-radius:8px;">';
+  // linha 1: período
+  html += '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">';
+  html += '<span style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;font-weight:700;min-width:70px;">Período:</span>';
+  opcoesPer.forEach(function(o){
+    const ativo = o.id === periodoSel;
+    html += '<button class="inad-per-btn" data-per="'+esc(o.id)+'" style="padding:5px 10px;font-size:11px;border:1px solid var(--border-strong);border-radius:5px;cursor:pointer;'
+         +   (ativo?'background:var(--accent);color:white;':'background:var(--surface);color:var(--text);')
+         + 'font-weight:600;">'+esc(o.lbl)+'</button>';
+  });
+  html += '</div>';
+  // linha 2: supervisor
+  if(supsLista.length){
+    const totalSel = supsSel ? supsSel.size : 0;
+    const lblSup = supsSel
+      ? (totalSel === 1 ? '1 supervisor' : totalSel+' supervisores')
+      : 'Todos ('+supsLista.length+')';
+    html += '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">';
+    html += '<span style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;font-weight:700;min-width:70px;">Supervisor:</span>';
+    html += '<button id="inad-sup-toggle" style="padding:5px 12px;font-size:11px;border:1px solid var(--border-strong);border-radius:5px;cursor:pointer;background:var(--surface);color:var(--text);font-weight:600;">'+esc(lblSup)+' ▾</button>';
+    if(supsSel){
+      html += '<button id="inad-sup-clear" style="padding:5px 8px;font-size:11px;border:1px solid var(--border);border-radius:4px;cursor:pointer;background:transparent;color:var(--text-muted);">Limpar</button>';
+    }
+    html += '<div id="inad-sup-panel" style="display:none;width:100%;margin-top:6px;padding:10px;background:var(--surface-2);border:1px solid var(--border);border-radius:6px;max-height:280px;overflow-y:auto;">';
+    supsLista.forEach(function(s){
+      const k = (s.loja||'?')+'|'+s.cod;
+      const checked = supsSel ? supsSel.has(k) : true;
+      html += '<label style="display:flex;align-items:center;gap:8px;padding:4px 0;font-size:12px;cursor:pointer;">'
+           +   '<input type="checkbox" class="inad-sup-cb" data-key="'+esc(k)+'"'+(checked?' checked':'')+' style="cursor:pointer;">'
+           +   '<span style="color:var(--text);">'+esc(s.nome)+' <span style="color:var(--text-muted);font-size:10px;">· '+esc(s.loja)+' #'+esc(s.cod)+'</span></span>'
+           + '</label>';
+    });
+    html += '</div></div>';
+  }
+  // linha 3: aviso quando há filtros aplicados
+  if(periodoSel !== 'todo' || supsSel){
+    html += '<div style="font-size:11px;color:var(--text-dim);font-style:italic;line-height:1.4;">'
+         +   'Filtros aplicam em: <strong>KPIs</strong>, <strong>gráfico mensal</strong> e <strong>tabela de RCAs</strong>. '
+         +   'Aging, top clientes, cobranças e departamentos continuam mostrando valores totais (limitação dos dados agregados).'
+         + '</div>';
+  }
+  html += '</div>';
 
   // Alerta de concentração removido a pedido do usuário
 
@@ -147,15 +287,16 @@ function renderRecebimentos(){
   html += '</div>';
   cont.innerHTML = html;
 
-  // ─── KPIs ───
+  // ─── KPIs (filtrados) ───
   const c1 = clientes[0] || {};
+  const sufFiltro = (periodoSel !== 'todo' || supsSel) ? ' (filtrado)' : '';
   document.getElementById('kg-rec').innerHTML = kgHtml([
-    {l:'Total atrasado',          v:fK(resumo.total_atrasado||0), s:fI(resumo.parcelas||0)+' parcelas',cls:'dn'},
-    {l:'Clientes inadimplentes',  v:fI(resumo.clientes_inadimplentes||0), s:'em '+fI(resumo.nfs||0)+' NFs'},
-    {l:'RCAs envolvidos',         v:fI(resumo.rcas_envolvidos||0), s:'vendedores das NFs'},
-    {l:'Dias de atraso médio',    v:fI(resumo.dias_atraso_medio||0)+'d', s:'mediana: '+fI(resumo.dias_atraso_mediano||0)+'d'},
-    {l:'Concentração top 1',      v:fP(conc.top_1_pct||0), s:'cliente cod='+esc(c1.cod||'?'), cls:'hl'},
-    {l:'Concentração top 5',      v:fP(conc.top_5_pct||0), s:'soma top 5 clientes', cls:'hl'},
+    {l:'Total atrasado'+sufFiltro,        v:fK(kpiTotal), s:fI(Math.round(kpiParc))+' parcelas',cls:'dn'},
+    {l:'Clientes inadimplentes'+sufFiltro, v:fI(Math.round(kpiCli)),     s:'em '+fI(Math.round(kpiNfs))+' NFs'},
+    {l:'RCAs envolvidos'+(supsSel?' (filtrado)':''), v:fI(kpiRcas),       s:'vendedores das NFs'},
+    {l:'Dias de atraso médio',            v:fI(resumo.dias_atraso_medio||0)+'d', s:'mediana: '+fI(resumo.dias_atraso_mediano||0)+'d'},
+    {l:'Concentração top 1',              v:fP(conc.top_1_pct||0), s:'cliente cod='+esc(c1.cod||'?'), cls:'hl'},
+    {l:'Concentração top 5',              v:fP(conc.top_5_pct||0), s:'soma top 5 clientes', cls:'hl'},
   ]);
 
   // Pin: total atrasado e inadimplentes
@@ -192,16 +333,16 @@ function renderRecebimentos(){
                          fI(f.parcelas||0)+' parcelas · '+fI(f.clientes||0)+' clientes'];
                }}}}}});
 
-  // ─── Chart mensal ───
-  if(mensal.length){
+  // ─── Chart mensal (filtrado por período) ───
+  if(mensalFilt.length){
     mkC('c-rec-mensal', {type:'bar',
-      data:{labels:mensal.map(function(m){return _ymToLabel(m.ym);}),
-        datasets:[{label:'Valor', data:mensal.map(function(m){return m.valor;}),
+      data:{labels:mensalFilt.map(function(m){return _ymToLabel(m.ym);}),
+        datasets:[{label:'Valor', data:mensalFilt.map(function(m){return m.valor;}),
           backgroundColor:_PAL.dn+'CC', borderRadius:4}]},
       options:{responsive:true, maintainAspectRatio:false,
         plugins:{legend:{display:false},
                  tooltip:{callbacks:{label:function(ctx){
-                   const m = mensal[ctx.dataIndex];
+                   const m = mensalFilt[ctx.dataIndex];
                    return [fB(ctx.raw), fI(m.parcelas||0)+' parcelas · '+fI(m.clientes||0)+' clientes'];
                  }}}},
         scales:{y:{beginAtZero:true, ticks:{callback:function(v){return fAbbr(v);}}},
@@ -400,7 +541,7 @@ function renderRecebimentos(){
     if(/INTRA[\s-]?GRUPO/.test(n)) return true;
     return false;
   }
-  const rcaSorted = rcas.filter(function(r){ return !_rcaEhGpcInterno(r); })
+  const rcaSorted = rcasFilt.filter(function(r){ return !_rcaEhGpcInterno(r); })
                         .slice().sort(function(a,b){return b.valor - a.valor;});
   document.getElementById('tb-rec-rca').innerHTML = rcaSorted.slice(0, 20).map(function(r, i){
     return '<tr>'
@@ -423,6 +564,39 @@ function renderRecebimentos(){
       + '<td class="val-dim">'+fI(c.clientes||0)+'</td>'
       + '</tr>';
   }).join('');
+
+  // ─── Binds dos filtros ───
+  document.querySelectorAll('.inad-per-btn').forEach(function(btn){
+    btn.addEventListener('click', function(){
+      window._inadPeriodo = btn.getAttribute('data-per');
+      renderRecebimentos();
+    });
+  });
+  const supTog = document.getElementById('inad-sup-toggle');
+  const supPanel = document.getElementById('inad-sup-panel');
+  if(supTog && supPanel){
+    supTog.addEventListener('click', function(){
+      supPanel.style.display = (supPanel.style.display === 'none') ? 'block' : 'none';
+    });
+  }
+  document.querySelectorAll('.inad-sup-cb').forEach(function(cb){
+    cb.addEventListener('change', function(){
+      // Coleta todos os checkboxes marcados
+      const marcados = Array.from(document.querySelectorAll('.inad-sup-cb'))
+        .filter(function(c){return c.checked;})
+        .map(function(c){return c.getAttribute('data-key');});
+      // Se todos marcados → trata como "todos" (null)
+      window._inadSups = marcados.length === document.querySelectorAll('.inad-sup-cb').length ? null : marcados;
+      renderRecebimentos();
+    });
+  });
+  const supClear = document.getElementById('inad-sup-clear');
+  if(supClear){
+    supClear.addEventListener('click', function(){
+      window._inadSups = null;
+      renderRecebimentos();
+    });
+  }
 }
 
 // ────────────────────────────────────────────────────────────────────
