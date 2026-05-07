@@ -276,40 +276,22 @@ const VENDAS_PANELS_STRUCTURE = {
  */
 // Cache memoizado para _vendasMensalPor — invalida quando V muda (verifica V.meta.geradoEm)
 // ou quando o cfg de supervisores ignorados muda (snapshot na chave).
-let _vmpCache = null;
-let _vmpCacheV = null;     // referência do objeto V atual no cache
-let _vmpCacheCfg = null;   // snapshot do cfg de supervisores ignorados
+// Cache de _vendasMensalPor foi removido na v4.64 (causava valores errados ao
+// trocar de visão em alguns cenários — recomputar é barato).
 function _vendasMensalPor(loja, pagina){
   if(!V || !V.mensal) return [];
-  // Chave do cache: REFERÊNCIA do objeto V + cfg. Antes usávamos só
-  // V.meta.geradoEm, mas se duas bases foram geradas no mesmo segundo do ETL
-  // o cache não invalidava ao trocar de base — devolvia resultados da base
-  // anterior. Usando o objeto V em si garantimos que toda mudança de base
-  // (que substitui V por outro objeto) força recálculo.
-  if(!_vmpCacheV || _vmpCacheV !== V){
-    _vmpCache = new Map();
-    _vmpCacheV = V;
-    _vmpCacheCfg = null; // força recheck do cfg também
-  }
-  const cfgSnap = (typeof _supIgnoradosCache !== 'undefined' && _supIgnoradosCache)
-    ? JSON.stringify(_supIgnoradosCache.paginas || {}) : '';
-  if(_vmpCacheCfg !== cfgSnap){
-    _vmpCache = new Map();
-    _vmpCacheCfg = cfgSnap;
-  }
-  const k = (loja || '__GRUPO__') + '|' + (pagina || '');
-  const cached = _vmpCache.get(k);
-  if(cached) return cached;
 
-  let resultado;
-  // Se pagina foi passada e o helper de filtro existe, transforma cada linha
+  // Cache desabilitado: o overhead é mínimo (16 linhas × 6 lojas) e elimina
+  // qualquer hipótese de stale data ao trocar de visão. Em testes anteriores,
+  // bugs de filtros sobrepostos e cache de referência causaram valores errados
+  // (CP5 mostrando R$ 25-32M em vez de R$ 1,7M). Recomputar é seguro e barato.
   const aplica = pagina && typeof aplicaFiltroSupVMensalRow === 'function';
+  let resultado;
   if(loja){
     resultado = V.mensal.filter(function(r){return r.loja === loja;})
                        .map(function(r){ return aplica ? aplicaFiltroSupVMensalRow(r, pagina) : r; })
                        .sort(function(a,b){return a.ym<b.ym?-1:1;});
   } else {
-    // Consolida grupo (somando todas as lojas por ym)
     const m = new Map();
     V.mensal.forEach(function(rRaw){
       const r = aplica ? aplicaFiltroSupVMensalRow(rRaw, pagina) : rRaw;
@@ -324,7 +306,6 @@ function _vendasMensalPor(loja, pagina){
     });
     resultado = Array.from(m.values()).sort(function(a,b){return a.ym<b.ym?-1:1;});
   }
-  _vmpCache.set(k, resultado);
   return resultado;
 }
 
@@ -772,6 +753,19 @@ function renderVEvolucao(){
       }
     }
   });
+
+  // Log defensivo pro debug do gráfico Evolução Mensal
+  try {
+    console.log('[v-evolucao] DEBUG sigla='+sigAtual+' tipo='+tipoAtual
+      +' lojasDisp='+JSON.stringify(lojasDisp)
+      +' V.mensal_lojas='+JSON.stringify(Array.from(new Set(V.mensal.map(function(r){return r.loja;}))))
+      +' V.geradoEm='+(V.meta&&V.meta.geradoEm));
+    datasetsMulti.forEach(function(ds, i){
+      const min = Math.min.apply(null, ds.data.filter(function(x){return x!=null;}));
+      const max = Math.max.apply(null, ds.data.filter(function(x){return x!=null;}));
+      console.log('  ds['+i+'] '+ds.label+': min='+min+' max='+max+' n='+ds.data.length);
+    });
+  } catch(e){}
 
   // Buscar GRUPO consolidado real quando estamos em base não-grupo
   if(!ehGrupoConsolidado){

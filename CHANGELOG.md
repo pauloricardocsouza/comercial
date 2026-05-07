@@ -4,6 +4,30 @@ Lista das melhorias do sistema de BI da R2 Soluções para o Grupo Pinto Cerquei
 
 ---
 
+## v4.64 · 06/mai/2026
+
+**Evolução Mensal: cache removido + logging defensivo pra investigar bug recorrente**
+
+1. **Você está com razão e eu te devo essa correção.** Várias versões depois (v4.58, 4.59, 4.60), o gráfico de Evolução Mensal continua mostrando a linha de uma loja-folha (CP5, CP3, etc) com valores impossivelmente altos — em CP5 aparece R$ 25-32M/mês quando o real é R$ 1,5-1,7M. Eu validei na fonte que `vendas_cp5.json.gz` tem os valores corretos (R$ 1,5-1,7M/mês). Então o bug é no caminho dos dados até o canvas.
+
+2. **Removi o cache de `_vendasMensalPor` totalmente.** Era a hipótese mais forte (um cache colidindo entre bases). Recomputar 16 linhas a cada chamada é barato (microssegundos). Se o problema persistir, **fica provado que não é cache**.
+
+3. **Adicionei logging defensivo no console.** Quando você abrir Evolução Mensal, o console do navegador vai mostrar:
+   - `sigla` e `tipo` da base ativa
+   - Lojas que o sistema encontrou em `V.mensal`
+   - `V.meta.geradoEm` (pra confirmar qual JSON está em uso)
+   - Min/max de cada dataset que foi pra dentro do gráfico
+   
+   **Pra capturar o log:** abre Evolução Mensal em CP5, abre o console (F12 ou DevTools), tira print da aba "Console" e me manda. Com isso eu vejo exatamente qual valor o sistema está calculando e onde está errando.
+
+4. **Possibilidades restantes que o log vai eliminar:**
+   - V.mensal está com lojas diferentes do esperado (por ex. herdou dados de outra base).
+   - Algum filtro de supervisores ignorados está somando em vez de subtrair.
+   - Cache do navegador/CDN servindo JSON antigo de uma versão de ETL distinta.
+   - Bug de plotagem do Chart.js (improvável).
+
+---
+
 ## v4.63 · 06/mai/2026
 
 **Diagnóstico de Produto e Fornecedor: bloqueio em GPC Consolidado**
