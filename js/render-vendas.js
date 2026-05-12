@@ -754,18 +754,47 @@ function renderVEvolucao(){
     }
   });
 
-  // Log defensivo pro debug do gráfico Evolução Mensal
+  // Log defensivo pro debug do gráfico Evolução Mensal (v4.65: corrigido tipoAtual + erro visível)
   try {
-    console.log('[v-evolucao] DEBUG sigla='+sigAtual+' tipo='+tipoAtual
-      +' lojasDisp='+JSON.stringify(lojasDisp)
-      +' V.mensal_lojas='+JSON.stringify(Array.from(new Set(V.mensal.map(function(r){return r.loja;}))))
-      +' V.geradoEm='+(V.meta&&V.meta.geradoEm));
-    datasetsMulti.forEach(function(ds, i){
-      const min = Math.min.apply(null, ds.data.filter(function(x){return x!=null;}));
-      const max = Math.max.apply(null, ds.data.filter(function(x){return x!=null;}));
-      console.log('  ds['+i+'] '+ds.label+': min='+min+' max='+max+' n='+ds.data.length);
+    var tipoAtual = (typeof _filialAtual !== 'undefined' && _filialAtual && _filialAtual.tipo) || 'desconhecido';
+    console.log('═══════════════════════════════════════════════════════════');
+    console.log('[v-evolucao] DEBUG v4.65');
+    console.log('  sigAtual    =', sigAtual);
+    console.log('  tipoAtual   =', tipoAtual);
+    console.log('  ehGrupoCons =', ehGrupoConsolidado);
+    console.log('  ehFolhaUnica=', ehFolhaUnica);
+    console.log('  lojasDisp   =', lojasDisp);
+    console.log('  V.mensal.lojas (raw) =', Array.from(new Set(V.mensal.map(function(r){return r.loja;}))));
+    console.log('  V.mensal.length      =', V.mensal.length);
+    console.log('  V.meta.geradoEm      =', V.meta && V.meta.geradoEm);
+    console.log('  V.meta.periodo       =', V.meta && V.meta.periodo);
+    console.log('  V.meta.fonte         =', V.meta && V.meta.fonte);
+
+    // Amostra dos primeiros 3 registros brutos de V.mensal por loja
+    console.log('--- Amostra V.mensal (primeiros 3 por loja) ---');
+    lojasDisp.forEach(function(l){
+      var amostra = V.mensal.filter(function(r){return r.loja === l;}).slice(0,3);
+      console.log('  ['+l+']', amostra);
     });
-  } catch(e){}
+
+    // Datasets enviados pro chart (min/max)
+    console.log('--- Datasets enviados pro chart ---');
+    datasetsMulti.forEach(function(ds, i){
+      var validos = ds.data.filter(function(x){return x!=null;});
+      var min = validos.length ? Math.min.apply(null, validos) : null;
+      var max = validos.length ? Math.max.apply(null, validos) : null;
+      var soma = validos.reduce(function(s,x){return s+x;}, 0);
+      console.log('  ds['+i+'] "'+ds.label+'" min='+min+' max='+max+' soma='+soma+' n='+ds.data.length);
+      // Se max é absurdo (>10M num gráfico de loja-folha que deveria ter max ~2M), avisar
+      if(ehFolhaUnica && max > 10000000){
+        console.warn('  ⚠ ALERTA: dataset "'+ds.label+'" com max='+max+' suspeito em folha-única!');
+        console.warn('  ⚠ Dados brutos do dataset:', ds.data);
+      }
+    });
+    console.log('═══════════════════════════════════════════════════════════');
+  } catch(e){
+    console.error('[v-evolucao] Erro no log defensivo:', e.message, e.stack);
+  }
 
   // Buscar GRUPO consolidado real quando estamos em base não-grupo
   if(!ehGrupoConsolidado){

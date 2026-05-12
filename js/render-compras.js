@@ -794,12 +794,14 @@ function renderABCNovo(){
   const btnClear = document.getElementById('abc-meses-clear');
   if(btnClear) btnClear.addEventListener('click', function(){ _abcMesesSel = null; renderABCNovo(); });
 
-  // Bind clique no nome do produto pra abrir diagnóstico
+  // Bind clique no nome do produto pra abrir diagnóstico (v4.66: via nav stack)
   document.querySelectorAll('[data-prod-cod]').forEach(function(td){
     td.style.cursor = 'pointer';
     td.addEventListener('click', function(){
       const cod = parseInt(td.getAttribute('data-prod-cod'), 10);
-      if(typeof window._openProdNovo === 'function'){
+      if(typeof window._navOpenProd === 'function'){
+        window._navOpenProd(cod, 'abc', null);
+      } else if(typeof window._openProdNovo === 'function'){
         window._openProdNovo(cod);
       }
     });
@@ -1358,6 +1360,29 @@ let _diagIdxByE = null;       // Map(ean → produto) — não temos EAN no esto
 let _diagListaOrd = null;     // Lista ordenada por vendas.valor desc
 let _diagBoundProd = false;   // Flag pra não bindar listeners 2x
 
+// v4.65: invalida todos os caches dos diagnósticos.
+// Chamado por _loadDadosModulares (core.js) sempre que troca de base.
+// Sem isso, os índices ficavam congelados com os dados da base antiga
+// e os listeners de busca não eram re-bindados.
+function _invalidarCachesDiag(){
+  // Diag. Produto
+  _diagIdxByC = null;
+  _diagIdxByE = null;
+  _diagListaOrd = null;
+  _diagBoundProd = false;
+  // Diag. Fornecedor
+  if(typeof _diagFornIdxByCod !== 'undefined'){
+    _diagFornIdxByCod = null;
+    _diagFornListaOrd = null;
+    _diagFornBoundProd = false;
+  }
+  // Cache de agregação de fornecedores (usado por _diagFornBuildIdx via _fornAgregar)
+  if(typeof _fornAggCache !== 'undefined'){
+    _fornAggCache = null;
+  }
+  try { console.log('[diag] caches invalidados (troca de base)'); } catch(e){}
+}
+
 function _diagBuildIdx(){
   if(_diagIdxByC) return;
   _diagIdxByC = new Map();
@@ -1476,11 +1501,19 @@ function renderDiagNovo(){
   inpNew.addEventListener('keydown', function(e){
     if(e.key === 'Escape'){ drp.classList.remove('show'); inpNew.blur(); }
   });
-  document.addEventListener('click', function(e){
+  // v4.65: handler nomeado pra poder remover antes de re-adicionar
+  // (evita acumular listeners no document a cada troca de base)
+  if(typeof window._diagProdDocClick === 'function'){
+    document.removeEventListener('click', window._diagProdDocClick);
+  }
+  window._diagProdDocClick = function(e){
+    const drpRef = document.getElementById('srch-drop');
+    if(!drpRef) return;
     if(!e.target.closest('#prod-srch') && !e.target.closest('#srch-drop')){
-      drp.classList.remove('show');
+      drpRef.classList.remove('show');
     }
-  });
+  };
+  document.addEventListener('click', window._diagProdDocClick);
 }
 
 function _diagDoSearch(q){
@@ -2175,7 +2208,13 @@ function _instalarWrapOpenProd(){
   window.openProd = function(cod){
     if(typeof E !== 'undefined' && E && E.produtos && E.produtos.length){
       _diagBuildIdx();
-      if(_diagIdxByC.has(cod)) return _openProdNovo(cod);
+      if(_diagIdxByC.has(cod)){
+        // v4.66: usa nav stack pra mostrar botão "Voltar" se origem ≠ diagnostico
+        if(typeof window._navOpenProd === 'function'){
+          return window._navOpenProd(cod);
+        }
+        return _openProdNovo(cod);
+      }
     }
     if(typeof _origOpenProd === 'function') return _origOpenProd(cod);
   };
@@ -3300,11 +3339,19 @@ function renderDiagFornNovo(){
   inpNew.addEventListener('keydown', function(e){
     if(e.key === 'Escape'){ drp.classList.remove('show'); inpNew.blur(); }
   });
-  document.addEventListener('click', function(e){
+  // v4.65: handler nomeado pra poder remover antes de re-adicionar
+  // (evita acumular listeners no document a cada troca de base)
+  if(typeof window._diagFornDocClick === 'function'){
+    document.removeEventListener('click', window._diagFornDocClick);
+  }
+  window._diagFornDocClick = function(e){
+    const drpRef = document.getElementById('forn-diag-drop');
+    if(!drpRef) return;
     if(!e.target.closest('#forn-diag-srch') && !e.target.closest('#forn-diag-drop')){
-      drp.classList.remove('show');
+      drpRef.classList.remove('show');
     }
-  });
+  };
+  document.addEventListener('click', window._diagFornDocClick);
 }
 
 function _diagFornDoSearch(q){
@@ -3576,35 +3623,132 @@ window._openFornNovo = function(cod){
     html += '</tbody></table></div></div>';
   }
 
-  // ─── SEÇÃO: Extrato de entradas (compras mensais via cubo) ───
-  const extrato = _diagFornExtratoCompras(cod);
-  if(extrato.linhas.length > 0){
-    html += '<div class="cc" style="margin-top:14px;">'
-         +    '<div class="cct">Extrato de entradas · compras mensais</div>'
-         +    '<div class="ccs">Movimento de compras detalhado por mês · <strong>'+fI(extrato.linhas.length)+'</strong> meses · <strong>'+fK(extrato.totalValor)+'</strong> em '+fI(extrato.totalNFs)+' NFs · prazo médio '+fI(extrato.prazoMedio)+'d</div>'
-         +    '<div class="tscroll" style="margin-top:8px;max-height:280px;overflow-y:auto;">'
-         +      '<table class="t"><thead><tr>'
-         +        '<th class="L">Mês</th>'
-         +        '<th>Valor</th>'
-         +        '<th>Quantidade</th>'
-         +        '<th>NFs</th>'
-         +        '<th>Prazo médio</th>'
-         +      '</tr></thead><tbody>';
-    extrato.linhas.forEach(function(l){
-      html += '<tr>'
-           +    '<td class="L"><strong>'+_ymToLabel(l.ym)+'</strong></td>'
-           +    '<td class="val-strong">'+fK(l.valor)+'</td>'
-           +    '<td>'+fI(l.qt)+'</td>'
-           +    '<td>'+fI(l.nfs)+'</td>'
-           +    '<td>'+(l.prazo>0?fI(l.prazo)+'d':'-')+'</td>'
-           +  '</tr>';
+  // ─── SEÇÃO: Financeiro do fornecedor (cabeçalho do extrato) ───
+  // v4.66: header com Total Comprado · Já Pago · Em Aberto + barra de progresso
+  const extDet = _diagFornExtratoDetalhado(cod);
+  if(extDet.totalNFs > 0){
+    const pctPagoBar = extDet.totalGeral > 0 ? (extDet.totalPagoGeral / extDet.totalGeral * 100) : 0;
+    const pctAbertoBar = 100 - pctPagoBar;
+    html += '<div class="ds" style="margin-top:14px;">'
+         +    '<div class="ds-hdr">'
+         +      '<div class="ds-ico" style="background:var(--success-bg);color:var(--success-text);">'
+         +        '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>'
+         +      '</div>'
+         +      '<div><div class="ds-title">Financeiro do fornecedor</div>'
+         +        '<div class="ds-sub">Status das duplicatas de todas as NFs</div></div>'
+         +    '</div>'
+         +    '<div class="ds-body" style="padding:14px;">'
+         +      '<div class="fin-cards" style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;">'
+         +        '<div class="fin-card" style="background:var(--surface-2);border:1px solid var(--border);border-radius:6px;padding:14px;">'
+         +          '<div style="color:var(--text-muted);font-size:10px;text-transform:uppercase;letter-spacing:.08em;font-weight:700;">Total comprado (líq.)</div>'
+         +          '<div class="fin-card-val" style="font-size:22px;font-weight:700;margin-top:6px;">'+fK(extDet.totalGeral)+'</div>'
+         +        '</div>'
+         +        '<div class="fin-card" style="background:var(--surface-2);border:1px solid var(--border);border-radius:6px;padding:14px;">'
+         +          '<div style="color:var(--text-muted);font-size:10px;text-transform:uppercase;letter-spacing:.08em;font-weight:700;">Já pago</div>'
+         +          '<div class="fin-card-val" style="font-size:22px;font-weight:700;margin-top:6px;color:#15803d;">'+fK(extDet.totalPagoGeral)+'</div>'
+         +          '<div style="color:var(--text-muted);font-size:11px;margin-top:3px;">'+fP(pctPagoBar,1)+'</div>'
+         +        '</div>'
+         +        '<div class="fin-card" style="background:var(--surface-2);border:1px solid var(--border);border-radius:6px;padding:14px;">'
+         +          '<div style="color:var(--text-muted);font-size:10px;text-transform:uppercase;letter-spacing:.08em;font-weight:700;">Em aberto</div>'
+         +          '<div class="fin-card-val" style="font-size:22px;font-weight:700;margin-top:6px;color:#d97706;">'+fK(extDet.totalAbertoGeral)+'</div>'
+         +          '<div style="color:var(--text-muted);font-size:11px;margin-top:3px;">'+fP(pctAbertoBar,1)+'</div>'
+         +        '</div>'
+         +      '</div>'
+         +      '<div style="margin-top:14px;height:8px;background:#fed7aa;border-radius:4px;overflow:hidden;display:flex;">'
+         +        '<div style="background:#15803d;width:'+pctPagoBar.toFixed(2)+'%;height:100%;"></div>'
+         +      '</div>'
+         +      '<div class="fin-legend" style="margin-top:6px;display:flex;justify-content:space-between;font-size:11px;color:var(--text-muted);">'
+         +        '<span><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#15803d;margin-right:5px;"></span>Pago: '+fP(pctPagoBar,1)+' ('+fK(extDet.totalPagoGeral)+')</span>'
+         +        '<span><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#d97706;margin-right:5px;"></span>Em aberto: '+fP(pctAbertoBar,1)+' ('+fK(extDet.totalAbertoGeral)+')</span>'
+         +      '</div>'
+         +    '</div>'
+         + '</div>';
+
+    // ─── EXTRATO detalhado por mês com NFs individuais ───
+    html += '<div class="ds" style="margin-top:14px;">'
+         +    '<div class="ds-hdr">'
+         +      '<div class="ds-ico"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/></svg></div>'
+         +      '<div><div class="ds-title">Extrato de compras</div>'
+         +        '<div class="ds-sub">'+fI(extDet.totalNFs)+' NFs · '+fI(extDet.totalUn)+' un · '+fK(extDet.totalGeral)+' · clique no produto para ver diagnóstico</div></div>'
+         +    '</div>'
+         +    '<div class="ds-body" style="padding:0;">'
+         +      '<div class="ext-wrap" style="max-height:600px;overflow-y:auto;">';
+
+    extDet.meses.forEach(function(mes){
+      const mesLabel = _ymToLabel(mes.ym);
+      const anoFull = mes.ym.slice(0,4);
+      const pctPagoMes = mes.totalValor > 0 ? (mes.totalPago / mes.totalValor * 100) : 0;
+      // Header do mês
+      html += '<div class="ext-mes-hdr" style="background:var(--surface-2);padding:10px 14px;border-top:1px solid var(--border);border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;font-size:11.5px;position:sticky;top:0;z-index:1;">'
+           +    '<div><strong style="font-size:13px;">'+esc(mesLabel.split('/')[0])+'</strong> <span style="color:var(--text-muted);">'+anoFull+'</span> '
+           +      '<span class="kg-tag" style="margin-left:8px;font-size:10px;background:var(--success-bg);color:var(--success-text);border:1px solid #d1fae5;">'+fI(mes.nfs.length)+' NFs · '+fI(mes.totalQt)+' UN · '+fK(mes.totalValor)+'</span>'
+           +    '</div>'
+           +    '<div style="color:var(--text-muted);">'+fP(pctPagoMes,1)+' pago</div>'
+           +  '</div>';
+      // Linhas das NFs do mês
+      mes.nfs.forEach(function(nf){
+        const stMap = {
+          'pago':         {cls:'ok', txt:'Pago'},
+          'aberto':       {cls:'wn', txt:'Em aberto'},
+          'parcial':      {cls:'wn', txt:'Parcial'},
+          'desconhecido': {cls:'',   txt:'—'}
+        };
+        const stInfo = stMap[nf.status] || stMap['desconhecido'];
+        const stCls = stInfo.cls;
+        const stTxt = stInfo.txt;
+        // Lista de produtos: até 3 visíveis + "+N produto(s)"
+        const prodsMax = 3;
+        const prodsVis = nf.produtos.slice(0, prodsMax);
+        const prodsRest = nf.produtos.length - prodsMax;
+        let prodsHtml = '';
+        prodsVis.forEach(function(pp){
+          prodsHtml += '<div style="font-size:11.5px;line-height:1.5;">'
+                    +    '<span style="font-family:JetBrains Mono,monospace;font-size:10px;color:var(--text-muted);">#'+esc(pp.cod)+'</span> '
+                    +    '<a href="javascript:void(0)" onclick="_navOpenProd('+pp.cod+', \'diag-forn\', '+cod+')" '
+                    +       'style="color:inherit;text-decoration:none;border-bottom:1px dotted var(--border);cursor:pointer;" '
+                    +       'title="Ver diagnóstico do produto">'
+                    +      esc((pp.desc||'').substring(0,55))
+                    +    '</a>'
+                    +  '</div>';
+        });
+        if(prodsRest > 0){
+          prodsHtml += '<div style="font-size:10.5px;color:var(--text-muted);margin-top:3px;cursor:pointer;" '
+                    +   'onclick="_extToggleNfProds(this)" '
+                    +   'data-cod="'+cod+'" data-nfkey="'+esc(nf.data+'_'+nf.nf)+'">'
+                    +   '▶ +'+prodsRest+' produto'+(prodsRest>1?'s':'')+'</div>';
+          // Lista escondida com os restantes
+          prodsHtml += '<div class="ext-nf-rest" style="display:none;margin-top:4px;padding-left:12px;border-left:2px solid var(--border);">';
+          nf.produtos.slice(prodsMax).forEach(function(pp){
+            prodsHtml += '<div style="font-size:11px;line-height:1.5;color:var(--text-muted);">'
+                      +    '<span style="font-family:JetBrains Mono,monospace;font-size:9.5px;">#'+esc(pp.cod)+'</span> '
+                      +    '<a href="javascript:void(0)" onclick="_navOpenProd('+pp.cod+', \'diag-forn\', '+cod+')" '
+                      +       'style="color:inherit;text-decoration:none;border-bottom:1px dotted var(--border);cursor:pointer;">'
+                      +      esc((pp.desc||'').substring(0,55))
+                      +    '</a>'
+                      +  '</div>';
+          });
+          prodsHtml += '</div>';
+        }
+
+        const dataFmt = nf.data ? nf.data.split('-').reverse().join('/') : '-';
+        html += '<div class="ext-nf-row" style="padding:10px 14px;border-bottom:1px solid var(--border);display:grid;grid-template-columns:70px 90px 1fr 110px 90px 80px 70px;gap:10px;align-items:start;font-size:11.5px;">'
+             +    '<div><span class="kg-tag" style="font-size:10px;background:var(--surface-2);border:1px solid var(--border);">↓ NF</span></div>'
+             +    '<div>'+esc(dataFmt)+'</div>'
+             +    '<div>'+prodsHtml+'</div>'
+             +    '<div style="font-family:JetBrains Mono,monospace;font-size:10px;color:var(--text-muted);text-align:right;">*'+esc(nf.nf||'-')+'</div>'
+             +    '<div style="text-align:right;">'+fI(nf.qt)+' un</div>'
+             +    '<div style="text-align:right;font-weight:600;">'+fK(nf.valor)+'</div>'
+             +    '<div style="text-align:center;"><span class="kg-tag '+stCls+'" style="font-size:10px;">'+stTxt+'</span></div>'
+             +  '</div>';
+      });
     });
-    html += '</tbody></table></div></div>';
-  } else if(typeof Cu === 'undefined' || !Cu){
+
+    html += '</div></div></div>';
+
+  } else if(typeof E === 'undefined' || !E || !E.produtos){
     html += '<div class="cc" style="margin-top:14px;background:#fef3c7;border:1px solid #d97706;">'
          +    '<div style="padding:14px;color:#92400e;font-size:12px;">'
-         +      '<strong>Extrato de entradas não disponível.</strong> O cubo OLAP não está carregado nesta sessão. '
-         +      'Visite a página <a href="javascript:void(0)" onclick="document.querySelector(\'.sb-link[data-p=cubo]\').click()" style="color:#92400e;text-decoration:underline;font-weight:700;">Análise Dinâmica</a> uma vez para carregar o cubo, depois volte aqui.'
+         +      '<strong>Extrato de entradas não disponível.</strong> Dados de estoque/entradas não carregados.'
          +    '</div>'
          + '</div>';
   }
@@ -3855,6 +3999,20 @@ window._openFornNovo = function(cod){
   cont.scrollTop = 0;
   window.scrollTo({top:0, behavior:'smooth'});
 
+  // v4.66: bind clique no nome do produto (tabela SKUs e Itens em excesso) pra abrir
+  // diagnóstico via _navOpenProd, empilhando a origem para o botão "Voltar".
+  cont.querySelectorAll('[data-prod-cod]').forEach(function(td){
+    td.style.cursor = 'pointer';
+    td.addEventListener('click', function(){
+      const pcod = parseInt(td.getAttribute('data-prod-cod'), 10);
+      if(typeof window._navOpenProd === 'function'){
+        window._navOpenProd(pcod, 'diag-forn', cod);
+      } else if(typeof window._openProdNovo === 'function'){
+        window._openProdNovo(pcod);
+      }
+    });
+  });
+
   // Se o cubo ainda não está carregado, dispara em background e re-renderiza ao chegar.
   // Assim o extrato de entradas aparece automaticamente sem precisar visitar Análise Dinâmica.
   if((typeof Cu === 'undefined' || !Cu) && typeof _carregarCuboLazy === 'function'){
@@ -3911,6 +4069,106 @@ function _diagFornVendasPorMes(fornCod){
     result.totalQt += qt;
   });
   result.linhas = Array.from(map.values()).sort(function(a,b){return a.ym.localeCompare(b.ym);});
+  return result;
+}
+
+// v4.66: Extrato DETALHADO com NF individual.
+// Lê E.produtos[].entradas_detalhadas (que tem nf, data, qt, valor, status pago/aberto)
+// e agrupa por NF (mesma nf+data+fornecedor_cod = uma NF) e depois por mês.
+// Retorna: {meses: [{ym, totalValor, totalQt, totalSkus, nfs:[{nf,data,valor,qt,status,produtos:[...]}], totalPago, totalAberto}], totalGeral, totalPagoGeral, totalAbertoGeral}
+function _diagFornExtratoDetalhado(fornCod){
+  const result = {
+    meses: [],
+    totalGeral: 0, totalPagoGeral: 0, totalAbertoGeral: 0,
+    totalNFs: 0, totalUn: 0
+  };
+  if(typeof E === 'undefined' || !E || !E.produtos) return result;
+
+  // Junta todas as entradas_detalhadas do fornecedor, indexando por NF.
+  // Chave da NF: data + nf + fornecedor_cod (mesma NF aparece em N produtos).
+  const nfMap = new Map();
+  E.produtos.forEach(function(p){
+    const eds = p.entradas_detalhadas || [];
+    eds.forEach(function(ed){
+      if(ed.fornecedor_cod !== fornCod) return;
+      const key = (ed.data||'') + '|' + (ed.nf||'') + '|' + ed.fornecedor_cod;
+      if(!nfMap.has(key)){
+        nfMap.set(key, {
+          nf: ed.nf,
+          data: ed.data,
+          ym: (ed.data||'').slice(0,7),
+          fornecedor: ed.fornecedor,
+          status: ed.status,           // herdada do 1o item; vamos refinar
+          valor: 0, qt: 0,
+          valor_pago: 0, valor_aberto: 0,
+          dt_pagto: ed.dt_pagto || null,
+          produtos: []                  // [{cod, desc, depto, qt, valor, preco_unit}]
+        });
+      }
+      const e = nfMap.get(key);
+      e.valor += ed.valor || 0;
+      e.qt += ed.qt || 0;
+      // valor_pago / valor_aberto vêm DA NF (mesmo número repetido em cada item) —
+      // NÃO somar, pegar apenas uma vez quando criamos a entrada da NF.
+      // Como o map.set acima só ocorre na primeira ocorrência, e ali não setamos
+      // esses campos, fazemos isso aqui pegando o maior valor (idempotente).
+      if((ed.valor_pago || 0) > e.valor_pago) e.valor_pago = ed.valor_pago || 0;
+      if((ed.valor_aberto || 0) > e.valor_aberto) e.valor_aberto = ed.valor_aberto || 0;
+      if(ed.dt_pagto && !e.dt_pagto) e.dt_pagto = ed.dt_pagto;
+      // Refina status: ordem de prioridade aberto > parcial > desconhecido > pago
+      // (a NF como um todo é classificada pelo pior status entre seus itens)
+      const sNew = ed.status;
+      const sCur = e.status;
+      const ord = {aberto:4, parcial:3, desconhecido:2, pago:1};
+      if((ord[sNew]||0) > (ord[sCur]||0)) e.status = sNew;
+      e.produtos.push({
+        cod: p.cod,
+        desc: p.desc || '',
+        depto: (p.depto && p.depto.nome) || '',
+        qt: ed.qt || 0,
+        valor: ed.valor || 0,
+        preco_unit: ed.preco_unit || 0
+      });
+    });
+  });
+
+  if(nfMap.size === 0) return result;
+
+  // Agrupa NFs por mês.
+  const mesMap = new Map();
+  nfMap.forEach(function(nfData){
+    const ym = nfData.ym;
+    if(!ym) return;
+    if(!mesMap.has(ym)){
+      mesMap.set(ym, {
+        ym: ym, nfs: [],
+        totalValor: 0, totalQt: 0,
+        totalPago: 0, totalAberto: 0,
+        totalSkus: new Set()
+      });
+    }
+    const m = mesMap.get(ym);
+    m.nfs.push(nfData);
+    m.totalValor += nfData.valor;
+    m.totalQt += nfData.qt;
+    m.totalPago += nfData.valor_pago;
+    m.totalAberto += nfData.valor_aberto;
+    nfData.produtos.forEach(function(pp){ m.totalSkus.add(pp.cod); });
+    result.totalGeral += nfData.valor;
+    result.totalPagoGeral += nfData.valor_pago;
+    result.totalAbertoGeral += nfData.valor_aberto;
+    result.totalUn += nfData.qt;
+    result.totalNFs += 1;
+  });
+
+  // Ordena meses asc, NFs de cada mês por data asc
+  result.meses = Array.from(mesMap.values()).map(function(m){
+    m.nfs.sort(function(a,b){return (a.data||'').localeCompare(b.data||'');});
+    m.totalSkusCount = m.totalSkus.size;
+    delete m.totalSkus;
+    return m;
+  }).sort(function(a,b){return a.ym.localeCompare(b.ym);});
+
   return result;
 }
 
@@ -4786,3 +5044,74 @@ function renderHome(){
 
 // ================================================================
 // VENDAS · CONFIG ESTRUTURAL (Etapa 4)
+
+// ════════════════════════════════════════════════════════════════════════════
+// v4.67-comercial: CSS responsivo do Extrato Detalhado e Cabeçalho Financeiro
+// (Diag. Fornecedor). Injetado uma única vez no DOM. Como o HTML inline-style
+// não cobre mobile, este CSS sobrescreve via @media queries.
+// ════════════════════════════════════════════════════════════════════════════
+(function(){
+  if(document.getElementById('forn-extrato-mobile-css')) return;
+  const st = document.createElement('style');
+  st.id = 'forn-extrato-mobile-css';
+  st.textContent = ''
+    // Defaults (override de seleção/touch) — válido em todos os tamanhos
+    + '.ext-nf-row a, .ext-nf-row [onclick]{-webkit-tap-highlight-color:rgba(245,134,52,.18);}'
+    + '.ext-mes-hdr{position:sticky;top:0;z-index:1;}'
+    // ════ Tablet (≤ 900px) ════
+    + '@media(max-width:900px){'
+    +   '.fin-cards{grid-template-columns:1fr 1fr !important;}'
+    +   '.fin-cards .fin-card:first-child{grid-column:1 / -1 !important;}'
+    +   '.fin-card-val{font-size:18px !important;}'
+    +   '.ext-nf-row{grid-template-columns:60px 70px 1fr 80px 70px !important;}'
+    +   '.ext-nf-row > div:nth-child(4){display:none !important;}' // NF número
+    +   '.ext-nf-row > div:nth-child(6){display:none !important;}' // valor (vai pra mobile pill)
+    + '}'
+    // ════ Mobile (≤ 720px) — layout vertical empilhado ════
+    + '@media(max-width:720px){'
+    +   '.fin-cards{grid-template-columns:1fr !important;gap:8px !important;}'
+    +   '.fin-cards .fin-card:first-child{grid-column:auto !important;}'
+    +   '.fin-card{padding:10px !important;}'
+    +   '.fin-card-val{font-size:17px !important;}'
+    +   '.fin-legend{flex-direction:column !important;gap:4px !important;align-items:flex-start !important;}'
+    // Extrato em mobile: vira "cartão por NF" empilhado
+    +   '.ext-wrap{max-height:none !important;}'
+    +   '.ext-nf-row{'
+    +     'display:block !important;'
+    +     'grid-template-columns:none !important;'
+    +     'padding:10px 12px !important;'
+    +     'position:relative;'
+    +   '}'
+    +   '.ext-nf-row > div{margin-bottom:4px;text-align:left !important;}'
+    // Linha do topo do cartão (NF + data + valor) numa flex única
+    +   '.ext-nf-row > div:nth-child(1){' // ↓ NF tag
+    +     'display:inline-block;margin-right:8px;'
+    +   '}'
+    +   '.ext-nf-row > div:nth-child(2){' // data
+    +     'display:inline-block;color:var(--text-muted);font-size:11px;'
+    +   '}'
+    +   '.ext-nf-row > div:nth-child(4){' // num NF
+    +     'display:inline-block;float:right;margin-top:-26px;'
+    +   '}'
+    +   '.ext-nf-row > div:nth-child(3){' // produtos
+    +     'margin:6px 0 4px 0 !important;'
+    +   '}'
+    +   '.ext-nf-row > div:nth-child(5){' // qtde
+    +     'display:inline-block;margin-right:10px;font-size:11px;color:var(--text-muted);'
+    +   '}'
+    +   '.ext-nf-row > div:nth-child(6){' // valor
+    +     'display:inline-block;font-size:13px !important;color:var(--text);'
+    +   '}'
+    +   '.ext-nf-row > div:nth-child(7){' // status
+    +     'display:inline-block;float:right;'
+    +   '}'
+    +   '.ext-mes-hdr{padding:8px 12px !important;font-size:11px !important;}'
+    +   '.ext-mes-hdr > div:first-child .kg-tag{display:block;margin:4px 0 0 0 !important;}'
+    + '}'
+    // ════ Mobile pequeno (≤ 380px) ════
+    + '@media(max-width:380px){'
+    +   '.fin-card-val{font-size:15px !important;}'
+    +   '.ext-nf-row{padding:8px 10px !important;font-size:11px !important;}'
+    + '}';
+  document.head.appendChild(st);
+})();

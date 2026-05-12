@@ -216,7 +216,7 @@ const AUTH_MODE = 'firebase'; // 'mock' | 'firebase'
 // Convenção:
 //   X.x → alteração grande (quebra de compatibilidade, nova feature grande)
 //   x.X → alteração suave (fix, ajuste visual, pequeno refinamento)
-const APP_VERSION = '4.64-comercial';
+const APP_VERSION = '4.67-comercial';
 
 // ================================================================
 // HELPERS DE CHART.JS — compatíveis com Safari/iOS (sem spread ops)
@@ -2287,6 +2287,13 @@ function _loadDadosModulares(baseSlug){
   // Reset do cache de validação de schema (vai re-validar pra base nova)
   window._schemaJaValidou = {};
   window._schemaIssues = [];
+
+  // v4.65: Invalida caches dos diagnósticos quando troca de base.
+  // Sem isso, ao trocar de filial os índices de fornecedor/produto ficavam
+  // congelados com os dados da filial antiga, e os listeners de busca
+  // (bindados uma única vez via flag) não eram re-bindados, causando busca
+  // silenciosamente quebrada após troca de base.
+  if(typeof _invalidarCachesDiag === 'function') _invalidarCachesDiag();
 
   // Helper: fetch silencioso + rerender condicional
   // Tenta .gz primeiro (descompactando no cliente), com fallback pro .json normal.
@@ -5943,9 +5950,9 @@ async function _alterarSenhaUI(){
 window._alterarSenhaUI = _alterarSenhaUI;
 
 // ────────────────────────────────────────────────────────────────────
-// DRILL-THROUGH GLOBAL · v4.29
+// DRILL-THROUGH GLOBAL · v4.29 (atualizado em v4.66: usa _navOpenProd/Forn
+// pra empilhar a página atual e mostrar botão "Voltar" flutuante)
 // Qualquer elemento com data-prod-cod ou data-forn-cod abre o diagnóstico.
-// Se cursor não estiver "pointer", também aplica.
 // ────────────────────────────────────────────────────────────────────
 document.addEventListener('click', function(e){
   // Encontra ancestor com data-prod-cod ou data-forn-cod
@@ -5963,14 +5970,38 @@ document.addEventListener('click', function(e){
   }
   e.preventDefault();
   e.stopPropagation();
+  // Descobre página de origem (ativa no momento do clique)
+  const act = document.querySelector('.page.active');
+  const fromPage = act ? act.id.replace('page-','') : null;
+  // Pra Diag. Forn → Diag. Prod (e vice-versa), passa o ctx do registro raiz
+  // (cod do fornecedor que está sendo visto agora) pra que "Voltar" reabra ele.
+  let fromCtx = null;
+  if(fromPage === 'diag-forn'){
+    // Tenta extrair cod do fornecedor atual visualmente (do ph-code)
+    const phCode = document.querySelector('#page-diag-forn .ph-code');
+    if(phCode){
+      const m = (phCode.textContent || '').match(/#(\d+)/);
+      if(m) fromCtx = parseInt(m[1], 10);
+    }
+  } else if(fromPage === 'diagnostico'){
+    const phCode = document.querySelector('#page-diagnostico .ph-code');
+    if(phCode){
+      const m = (phCode.textContent || '').match(/#(\d+)/);
+      if(m) fromCtx = parseInt(m[1], 10);
+    }
+  }
   if(el.dataset.prodCod){
     const cod = parseInt(el.dataset.prodCod, 10);
-    if(typeof window._openProdNovo === 'function'){
+    if(typeof window._navOpenProd === 'function'){
+      window._navOpenProd(cod, fromPage, fromCtx);
+    } else if(typeof window._openProdNovo === 'function'){
       window._openProdNovo(cod);
     }
   } else if(el.dataset.fornCod){
     const cod = parseInt(el.dataset.fornCod, 10);
-    if(typeof window._openFornNovo === 'function'){
+    if(typeof window._navOpenForn === 'function'){
+      window._navOpenForn(cod, fromPage, fromCtx);
+    } else if(typeof window._openFornNovo === 'function'){
       window._openFornNovo(cod);
     }
   }
@@ -6364,3 +6395,203 @@ function _pinBindDragDrop(){
   st.textContent = css;
   document.head.appendChild(st);
 })();
+
+// ════════════════════════════════════════════════════════════════════════════
+// v4.66: SISTEMA DE NAVEGAÇÃO COM PILHA + BOTÃO VOLTAR FLUTUANTE
+// ════════════════════════════════════════════════════════════════════════════
+// Pilha de navegação para entrar/sair de diagnósticos.
+// Estado: array de {targetPage, targetCtx, sourcePage, sourceCtx, label}
+//   targetPage = 'diagnostico' | 'diag-forn' (para onde vamos)
+//   targetCtx  = identificador (produto cod ou fornecedor cod)
+//   sourcePage = página de onde viemos (ex: 'diag-forn', 'fornecedores', etc)
+//   sourceCtx  = contexto da página de origem (ex: cod do fornecedor que estávamos vendo)
+//   label      = rótulo a mostrar no botão "Voltar"
+window._navStack = [];
+
+// Push: estamos saindo de sourcePage e indo para uma nova tela
+function _navPush(targetPage, targetCtx, sourcePage, sourceCtx, label){
+  window._navStack.push({
+    targetPage: targetPage,
+    targetCtx: targetCtx,
+    sourcePage: sourcePage,
+    sourceCtx: sourceCtx,
+    label: label
+  });
+  _navRenderBackBtn();
+}
+
+// Pop + retornar para origem
+function _navBack(){
+  if(!window._navStack.length){ _navRenderBackBtn(); return; }
+  const entry = window._navStack.pop();
+  _navRenderBackBtn();
+  // Reabre a página de origem com o contexto certo
+  if(entry.sourcePage === 'diag-forn' && entry.sourceCtx){
+    if(typeof window._openFornNovo === 'function'){
+      window._openFornNovo(entry.sourceCtx);
+      return;
+    }
+  }
+  if(entry.sourcePage === 'diagnostico' && entry.sourceCtx){
+    if(typeof window._openProdNovo === 'function'){
+      window._openProdNovo(entry.sourceCtx);
+      return;
+    }
+  }
+  // Fallback: clica no link da sidebar
+  const link = document.querySelector('.sb-link[data-p="'+entry.sourcePage+'"]');
+  if(link) link.click();
+}
+
+// Renderiza/atualiza o botão flutuante de voltar
+function _navRenderBackBtn(){
+  let btn = document.getElementById('nav-back-fab');
+  if(!window._navStack.length){
+    if(btn) btn.style.display = 'none';
+    return;
+  }
+  const top = window._navStack[window._navStack.length - 1];
+  if(!btn){
+    btn = document.createElement('button');
+    btn.id = 'nav-back-fab';
+    btn.type = 'button';
+    btn.className = 'nav-back-fab';
+    btn.onclick = _navBack;
+    document.body.appendChild(btn);
+    // CSS injetado uma vez (responsivo)
+    if(!document.getElementById('nav-back-fab-css')){
+      const st = document.createElement('style');
+      st.id = 'nav-back-fab-css';
+      st.textContent = ''
+        // Desktop: logo após sidebar (~270px)
+        + '.nav-back-fab{'
+        +   'position:fixed;top:80px;left:284px;z-index:9999;'
+        +   'display:flex;align-items:center;gap:6px;'
+        +   'padding:8px 14px;'
+        +   'background:var(--surface);border:1px solid var(--border);'
+        +   'border-radius:20px;box-shadow:0 2px 8px rgba(0,0,0,.08);'
+        +   'cursor:pointer;font-size:12px;font-weight:600;color:var(--text);'
+        +   'transition:transform .12s ease, box-shadow .12s ease;'
+        +   'max-width:calc(100vw - 32px);'
+        + '}'
+        + '.nav-back-fab:hover{box-shadow:0 4px 14px rgba(0,0,0,.14);transform:translateX(-2px);}'
+        + '.nav-back-fab span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}'
+        // Tablet: sidebar mais estreita
+        + '@media(max-width:1100px){'
+        +   '.nav-back-fab{left:auto;right:16px;top:72px;}'
+        + '}'
+        // Mobile: bottom-left (mais perto do polegar) + sem hover transform
+        + '@media(max-width:720px){'
+        +   '.nav-back-fab{'
+        +     'top:auto;bottom:16px;left:16px;right:auto;'
+        +     'padding:10px 14px;font-size:13px;'
+        +     'box-shadow:0 4px 14px rgba(0,0,0,.18);'
+        +   '}'
+        +   '.nav-back-fab:hover{transform:none;}'
+        +   '.nav-back-fab span{max-width:60vw;}'
+        + '}';
+      document.head.appendChild(st);
+    }
+  }
+  // Conteúdo (ícone seta + label)
+  btn.innerHTML = ''
+    + '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">'
+    +   '<line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/>'
+    + '</svg>'
+    + '<span>'+(top.label || 'Voltar')+'</span>';
+  btn.style.display = 'flex';
+}
+
+// Esconde o botão quando o usuário muda de página pelo menu/sidebar (zera pilha).
+// É chamado dentro do click handler dos links de sidebar.
+function _navClearOnSidebar(){
+  if(window._navStack.length){
+    window._navStack = [];
+    _navRenderBackBtn();
+  }
+}
+
+// Helpers públicos: abrir Diag. Produto/Fornecedor empilhando a origem.
+// Detecta automaticamente a página ativa atual como "origem" se não informada.
+// IMPORTANTE: se a origem é a própria página do destino, NÃO empilha (é só trocar
+// o produto/fornecedor mostrado, não navegar). Evita "Voltar ao produto" sem sentido.
+window._navOpenProd = function(prodCod, fromPage, fromCtx){
+  if(!fromPage){
+    const act = document.querySelector('.page.active');
+    fromPage = act ? act.id.replace('page-','') : null;
+  }
+  if(fromPage && fromPage !== 'diagnostico'){
+    let label = 'Voltar';
+    if(fromPage === 'diag-forn') label = 'Voltar ao fornecedor';
+    else if(fromPage === 'fornecedores') label = 'Voltar a Fornecedores';
+    else if(fromPage === 'estoque') label = 'Voltar a Estoque';
+    else if(fromPage === 'excesso') label = 'Voltar a Excesso de estoque';
+    else if(fromPage === 'vencidos') label = 'Voltar a Vencidos';
+    else if(fromPage === 'abc') label = 'Voltar à Curva ABC';
+    else if(fromPage === 'alertas') label = 'Voltar a Alertas';
+    else if(fromPage === 'forn-gpc') label = 'Voltar a Fornecedores GPC';
+    else if(fromPage === 'home') label = 'Voltar ao Início';
+    else if(fromPage === 'executivo') label = 'Voltar à Visão Executiva';
+    else if(fromPage === 'cv') label = 'Voltar a Compras × Vendas';
+    else if(fromPage === 'deptos') label = 'Voltar a Departamentos';
+    else label = 'Voltar';
+    _navPush('diagnostico', prodCod, fromPage, fromCtx, label);
+  }
+  // Abre o diagnóstico do produto
+  if(typeof window._openProdNovo === 'function'){
+    window._openProdNovo(prodCod);
+  } else if(typeof window._diagAbrirProd === 'function'){
+    // legado
+    window._diagAbrirProd(prodCod);
+  } else {
+    // Fallback: clica em Diag. Produto e tenta de novo
+    const lk = document.querySelector('.sb-link[data-p="diagnostico"]');
+    if(lk) lk.click();
+  }
+};
+
+window._navOpenForn = function(fornCod, fromPage, fromCtx){
+  if(!fromPage){
+    const act = document.querySelector('.page.active');
+    fromPage = act ? act.id.replace('page-','') : null;
+  }
+  if(fromPage && fromPage !== 'diag-forn'){
+    let label = 'Voltar';
+    if(fromPage === 'diagnostico') label = 'Voltar ao produto';
+    else if(fromPage === 'fornecedores') label = 'Voltar a Fornecedores';
+    else if(fromPage === 'forn-gpc') label = 'Voltar a Fornecedores GPC';
+    else if(fromPage === 'home') label = 'Voltar ao Início';
+    else if(fromPage === 'executivo') label = 'Voltar à Visão Executiva';
+    else label = 'Voltar';
+    _navPush('diag-forn', fornCod, fromPage, fromCtx, label);
+  }
+  if(typeof window._openFornNovo === 'function'){
+    window._openFornNovo(fornCod);
+  }
+};
+
+// Toggle de expansão para "+N produto(s)" no extrato detalhado
+window._extToggleNfProds = function(el){
+  const next = el.nextElementSibling;
+  if(!next || !next.classList.contains('ext-nf-rest')) return;
+  const open = next.style.display !== 'none';
+  next.style.display = open ? 'none' : 'block';
+  el.innerHTML = el.innerHTML.replace(open ? '▼' : '▶', open ? '▶' : '▼');
+};
+
+// Intercepta cliques na sidebar pra zerar a pilha (usuário navegou pelo menu).
+document.addEventListener('DOMContentLoaded', function(){
+  // delegação: qualquer .sb-link clicado limpa a pilha
+  document.addEventListener('click', function(e){
+    const link = e.target.closest('.sb-link');
+    if(link){ _navClearOnSidebar(); }
+  }, true); // capture phase
+});
+
+// Se DOMContentLoaded já passou, ativa agora
+if(document.readyState !== 'loading'){
+  document.addEventListener('click', function(e){
+    const link = e.target.closest('.sb-link');
+    if(link){ _navClearOnSidebar(); }
+  }, true);
+}
