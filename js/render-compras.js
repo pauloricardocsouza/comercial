@@ -111,8 +111,14 @@ function renderEstoqueNovo(){
   // a partir de E.produtos. Mostra Estoque a custo + Estoque a preço de venda.
   // O usuário expande um depto pra ver suas seções e cada seção pra ver categorias.
   html += '<div class="cc"><div class="cct">Estoque por departamento</div>'
-       +    '<div class="ccs">Clique no departamento para ver seções, depois categorias. Valor em <strong>custo</strong> e em <strong>preço de venda</strong>.</div>'
-       +    '<div id="est-hier-table" style="margin-top:10px;"></div>'
+       +    '<div class="ccs">Clique (ou toque) no departamento para ver seções, depois categorias. Valor em <strong>custo</strong> e em <strong>preço de venda</strong>.</div>'
+       +    '<div class="tscroll" style="margin-top:10px;-webkit-overflow-scrolling:touch;"><div id="est-hier-table"></div></div>'
+       + '</div>';
+
+  // Quadro Vendas × Departamento (v4.69)
+  html += '<div class="cc"><div class="cct">Vendas × Departamento</div>'
+       +    '<div class="ccs">Clique no departamento para ver seções, depois categorias. <strong>Média de venda</strong> = média mensal dos últimos 3 meses fechados, em R$ a preço de venda. <strong>Valor estoque</strong> em preço de venda. <strong>Dias de estoque</strong> = (valor estoque ÷ média mensal) × 30.</div>'
+       +    '<div class="tscroll" style="margin-top:10px;-webkit-overflow-scrolling:touch;"><div id="est-vd-table"></div></div>'
        + '</div>';
 
   const skus = (E.produtos || []).slice().sort(function(a,b){return (b.estoque?b.estoque.vl_custo:0) - (a.estoque?a.estoque.vl_custo:0);});
@@ -156,7 +162,7 @@ function renderEstoqueNovo(){
     {l:'Margem potencial',v:tePreco>0?fK(tePreco-teCusto):'—',s:'Se vender tudo pelo preço tabela',cls:'up'},
     {l:'SKUs em estoque',v:fI(r.skus_total||0),s:'Total cadastrado'},
     {l:'SKUs ativos',v:fI((r.por_status&&r.por_status.ATIVO&&r.por_status.ATIVO.skus)||0),s:'Com giro normal',cls:'ok'},
-    {l:'SKUs parados/mortos',v:fI(((r.por_status&&r.por_status.PARADO&&r.por_status.PARADO.skus)||0)+((r.por_status&&r.por_status.MORTO&&r.por_status.MORTO.skus)||0)),s:'Sem giro · candidatos a desova',cls:'dn'},
+    {l:'SKUs parados/mortos',v:fI(((r.por_status&&r.por_status.PARADO&&r.por_status.PARADO.skus)||0)+((r.por_status&&r.por_status.MORTO&&r.por_status.MORTO.skus)||0)),s:'Sem giro',cls:'dn'},
   ]);
 
   const statusOrder = ['ATIVO','CRITICO','PARADO','MORTO','ZERADO'];
@@ -272,6 +278,159 @@ function renderEstoqueNovo(){
     }
   }
   _renderEstHier();
+
+  // ─── v4.69: Quadro Vendas × Departamento ───────────────────────────
+  // Mostra média de venda 3 meses (R$), valor estoque (preço venda) e dias
+  // de estoque por departamento, expansível para seções e categorias.
+  // Drilldown indexa SKUs de E.produtos × V.vendas_por_sku (cross-ref por cod).
+  // Vendas mensais em R$ aproximadas: avgPrice = fat_total/qt_total · fat_ym ≈ avgPrice × qt_ym.
+  (function(){
+    if(!E || !Array.isArray(E.produtos) || !V || !Array.isArray(V.vendas_por_sku)) return;
+    const cont = document.getElementById('est-vd-table');
+    if(!cont) return;
+
+    // Determina os 3 últimos meses fechados a partir de V.meta.ultimo_mes
+    function _ymPrev(ym, n){
+      const a = parseInt(ym.substring(0,4),10);
+      let m = parseInt(ym.substring(5,7),10) - n;
+      let y = a;
+      while(m <= 0){ m += 12; y -= 1; }
+      return y+'-'+(m<10?'0':'')+m;
+    }
+    let ultYm = null, ultAberto = true;
+    if(V.meta && V.meta.ultimo_mes && V.meta.ultimo_mes.ym){
+      ultYm = V.meta.ultimo_mes.ym;
+      ultAberto = V.meta.ultimo_mes.aberto !== false;
+    } else if(V.mensal && V.mensal.length){
+      ultYm = V.mensal.reduce(function(mx,r){return r.ym>mx?r.ym:mx;}, '');
+    }
+    if(!ultYm){ cont.innerHTML = '<div style="padding:12px;color:var(--text-muted);font-size:12px;">Sem dados de vendas mensais para calcular média.</div>'; return; }
+    const ymsRef = ultAberto
+      ? [_ymPrev(ultYm,1), _ymPrev(ultYm,2), _ymPrev(ultYm,3)]
+      : [ultYm, _ymPrev(ultYm,1), _ymPrev(ultYm,2)];
+    const ymsRefSet = new Set(ymsRef);
+
+    // Index SKU → vendas (avgPrice × qt soma nos 3 meses)
+    const vIdx = new Map();
+    V.vendas_por_sku.forEach(function(s){
+      if(!s || s.cod == null) return;
+      const qtTot = s.qt || 0;
+      const fatTot = s.fat_liq || 0;
+      const avgPrice = qtTot > 0 ? (fatTot / qtTot) : 0;
+      let qt3 = 0;
+      if(Array.isArray(s.por_mes)){
+        s.por_mes.forEach(function(pm){
+          if(ymsRefSet.has(pm.ym)) qt3 += pm.qt || 0;
+        });
+      }
+      vIdx.set(s.cod, {fat3: avgPrice * qt3, qt3: qt3});
+    });
+
+    // Constrói hierarquia depto → secao → categoria a partir de E.produtos.
+    // Para cada nó, soma estoque PV (vl_preco) e vendas 3M (fat3 do vIdx).
+    const deptos = new Map();
+    (E.produtos || []).forEach(function(p){
+      if(!p.estoque) return;
+      const d = p.depto || {cod:'?',nome:'(sem depto)'};
+      const s = p.secao || {cod:'?',nome:'(sem seção)'};
+      const c = p.categoria || {cod:'?',nome:'(sem categoria)'};
+      const ven = vIdx.get(p.cod) || {fat3:0, qt3:0};
+      function _ensure(map, cod, base){
+        if(!map.has(cod)) map.set(cod, Object.assign({fat3:0, vlEstoquePV:0, skus:0}, base));
+        return map.get(cod);
+      }
+      const dN = _ensure(deptos, d.cod, {cod:d.cod, nome:d.nome, secoes:new Map()});
+      const sN = _ensure(dN.secoes, s.cod, {cod:s.cod, nome:s.nome, cats:new Map()});
+      const cN = _ensure(sN.cats,   c.cod, {cod:c.cod, nome:c.nome});
+      [dN, sN, cN].forEach(function(n){
+        n.fat3        += ven.fat3 || 0;
+        n.vlEstoquePV += p.estoque.vl_preco || 0;
+        n.skus        += 1;
+      });
+    });
+    const deptosArr = Array.from(deptos.values()).sort(function(a,b){return b.vlEstoquePV - a.vlEstoquePV;});
+
+    if(!window._estVDExp) window._estVDExp = {deptos:new Set(), secoes:new Set()};
+
+    function _dias(estoquePV, media){
+      if(!media || media <= 0) return null;
+      return (estoquePV / media) * 30;
+    }
+    function _diasFmt(d){
+      if(d == null) return '<span style="color:var(--text-muted);">—</span>';
+      if(d > 365) return '<span style="color:#dc2626;font-weight:600;">'+fI(Math.round(d))+'</span>';
+      if(d > 90)  return '<span style="color:#b45309;font-weight:600;">'+fI(Math.round(d))+'</span>';
+      return fI(Math.round(d));
+    }
+
+    function _render(){
+      const exp = window._estVDExp;
+      let h = '<table class="t" style="font-size:12px;"><thead><tr>'
+            + '<th class="L">Departamento / Seção / Categoria</th>'
+            + '<th>SKUs</th>'
+            + '<th>Média venda (3 meses)</th>'
+            + '<th>Estoque (preço venda)</th>'
+            + '<th>Dias de estoque</th>'
+            + '</tr></thead><tbody>';
+      deptosArr.forEach(function(d){
+        const dExp = exp.deptos.has(d.cod);
+        const dMedia = d.fat3 / 3;
+        h += '<tr style="cursor:pointer;background:var(--surface-2);font-weight:600;" data-vd-depto="'+esc(d.cod)+'">'
+          +    '<td class="L"><span style="display:inline-block;width:14px;text-align:center;color:var(--accent);">'+(dExp?'▼':'▶')+'</span> '+esc(d.nome)+'</td>'
+          +    '<td>'+fI(d.skus)+'</td>'
+          +    '<td>'+fK(dMedia)+'</td>'
+          +    '<td class="val-strong">'+fK(d.vlEstoquePV)+'</td>'
+          +    '<td>'+_diasFmt(_dias(d.vlEstoquePV, dMedia))+'</td>'
+          +  '</tr>';
+        if(dExp){
+          const secs = Array.from(d.secoes.values()).sort(function(a,b){return b.vlEstoquePV - a.vlEstoquePV;});
+          secs.forEach(function(s){
+            const sKey = d.cod+'/'+s.cod;
+            const sExp = exp.secoes.has(sKey);
+            const sMedia = s.fat3 / 3;
+            h += '<tr style="cursor:pointer;" data-vd-secao="'+esc(sKey)+'">'
+              +    '<td class="L" style="padding-left:32px;"><span style="display:inline-block;width:14px;text-align:center;color:var(--text-muted);">'+(sExp?'▼':'▶')+'</span> '+esc(s.nome)+'</td>'
+              +    '<td>'+fI(s.skus)+'</td>'
+              +    '<td>'+fK(sMedia)+'</td>'
+              +    '<td>'+fK(s.vlEstoquePV)+'</td>'
+              +    '<td>'+_diasFmt(_dias(s.vlEstoquePV, sMedia))+'</td>'
+              +  '</tr>';
+            if(sExp){
+              const cats = Array.from(s.cats.values()).sort(function(a,b){return b.vlEstoquePV - a.vlEstoquePV;});
+              cats.forEach(function(c){
+                const cMedia = c.fat3 / 3;
+                h += '<tr style="color:var(--text-muted);">'
+                  +    '<td class="L" style="padding-left:60px;font-size:11.5px;">└ '+esc(c.nome)+'</td>'
+                  +    '<td>'+fI(c.skus)+'</td>'
+                  +    '<td>'+fK(cMedia)+'</td>'
+                  +    '<td>'+fK(c.vlEstoquePV)+'</td>'
+                  +    '<td>'+_diasFmt(_dias(c.vlEstoquePV, cMedia))+'</td>'
+                  +  '</tr>';
+              });
+            }
+          });
+        }
+      });
+      h += '</tbody></table>';
+      cont.innerHTML = h;
+      cont.querySelectorAll('[data-vd-depto]').forEach(function(tr){
+        tr.addEventListener('click', function(){
+          const k = tr.getAttribute('data-vd-depto');
+          if(exp.deptos.has(k)) exp.deptos.delete(k); else exp.deptos.add(k);
+          _render();
+        });
+      });
+      cont.querySelectorAll('[data-vd-secao]').forEach(function(tr){
+        tr.addEventListener('click', function(ev){
+          ev.stopPropagation();
+          const k = tr.getAttribute('data-vd-secao');
+          if(exp.secoes.has(k)) exp.secoes.delete(k); else exp.secoes.add(k);
+          _render();
+        });
+      });
+    }
+    _render();
+  })();
 }
 
 // ════════════════════════════════════════════════════════════════════════
@@ -491,8 +650,12 @@ function renderExcessoNovo(){
 
   if(fornsExc.length){
     html += '<div class="cc" style="margin-bottom:14px;">'
-         +    '<div class="cct">Excesso por fornecedor · top 50</div>'
-         +    '<div class="ccs">'+fI(fornMap.size)+' fornecedores com SKUs em excesso · ordenados por valor imobilizado</div>'
+         +    '<div class="cch"><div>'
+         +      '<div class="cct">Excesso por fornecedor · top 50</div>'
+         +      '<div class="ccs">'+fI(fornMap.size)+' fornecedores com SKUs em excesso · ordenados por valor imobilizado</div>'
+         +    '</div>'
+         +    _exportBtns('exc-fornecedores', 'Excesso · fornecedores top 50')
+         +    '</div>'
          +    '<div class="tscroll" style="margin-top:8px;"><table class="t"><thead><tr>'
          +      '<th class="L" style="width:24px;">#</th>'
          +      '<th class="L">Fornecedor</th>'
@@ -519,8 +682,13 @@ function renderExcessoNovo(){
   }
 
   const top = excessos.slice().sort(function(a,b){return (b.estoque?b.estoque.vl_custo:0) - (a.estoque?a.estoque.vl_custo:0);}).slice(0, 100);
-  html += '<div class="cc"><div class="cct">Top 100 · maior valor imobilizado</div>'
-       +    '<div class="ccs">'+fI(excessos.length)+' SKUs em excesso · '+fK(totVlCusto)+' a custo</div>'
+  html += '<div class="cc">'
+       +    '<div class="cch"><div>'
+       +      '<div class="cct">Top 100 · maior valor imobilizado</div>'
+       +      '<div class="ccs">'+fI(excessos.length)+' SKUs em excesso · '+fK(totVlCusto)+' a custo</div>'
+       +    '</div>'
+       +    _exportBtns('exc-top100', 'Excesso · top 100 SKUs')
+       +    '</div>'
        +    '<div class="tscroll" style="margin-top:8px;"><table class="t"><thead><tr>'
        +      '<th class="L" style="width:24px;">#</th>'
        +      '<th class="L">Produto</th>'
@@ -559,6 +727,30 @@ function renderExcessoNovo(){
   html += '</div>';
   cont.innerHTML = html;
 
+  // ─── v4.69: registra datasets para exportação PDF/XLSX ────────────
+  const _excDsForn = {
+    titulo: 'Excesso · fornecedores top 50',
+    cols: ['#','Fornecedor','SKUs em excesso','Vl imobilizado (custo)','Vl em preço de venda','Críticos','Parados','Mortos'],
+    rows: fornsExc.map(function(f, i){
+      return [i+1, f.nome||'', f.skus||0, f.vl_custo||0, f.vl_preco||0, f.criticos||0, f.parados||0, f.mortos||0];
+    }),
+    numericCols: [2,3,4,5,6,7]
+  };
+  const _excDsTop = {
+    titulo: 'Excesso · top 100 SKUs',
+    cols: ['#','Código','Produto','Departamento','Qt estoque','Vl custo','Dias p/ consumir','Última entrada','Status'],
+    rows: top.map(function(p, i){
+      const e = p.estoque || {};
+      const g = _giro(p);
+      return [i+1, p.cod, p.desc||'', (p.depto&&p.depto.nome)||'-', e.qt||0, e.vl_custo||0, (g!=null && g>0)?Math.round(g):'-', e.dt_ult_entrada||'-', _status(p)||'-'];
+    }),
+    numericCols: [4,5,6]
+  };
+  window._excExportDatasets = {
+    'exc-fornecedores': _excDsForn,
+    'exc-top100': _excDsTop
+  };
+
   // Bind toggle de método
   document.querySelectorAll('#exc-met-w, #exc-met-m').forEach(function(btn){
     btn.addEventListener('click', function(){
@@ -579,27 +771,6 @@ function renderExcessoNovo(){
     {l:'Status MORTO',v:fI(excessos.filter(function(p){return _status(p)==='MORTO';}).length),s:'Sem venda > 180 dias',cls:'dn'},
     {l:'Status CRÍTICO',v:fI(excessos.filter(function(p){return _status(p)==='CRITICO';}).length),s:'Risco iminente',cls:'wn'},
   ]);
-
-  // Pin: imobilizado em excesso
-  if(typeof _pinRegistrar === 'function'){
-    const _captExc = {totVlCusto:totVlCusto, qtdExc:excessos.length, pctSku:pctSku};
-    _pinRegistrar('kpi-excesso-imobilizado', 'Excesso · valor imobilizado', 'excesso-novo', function(c){
-      c.innerHTML = '<div style="font-size:24px;font-weight:800;color:#dc2626;">'+fK(_captExc.totVlCusto)+'</div>'
-        + '<div style="font-size:11px;color:var(--text-muted);margin-top:4px;">'+fI(_captExc.qtdExc)+' SKUs · '+fP(_captExc.pctSku)+' do cadastro</div>';
-    });
-    setTimeout(function(){
-      const kg = document.getElementById('kg-exc-novo');
-      if(!kg) return;
-      const card = kg.querySelectorAll('.kc')[1];
-      if(!card || card.querySelector('.pin-btn')) return;
-      card.style.position = 'relative';
-      const btn = document.createElement('div');
-      btn.style.cssText = 'position:absolute;top:6px;right:6px;';
-      btn.innerHTML = _pinBotao('kpi-excesso-imobilizado');
-      card.appendChild(btn);
-      _pinAtualizarBotoes();
-    }, 50);
-  }
 
   const statusOrder = ['CRITICO','PARADO','MORTO'];
   const stCounts = statusOrder.map(function(s){return excessos.filter(function(p){return _status(p)===s;}).length;});
@@ -2381,26 +2552,36 @@ function renderFinanceiroNovo(){
 
   // Gráficos removidos a pedido do usuário (Pagamentos por mês, Aging, Performance, Top grupos)
 
-  // Próximos 30 dias (calculado dos títulos abertos)
+  // Títulos abertos: usado pelo calendário (10001) e por outros blocos
   const titulos = abr.titulos || [];
   const hoje = new Date();
   const hojeStr = hoje.toISOString().substring(0,10);
-  const limite = new Date(hoje.getTime() + 30*24*3600*1000).toISOString().substring(0,10);
-  const prox30 = titulos.filter(function(t){return t.data_venc && t.data_venc >= hojeStr && t.data_venc <= limite;});
   const venc = titulos.filter(function(t){return t.data_venc && t.data_venc < hojeStr;});
 
-  // Resumo dos próximos 30 dias por dia
-  const porDia30 = {};
-  prox30.forEach(function(t){
-    if(!porDia30[t.data_venc]) porDia30[t.data_venc] = {valor:0, titulos:0};
-    porDia30[t.data_venc].valor += t.valor || 0;
-    porDia30[t.data_venc].titulos += 1;
-  });
-  const dias30Ord = Object.keys(porDia30).sort();
+  // v4.69: Calendário de pagamentos (conta 10001 - COMPRA DE MERCADORIAS)
+  html += '<div class="cc">'
+       +   '<div class="cch">'
+       +     '<div><div class="cct">Calendário de pagamentos · COMPRA DE MERCADORIAS (10001)</div>'
+       +       '<div class="ccs">Valor a pagar por dia · sábado/domingo somam na segunda-feira · cor mais escura = dia com maior valor</div></div>'
+       +     '<div style="display:flex;align-items:center;gap:6px;">'
+       +       '<button id="cal-pg-prev" type="button" style="padding:5px 10px;border:1px solid var(--border-strong);border-radius:6px;background:var(--surface);cursor:pointer;font-weight:700;">‹</button>'
+       +       '<span id="cal-pg-label" style="font-size:12px;font-weight:700;min-width:96px;text-align:center;"></span>'
+       +       '<button id="cal-pg-next" type="button" style="padding:5px 10px;border:1px solid var(--border-strong);border-radius:6px;background:var(--surface);cursor:pointer;font-weight:700;">›</button>'
+       +       '<button id="cal-pg-hoje" type="button" style="padding:5px 10px;border:1px solid var(--border-strong);border-radius:6px;background:var(--surface);cursor:pointer;font-size:11px;font-weight:600;">Hoje</button>'
+       +     '</div>'
+       +   '</div>'
+       +   '<div id="cal-pg-wrap" style="margin-top:10px;"></div>'
+       + '</div>';
 
-  html += '<div class="cc"><div class="cct">Agenda · próximos 30 dias</div>'
-       +   '<div class="ccs">'+fI(prox30.length)+' títulos · total '+fK(prox30.reduce(function(s,t){return s+t.valor;},0))+'</div>'
-       +   '<div style="height:200px;margin-top:8px;"><canvas id="c-fin-novo-prox"></canvas></div>'
+  // v4.69: Quadro 99912 + 99907 por mês em 2026
+  html += '<div class="cc">'
+       +   '<div class="cch"><div>'
+       +     '<div class="cct">Multa e Juros (99912) + Encargos Conta Garantida (99907) · 2026</div>'
+       +     '<div class="ccs" id="fin-mj-obs">Pago mensalmente por conta · totais ao final</div>'
+       +   '</div>'
+       +   _exportBtns('fin-multa-juros', 'Multa Juros e Encargos · 2026')
+       +   '</div>'
+       +   '<div id="fin-mj-wrap" style="margin-top:10px;"></div>'
        + '</div>';
 
   // Tabela de top fornecedores em aberto
@@ -2429,34 +2610,6 @@ function renderFinanceiroNovo(){
          +    '<td>'+fI(f.titulos||0)+'</td>'
          +    '<td class="val-strong">'+fK(f.valor||0)+'</td>'
          +    '<td><span class="kg-tag '+dCls+'">'+esc(dTxt)+'</span></td>'
-         +  '</tr>';
-  });
-  html += '</tbody></table></div></div>';
-
-  // Tabela top contas (despesas)
-  const topContas = (pagas.por_conta||[]).slice().sort(function(a,b){return b.pago-a.pago;}).slice(0, 15);
-  const totPago = topContas.reduce(function(s,c){return s+c.pago;},0) || 1;
-  html += '<div class="cc"><div class="cct">Top 15 · contas de despesa pagas no período</div>'
-       +   '<div class="ccs">Análise para tomada de decisão sobre maiores categorias de gasto</div>'
-       +   '<div class="tscroll" style="margin-top:8px;"><table class="t"><thead><tr>'
-       +     '<th class="L" style="width:24px;">#</th>'
-       +     '<th class="L">Conta</th>'
-       +     '<th class="L">Grupo</th>'
-       +     '<th>Pago</th>'
-       +     '<th>Títulos</th>'
-       +     '<th>% do total</th>'
-       +   '</tr></thead><tbody>';
-  let acum = 0;
-  topContas.forEach(function(c, i){
-    acum += c.pago;
-    const pct = c.pago/(resPago.total||1)*100;
-    html += '<tr>'
-         +    '<td class="L" style="color:var(--text-muted);font-weight:700;">'+(i+1)+'</td>'
-         +    '<td class="L"><strong>'+esc((c.nome||'').substring(0,38))+'</strong></td>'
-         +    '<td>'+esc((c.grupo||'')+' '+(_fimGrupoNome(pagas.por_grupo, c.grupo)||'').substring(0,22))+'</td>'
-         +    '<td class="val-strong">'+fK(c.pago)+'</td>'
-         +    '<td>'+fI(c.titulos||0)+'</td>'
-         +    '<td>'+fP(pct)+'</td>'
          +  '</tr>';
   });
   html += '</tbody></table></div></div>';
@@ -2491,15 +2644,20 @@ function renderFinanceiroNovo(){
   html += '</div>'; // page-body
   cont.innerHTML = html;
 
-  // KPIs
+  // KPIs (sem "Próximos 30 dias" — substituído pelo calendário diário)
   document.getElementById('kg-fin-novo').innerHTML = kgHtml([
     {l:'Pago no período',v:fK(resPago.total||0),s:fI(resPago.titulos||0)+' títulos · '+fI(resPago.fornecedores||0)+' fornecedores'},
     {l:'A pagar (aberto)',v:fK(resAbr.total_pagar||0),s:fI(resAbr.titulos||0)+' títulos · '+fI(resAbr.fornecedores||0)+' fornecedores'},
     {l:'Vencido hoje',v:fK(vencidoTotal),s:fI(vencidoTit)+' títulos · '+fP(pctVencido)+' do aberto · inclui hoje + atrasados',cls:vencidoTotal>0?'dn':''},
     {l:'A vencer',v:fK(aVencer),s:fI((aging.A_VENCER||{titulos:0}).titulos)+' títulos no futuro'},
     {l:'Juros pagos',v:fK(resPago.juros||0),s:fP((resPago.total>0?resPago.juros/resPago.total*100:0))+' do total · custo de atraso',cls:resPago.juros>50000?'wn':''},
-    {l:'Próximos 30 dias',v:fK(prox30.reduce(function(s,t){return s+t.valor;},0)),s:fI(prox30.length)+' títulos a vencer'},
   ]);
+
+  // v4.69: Calendário pagamentos conta 10001
+  _renderCalendarioPagamentos(titulos);
+
+  // v4.69: Quadro 99912 + 99907 mensal 2026
+  _renderQuadroMultaJuros();
 
   // Chart 1: Mensal pago
   const mensal = (pagas.mensal||[]).slice().sort(function(a,b){return a.ym<b.ym?-1:1;});
@@ -2552,17 +2710,274 @@ function renderFinanceiroNovo(){
       plugins:{legend:{display:false},tooltip:{callbacks:{label:function(ctx){var g=topGrupos[ctx.dataIndex];return fK(ctx.raw)+' · '+fI(g.titulos)+' tit';}}}},
       scales:{x:{ticks:{callback:function(v){return fAbbr(v);}}},y:{grid:{display:false},ticks:{font:{size:10}}}}}});
 
-  // Chart 5: Próximos 30 dias por dia
-  if(dias30Ord.length > 0){
-    mkC('c-fin-novo-prox',{type:'bar',
-      data:{labels:dias30Ord.map(function(d){return d.substring(8)+'/'+d.substring(5,7);}),
-            datasets:[{label:'A pagar',data:dias30Ord.map(function(d){return porDia30[d].valor;}),
-                       backgroundColor:_PAL.hl+'CC',borderRadius:3}]},
-      options:{responsive:true,maintainAspectRatio:false,
-        plugins:{legend:{display:false},tooltip:{callbacks:{label:function(ctx){var d=dias30Ord[ctx.dataIndex];var p=porDia30[d];return fK(p.valor)+' · '+fI(p.titulos)+' títulos';}}}},
-        scales:{x:{grid:{display:false},ticks:{font:{size:9},maxRotation:60,minRotation:45}},
-                y:{ticks:{callback:function(v){return fAbbr(v);}}}}}});
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// v4.69: Calendário de pagamentos da conta 10001 (COMPRA DE MERCADORIAS)
+// Mostra grid mensal com valor a vencer/atrasado por dia. Sábado/domingo
+// são somados ao próximo dia útil (segunda-feira). Heatmap por intensidade
+// de valor. Navegação por mês (← →) e botão "Hoje". Default: mês atual.
+// ════════════════════════════════════════════════════════════════════════
+let _calPagState = null;
+
+function _renderCalendarioPagamentos(titulosAbertos){
+  const wrap = document.getElementById('cal-pg-wrap');
+  if(!wrap) return;
+  // Estado: mês exibido (Date no dia 1). Persiste em window pra navegação.
+  if(!_calPagState){
+    const t = new Date();
+    _calPagState = {ano: t.getFullYear(), mes: t.getMonth()};
   }
+
+  // Filtra apenas títulos da conta 10001
+  const tit10001 = (titulosAbertos || []).filter(function(t){
+    return t && (String(t.conta) === '10001') && t.data_venc;
+  });
+
+  // Agrupa valor por dia (data_venc original)
+  const porDiaRaw = Object.create(null);
+  tit10001.forEach(function(t){
+    if(!porDiaRaw[t.data_venc]) porDiaRaw[t.data_venc] = {valor:0, titulos:0};
+    porDiaRaw[t.data_venc].valor   += t.valor || t.valor_dup || 0;
+    porDiaRaw[t.data_venc].titulos += 1;
+  });
+
+  // Sábado (6) e domingo (0) somam no próximo dia útil (segunda)
+  function _addDays(yyyymmdd, n){
+    const d = new Date(yyyymmdd + 'T12:00:00');
+    d.setDate(d.getDate() + n);
+    return d.toISOString().substring(0,10);
+  }
+  function _proxDiaUtil(yyyymmdd){
+    let s = yyyymmdd;
+    let dow = new Date(s + 'T12:00:00').getDay();
+    while(dow === 6 || dow === 0){
+      s = _addDays(s, 1);
+      dow = new Date(s + 'T12:00:00').getDay();
+    }
+    return s;
+  }
+  const porDia = Object.create(null);
+  Object.keys(porDiaRaw).forEach(function(diaSrc){
+    const destino = _proxDiaUtil(diaSrc);
+    if(!porDia[destino]) porDia[destino] = {valor:0, titulos:0};
+    porDia[destino].valor   += porDiaRaw[diaSrc].valor;
+    porDia[destino].titulos += porDiaRaw[diaSrc].titulos;
+  });
+
+  function _draw(){
+    const ano = _calPagState.ano, mes = _calPagState.mes;
+    const primeiro = new Date(ano, mes, 1);
+    const ultimoDia = new Date(ano, mes+1, 0).getDate();
+    const nomes = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+    const lbl = document.getElementById('cal-pg-label');
+    if(lbl) lbl.textContent = nomes[mes]+'/'+String(ano).substring(2);
+
+    // Valores do mês (pra escala de heatmap)
+    const dias = [];
+    let maxVal = 0, totalMes = 0;
+    for(let d=1; d<=ultimoDia; d++){
+      const key = ano+'-'+String(mes+1).padStart(2,'0')+'-'+String(d).padStart(2,'0');
+      const v = porDia[key] || {valor:0, titulos:0};
+      dias.push({d:d, key:key, valor:v.valor, titulos:v.titulos});
+      if(v.valor > maxVal) maxVal = v.valor;
+      totalMes += v.valor;
+    }
+
+    function _intensidade(v){
+      if(!v || v <= 0 || maxVal <= 0) return 0;
+      return Math.min(1, v / maxVal);
+    }
+    function _bg(v){
+      const i = _intensidade(v);
+      if(i === 0) return 'var(--surface-2)';
+      // gradiente: laranja claro → laranja forte
+      const alpha = 0.15 + i * 0.65;
+      return 'rgba(245,134,52,'+alpha.toFixed(2)+')';
+    }
+
+    const diasSemanaLbl = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
+    const hojeStr = (new Date()).toISOString().substring(0,10);
+
+    let h = '<div style="display:flex;justify-content:space-between;align-items:center;font-size:11px;color:var(--text-muted);margin-bottom:6px;">'
+         +    '<span>Total no mês: <strong style="color:var(--text);">'+fK(totalMes)+'</strong></span>'
+         +    '<span>Sáb/Dom somam na seg seguinte · cor proporcional ao valor do dia</span>'
+         +  '</div>';
+    h += '<div style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px;">';
+    diasSemanaLbl.forEach(function(s){
+      h += '<div style="text-align:center;font-size:10px;font-weight:700;color:var(--text-muted);text-transform:uppercase;padding:4px 0;">'+s+'</div>';
+    });
+    // Padding inicial até o dia da semana do dia 1
+    const padInicio = primeiro.getDay();
+    for(let i=0; i<padInicio; i++){
+      h += '<div></div>';
+    }
+    dias.forEach(function(d){
+      const dt = new Date(ano, mes, d.d);
+      const dow = dt.getDay();
+      const ehFds = (dow === 6 || dow === 0);
+      const ehHoje = (d.key === hojeStr);
+      const bg = ehFds ? 'repeating-linear-gradient(45deg,var(--surface-2),var(--surface-2) 6px,rgba(0,0,0,.04) 6px,rgba(0,0,0,.04) 12px)' : _bg(d.valor);
+      const borda = ehHoje ? '2px solid var(--accent)' : '1px solid var(--border)';
+      const corTxt = d.valor > 0 && _intensidade(d.valor) > 0.55 ? '#1a1a1a' : 'var(--text)';
+      h += '<div title="'+esc(d.key)+(d.valor>0?(' · '+fK(d.valor)+' · '+fI(d.titulos)+' títulos'):' · sem títulos')+(ehFds?' · fim de semana':'')+'" '
+         + 'style="aspect-ratio:1/1;background:'+bg+';border:'+borda+';border-radius:6px;'
+         + 'padding:4px 6px;display:flex;flex-direction:column;justify-content:space-between;'
+         + 'font-size:11px;color:'+corTxt+';overflow:hidden;">'
+         +   '<div style="font-weight:700;font-size:12px;">'+d.d+'</div>'
+         +   (d.valor > 0 ? '<div style="font-size:10px;font-weight:600;line-height:1.1;text-align:right;">'+fAbbr(d.valor)+'</div>' : (ehFds?'<div style="font-size:9px;color:var(--text-muted);">—</div>':''))
+         + '</div>';
+    });
+    h += '</div>';
+    wrap.innerHTML = h;
+  }
+
+  _draw();
+
+  // Bind navegação (só uma vez por render — cont é refeito)
+  const btnPrev = document.getElementById('cal-pg-prev');
+  const btnNext = document.getElementById('cal-pg-next');
+  const btnHoje = document.getElementById('cal-pg-hoje');
+  if(btnPrev) btnPrev.onclick = function(){
+    let m = _calPagState.mes - 1, y = _calPagState.ano;
+    if(m < 0){ m = 11; y -= 1; }
+    _calPagState.mes = m; _calPagState.ano = y;
+    _draw();
+  };
+  if(btnNext) btnNext.onclick = function(){
+    let m = _calPagState.mes + 1, y = _calPagState.ano;
+    if(m > 11){ m = 0; y += 1; }
+    _calPagState.mes = m; _calPagState.ano = y;
+    _draw();
+  };
+  if(btnHoje) btnHoje.onclick = function(){
+    const t = new Date();
+    _calPagState.ano = t.getFullYear();
+    _calPagState.mes = t.getMonth();
+    _draw();
+  };
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// v4.69: Quadro Multa/Juros (99912) + Encargos Conta Garantida (99907) 2026
+// Meses como linhas, contas como colunas. Total na última coluna e linha.
+//
+// IMPORTANTE: o JSON financeiro atual não traz dados mensais por conta
+// individual (só anuais em pagas.por_conta, e mensais só por grupo de 3 dígitos).
+// Quando o ETL não tiver pagas.por_conta_mensal (ou pagas.titulos[]),
+// renderizamos zerado com aviso. A doc ETL é INTEGRACAO_ETL_v4.69.md.
+// ════════════════════════════════════════════════════════════════════════
+function _renderQuadroMultaJuros(){
+  const wrap = document.getElementById('fin-mj-wrap');
+  if(!wrap || !F) return;
+
+  const contas = [
+    {cod:'99912', nome:'Multa e Juros'},
+    {cod:'99907', nome:'Encargos Conta Garantida'}
+  ];
+  const meses = [];
+  for(let m=1; m<=12; m++){
+    meses.push('2026-'+(m<10?'0':'')+m);
+  }
+
+  // Tenta extrair valores mensais por conta de várias fontes possíveis:
+  //  1. F.pagas.por_conta_mensal[] = [{ym, cod, pago, ...}]  (ideal · ETL futuro)
+  //  2. F.pagas.titulos[]          = [{conta, data_pgto, valor}]  (ETL futuro)
+  //  3. Senão: zerado + aviso
+  let temDadoMensal = false;
+  const matriz = {}; // matriz[cod][ym] = valor
+  contas.forEach(function(c){ matriz[c.cod] = {}; meses.forEach(function(ym){ matriz[c.cod][ym]=0; }); });
+
+  if(F.pagas && Array.isArray(F.pagas.por_conta_mensal)){
+    F.pagas.por_conta_mensal.forEach(function(r){
+      const cod = String(r.cod || r.conta_cod || r.conta || '');
+      const ym = r.ym || '';
+      if(!matriz[cod] || !ym || ym.substring(0,4) !== '2026') return;
+      matriz[cod][ym] = (matriz[cod][ym] || 0) + (r.pago || r.valor || 0);
+      temDadoMensal = true;
+    });
+  }
+  if(!temDadoMensal && F.pagas && Array.isArray(F.pagas.titulos)){
+    F.pagas.titulos.forEach(function(t){
+      const cod = String(t.conta || t.conta_cod || '');
+      const dt  = t.data_pgto || t.data_pagto || t.data_pag || '';
+      if(!matriz[cod] || !dt || dt.substring(0,4) !== '2026') return;
+      const ym = dt.substring(0,7);
+      if(matriz[cod][ym] == null) return;
+      matriz[cod][ym] = (matriz[cod][ym] || 0) + (t.valor || t.valor_dup || 0);
+      temDadoMensal = true;
+    });
+  }
+
+  // Header com aviso se ETL ainda não trouxe dado mensal
+  const obs = document.getElementById('fin-mj-obs');
+  if(obs){
+    if(!temDadoMensal){
+      obs.innerHTML = '<span style="color:#b45309;">Aguardando ETL · o JSON financeiro atual não traz quebra mensal por conta individual. Quadro renderiza zerado até o pipeline incluir <code>pagas.por_conta_mensal</code> ou <code>pagas.titulos[]</code>. Detalhes em <code>INTEGRACAO_ETL_v4.69.md</code>.</span>';
+    } else {
+      obs.textContent = 'Pago mensalmente por conta · totais ao final';
+    }
+  }
+
+  // Render tabela
+  const nomesMes = {'01':'Jan','02':'Fev','03':'Mar','04':'Abr','05':'Mai','06':'Jun','07':'Jul','08':'Ago','09':'Set','10':'Out','11':'Nov','12':'Dez'};
+  let h = '<table class="t" style="font-size:12px;"><thead><tr>'
+        + '<th class="L">Mês</th>';
+  contas.forEach(function(c){
+    h += '<th>'+esc(c.cod)+' — '+esc(c.nome)+'</th>';
+  });
+  h += '<th>Total</th></tr></thead><tbody>';
+
+  const colTot = {}; contas.forEach(function(c){ colTot[c.cod] = 0; });
+  let grandTotal = 0;
+
+  meses.forEach(function(ym){
+    const mLbl = nomesMes[ym.substring(5,7)]+'/26';
+    let linhaTotal = 0;
+    h += '<tr><td class="L"><strong>'+esc(mLbl)+'</strong></td>';
+    contas.forEach(function(c){
+      const v = matriz[c.cod][ym] || 0;
+      colTot[c.cod] += v;
+      linhaTotal += v;
+      h += '<td>'+(v>0 ? fK(v) : '<span style="color:var(--text-muted);">—</span>')+'</td>';
+    });
+    grandTotal += linhaTotal;
+    h += '<td class="val-strong">'+(linhaTotal>0 ? fK(linhaTotal) : '<span style="color:var(--text-muted);">—</span>')+'</td></tr>';
+  });
+
+  h += '<tr style="background:var(--surface-2);font-weight:700;border-top:2px solid var(--border-strong);">'
+     + '<td class="L">Total</td>';
+  contas.forEach(function(c){
+    h += '<td class="val-strong">'+fK(colTot[c.cod])+'</td>';
+  });
+  h += '<td class="val-strong">'+fK(grandTotal)+'</td></tr>';
+  h += '</tbody></table>';
+  wrap.innerHTML = h;
+
+  // Dataset pra export
+  const exportRows = meses.map(function(ym){
+    const mLbl = nomesMes[ym.substring(5,7)]+'/26';
+    const row = [mLbl];
+    let lt = 0;
+    contas.forEach(function(c){
+      const v = matriz[c.cod][ym] || 0;
+      row.push(v);
+      lt += v;
+    });
+    row.push(lt);
+    return row;
+  });
+  const totalRow = ['Total'];
+  contas.forEach(function(c){ totalRow.push(colTot[c.cod]); });
+  totalRow.push(grandTotal);
+  exportRows.push(totalRow);
+  window._finExportDatasets = window._finExportDatasets || {};
+  window._finExportDatasets['fin-multa-juros'] = {
+    titulo: 'Multa Juros e Encargos · 2026',
+    cols: ['Mês'].concat(contas.map(function(c){return c.cod+' '+c.nome;})).concat(['Total']),
+    rows: exportRows,
+    numericCols: [1,2,3]
+  };
 }
 
 // Helper: encontra nome do grupo na lista por_grupo
@@ -5064,12 +5479,7 @@ function renderPage(pg){
 
 // ==== Render Home ============================================
 // Já é estática (HTML embutido). Só reativa visibilidade ao navegar.
-function renderHome(){
-  // Renderiza a seção de pins do usuário
-  if(typeof _pinRenderHome === 'function'){
-    _pinRenderHome();
-  }
-}
+function renderHome(){}
 
 // ================================================================
 // VENDAS · CONFIG ESTRUTURAL (Etapa 4)

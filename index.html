@@ -18,6 +18,8 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@3.0.1/dist/chartjs-plugin-annotation.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
 <!-- pako: fallback de descompressão gzip pra browsers sem DecompressionStream nativo (Safari iOS < 16.4) -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"></script>
 <!-- Firebase SDK (compat - sem build step) -->
@@ -1571,9 +1573,6 @@ textarea.proc-inp{resize:vertical;min-height:44px}
   </div>
   <div class="ph-sep"></div>
   <div class="page-body">
-    <!-- Seção de pins do usuário (carregada via _pinRenderHome) -->
-    <div id="pin-home-section" style="margin-bottom:18px;"></div>
-
     <div style="background:linear-gradient(135deg, var(--accent-bg) 0%, var(--highlight-bg) 100%);border:1px solid var(--border);border-radius:12px;padding:32px 28px;margin-bottom:18px;">
       <div style="display:flex;flex-direction:column;gap:8px;max-width:760px;">
         <div style="font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:.18em;color:var(--accent-text);text-transform:uppercase;font-weight:700;">R2 Soluções Empresariais &middot; Grupo Pinto Cerqueira</div>
@@ -1654,10 +1653,8 @@ textarea.proc-inp{resize:vertical;min-height:44px}
   <div class="ph-sep"></div>
   <div class="page-body">
     <div class="kg" style="grid-template-columns:repeat(4,1fr);" id="kg-exec"></div>
-    <div class="row2">
-      <div class="cc"><div class="cct">Compras líq. × Vendas líq. × Pagamentos</div><div class="ccs">Evolução mensal · Compras deduzem devoluções a fornecedor</div><div style="height:240px;"><canvas id="c-exec-evo"></canvas></div></div>
-      <div class="cc"><div class="cct">Margem bruta por mês</div><div class="ccs">% sobre o faturamento líquido</div><div style="height:240px;"><canvas id="c-exec-marg"></canvas></div></div>
-    </div>
+    <div id="exec-metas-wrap"></div>
+    <div class="cc"><div class="cct">Compras líq. × Vendas líq. × Pagamentos</div><div class="ccs">Evolução mensal · Compras deduzem devoluções a fornecedor</div><div style="height:240px;"><canvas id="c-exec-evo"></canvas></div></div>
     <div class="row2">
       <div class="cc"><div class="cct">Participação por departamento</div><div class="ccs">% do faturamento total</div><div style="height:220px;"><canvas id="c-exec-dept"></canvas></div></div>
       <div class="cc"><div class="cct">Agenda de vencimentos</div><div class="ccs">Duplicatas em aberto por mês de vencimento (rotina 717)</div><div style="height:220px;"><canvas id="c-exec-agenda"></canvas></div></div>
@@ -1900,10 +1897,10 @@ textarea.proc-inp{resize:vertical;min-height:44px}
      JS principal · dividido em 5 arquivos pela auditoria v4.6
      Ordem importa: core declara as globais; render-* dependem de core.
      ════════════════════════════════════════════════════════════════════════════ -->
-<script src="js/core.js?v=4.68"></script>
-<script src="js/render-compras.js?v=4.68"></script>
-<script src="js/render-vendas.js?v=4.68"></script>
-<script src="js/render-outros.js?v=4.68"></script>
-<script src="js/admin.js?v=4.68"></script>
+<script src="js/core.js?v=4.69"></script>
+<script src="js/render-compras.js?v=4.69"></script>
+<script src="js/render-vendas.js?v=4.69"></script>
+<script src="js/render-outros.js?v=4.69"></script>
+<script src="js/admin.js?v=4.69"></script>
 </body>
 </html>

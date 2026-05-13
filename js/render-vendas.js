@@ -1872,6 +1872,78 @@ function renderConsolidadoView(){
 // EXECUTIVO · versão NOVA (consumindo JSONs modulares V, C, E, F)
 // Sub-etapa 4b · 30/abr/2026
 // ================================================================
+
+// v4.69: Quadro de metas do mês atual no Sumário Executivo.
+// Renderiza no container #exec-metas-wrap criado em index.html.
+// Mostra apenas lojas que têm meta lançada no mês corrente. Atualiza
+// async após o load das metas do Firestore/seed.
+function _execRenderQuadroMetas(){
+  const wrap = document.getElementById('exec-metas-wrap');
+  if(!wrap) return;
+  // YM atual: usar data corrente. Como nem todo mês corrente tem dados de
+  // venda carregados, mostramos mesmo assim — realizado fica 0.
+  function _ymHoje(){
+    const d = new Date();
+    const yy = d.getFullYear();
+    const mm = String(d.getMonth()+1).padStart(2,'0');
+    return yy+'-'+mm;
+  }
+  function _render(){
+    const ymAtual = _ymHoje();
+    const lojasAll = (_metasDados && _metasDados.lojas) ? Object.keys(_metasDados.lojas) : [];
+    const linhas = lojasAll
+      .map(function(lj){
+        const meta = (typeof _metasGetMeta === 'function') ? _metasGetMeta(lj, ymAtual) : 0;
+        const real = (typeof _metasGetRealizado === 'function') ? _metasGetRealizado(lj, ymAtual) : 0;
+        return {loja:lj, meta:meta, real:real};
+      })
+      .filter(function(r){return r.meta > 0;})
+      .sort(function(a,b){return b.meta - a.meta;});
+
+    if(!linhas.length){
+      wrap.innerHTML = '<div class="cc"><div class="cct">Metas do mês atual</div>'
+        + '<div class="ccs" style="color:var(--text-muted);">Nenhuma loja tem meta lançada para '+_ymToLabel(ymAtual)+'. Acesse <em>Vendas › Metas</em> para cadastrar.</div></div>';
+      return;
+    }
+
+    const totMeta = linhas.reduce(function(s,r){return s+r.meta;}, 0);
+    const totReal = linhas.reduce(function(s,r){return s+r.real;}, 0);
+    const totPct  = totMeta > 0 ? totReal/totMeta*100 : 0;
+
+    let html = '<div class="cc">'
+      + '<div class="cct">Metas · '+_ymToLabel(ymAtual)+'</div>'
+      + '<div class="ccs">Lojas com meta lançada para o mês atual · realizado segue a base ativa</div>'
+      + '<div class="tscroll" style="margin-top:8px;"><table class="t">'
+      +   '<thead><tr><th class="L">Loja</th><th>Meta</th><th>Realizado</th><th>% da meta</th></tr></thead>'
+      +   '<tbody>';
+    linhas.forEach(function(r){
+      const pct = r.meta>0 ? r.real/r.meta*100 : 0;
+      const cls = pct>=100 ? 'val-pos' : pct>=95 ? '' : 'val-neg';
+      html += '<tr>'
+           +   '<td class="L"><strong>'+esc(r.loja)+'</strong></td>'
+           +   '<td>'+fK(r.meta)+'</td>'
+           +   '<td class="val-strong">'+fK(r.real)+'</td>'
+           +   '<td class="'+cls+'">'+fP(pct,1)+'</td>'
+           + '</tr>';
+    });
+    const clsTot = totPct>=100 ? 'val-pos' : totPct>=95 ? '' : 'val-neg';
+    html += '<tr style="background:var(--surface-2);font-weight:700;border-top:2px solid var(--border-strong);">'
+         +   '<td class="L">Total</td>'
+         +   '<td>'+fK(totMeta)+'</td>'
+         +   '<td class="val-strong">'+fK(totReal)+'</td>'
+         +   '<td class="'+clsTot+'">'+fP(totPct,1)+'</td>'
+         + '</tr>';
+    html += '</tbody></table></div></div>';
+    wrap.innerHTML = html;
+  }
+
+  // Render síncrono inicial (com o que estiver carregado) + refresh após load
+  _render();
+  if(typeof _metasCarregarFirestore === 'function'){
+    _metasCarregarFirestore().then(_render).catch(function(){});
+  }
+}
+
 function renderExecutivo(){
   // Se estamos no consolidado legado, redirecionar para visao especial
   if(typeof isConsolidado === 'function' && isConsolidado()){
@@ -1900,6 +1972,14 @@ function renderExecutivo(){
     return;
   }
 
+  // Conjunto de meses ativos no filtro (activePers em core.js). Quando o
+  // usuário desliga meses na filter-bar, aqui descartamos as linhas do mês
+  // pra que cards/charts reflitam o filtro. Se activePers não existir
+  // (modo legado), aceita tudo.
+  const _filtraYm = (typeof activePers !== 'undefined' && activePers && activePers.has)
+    ? function(ym){return activePers.has(ym);}
+    : function(){return true;};
+
   // ─── helpers internos ─────────────────────────────────────────────
   // Mensal de vendas: V.mensal é [{loja, ym, fat_liq, lucro, marg, qt, nfs}, ...]
   // Agregamos por ym (somando ATP-V + ATP-A), descontando supervisores ignorados
@@ -1909,6 +1989,7 @@ function renderExecutivo(){
     const m = new Map();
     V.mensal.forEach(function(rRaw){
       const r = aplicaFiltroSupVMensalRow(rRaw, 'executivo');
+      if(!_filtraYm(r.ym)) return;
       if(!m.has(r.ym)) m.set(r.ym, {ym:r.ym, fat_liq:0, lucro:0, qt:0, nfs:0});
       const x = m.get(r.ym);
       x.fat_liq += r.fat_liq||0;
@@ -1924,6 +2005,7 @@ function renderExecutivo(){
     if(!C || !C.mensal) return [];
     const m = new Map();
     C.mensal.forEach(function(r){
+      if(!_filtraYm(r.ym)) return;
       if(!m.has(r.ym)) m.set(r.ym, {ym:r.ym, valor:0, nfs:0});
       const x = m.get(r.ym);
       x.valor += r.valor||0;
@@ -1935,7 +2017,8 @@ function renderExecutivo(){
   // Pagamentos mensais: F.pago.mensal é [{ym, valor, titulos, ...}]
   function _pagosMensal(){
     if(!F || !F.pago || !F.pago.mensal) return [];
-    return F.pago.mensal.slice().sort(function(a,b){return a.ym<b.ym?-1:1;});
+    return F.pago.mensal.filter(function(r){return _filtraYm(r.ym);})
+      .slice().sort(function(a,b){return a.ym<b.ym?-1:1;});
   }
 
   // Mês mais recente (do conjunto de vendas)
@@ -2022,56 +2105,9 @@ function renderExecutivo(){
     {l:'NFs de entrada',      v:fI(totalNfs),     s:fI(totalForns)+' fornecedores'},
   ]);
 
-  // Adiciona botões de pin nos KPIs principais (após render)
-  if(typeof _pinRegistrar === 'function'){
-    // Captura valores no fechamento pra render standalone
-    const _capt = {totalFat:totalFat, totalLucro:totalLucro, margem:margem, totalCompras:totalCompras, cobPct:cobPct, valorVencidos:valorVencidos, nVencidos:nVencidos, totalAberto:totalAberto, estoqueValorPV:estoqueValorPV, dataEstoque:dataEstoque, labelPeriodo:labelPeriodo};
+  // Quadro Metas do mês atual (lojas com meta lançada para o YM corrente)
+  _execRenderQuadroMetas();
 
-    _pinRegistrar('kpi-faturamento-liquido', 'Faturamento líquido', 'executivo', function(c){
-      c.innerHTML = '<div style="font-size:24px;font-weight:800;color:var(--text);">'+fK(_capt.totalFat)+'</div>'
-        + '<div style="font-size:11px;color:var(--text-muted);margin-top:4px;">'+esc(_capt.labelPeriodo)+'</div>';
-    });
-    _pinRegistrar('kpi-lucro-bruto', 'Lucro bruto · margem', 'executivo', function(c){
-      c.innerHTML = '<div style="font-size:24px;font-weight:800;color:var(--text);">'+fK(_capt.totalLucro)+'</div>'
-        + '<div style="font-size:11px;color:var(--text-muted);margin-top:4px;">Margem '+fP(_capt.margem)+'</div>';
-    });
-    _pinRegistrar('kpi-vencidos', 'Vencidos · total', 'executivo', function(c){
-      c.innerHTML = '<div style="font-size:24px;font-weight:800;color:#dc2626;">'+fK(_capt.valorVencidos)+'</div>'
-        + '<div style="font-size:11px;color:var(--text-muted);margin-top:4px;">'+fI(_capt.nVencidos)+' títulos vencidos</div>';
-    });
-    _pinRegistrar('kpi-aberto', 'Total a pagar', 'executivo', function(c){
-      c.innerHTML = '<div style="font-size:24px;font-weight:800;color:#b45309;">'+fK(_capt.totalAberto)+'</div>'
-        + '<div style="font-size:11px;color:var(--text-muted);margin-top:4px;">Em aberto</div>';
-    });
-    _pinRegistrar('kpi-estoque-pv', 'Estoque (preço de venda)', 'executivo', function(c){
-      c.innerHTML = '<div style="font-size:24px;font-weight:800;color:var(--text);">'+(_capt.estoqueValorPV>0?fK(_capt.estoqueValorPV):'—')+'</div>'
-        + '<div style="font-size:11px;color:var(--text-muted);margin-top:4px;">'+(_capt.estoqueValorPV>0?'Retrato '+esc(_capt.dataEstoque):'sem dados')+'</div>';
-    });
-
-    // Adiciona botões de pin sobrepostos em cada KPI do grid
-    setTimeout(function(){
-      const kg = document.getElementById('kg-exec');
-      if(!kg) return;
-      const mapeamento = [
-        {sel: 0, id: 'kpi-faturamento-liquido'},
-        {sel: 1, id: 'kpi-lucro-bruto'},
-        {sel: 3, id: 'kpi-vencidos'},
-        {sel: 4, id: 'kpi-aberto'},
-        {sel: 5, id: 'kpi-estoque-pv'}
-      ];
-      const cards = kg.querySelectorAll('.kc');
-      mapeamento.forEach(function(m){
-        const card = cards[m.sel];
-        if(!card || card.querySelector('.pin-btn')) return;
-        card.style.position = 'relative';
-        const btn = document.createElement('div');
-        btn.style.cssText = 'position:absolute;top:6px;right:6px;';
-        btn.innerHTML = _pinBotao(m.id);
-        card.appendChild(btn);
-      });
-      _pinAtualizarBotoes();
-    }, 50);
-  }
 
   // ─── Charts ───────────────────────────────────────────────────────
   const lbl = ymsExibicao.map(_ymToLabel);
@@ -2098,18 +2134,6 @@ function renderExecutivo(){
     plugins:{legend:{position:'bottom', labels:{padding:10, usePointStyle:true, boxWidth:8}},
              tooltip:{callbacks:{label:function(ctx){return ctx.dataset.label+': '+fB(ctx.raw);}}}},
     scales:{y:{beginAtZero:true, ticks:{callback:function(v){return fAbbr(v);}}}, x:{grid:{display:false}}}}});
-
-  // Chart 2: Margem mensal
-  const dMargem = ymsExibicao.map(function(ym){
-    const r = mensalVno.find(function(x){return x.ym === ym;});
-    return r && r.fat_liq>0 ? r.lucro/r.fat_liq*100 : 0;
-  });
-
-  mkC('c-exec-marg', {type:'line', data:{labels:lbl, datasets:[
-    {label:'Margem %', data:dMargem, borderColor:_PAL.hl, backgroundColor:'rgba(245,134,52,.15)', fill:true, tension:.4, pointRadius:5, pointBackgroundColor:_PAL.hl}
-  ]}, options:{responsive:true, maintainAspectRatio:false,
-    plugins:{legend:{display:false}, tooltip:{callbacks:{label:function(ctx){return fP(ctx.raw);}}}},
-    scales:{y:{beginAtZero:false, ticks:{callback:function(v){return fP(v);}}}, x:{grid:{display:false}}}}});
 
   // Chart 3: Participação por departamento (vendas)
   // Agregar vendas.deptos por nome de depto

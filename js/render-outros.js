@@ -299,27 +299,6 @@ function renderRecebimentos(){
     {l:'Concentração top 5',              v:fP(conc.top_5_pct||0), s:'soma top 5 clientes', cls:'hl'},
   ]);
 
-  // Pin: total atrasado e inadimplentes
-  if(typeof _pinRegistrar === 'function'){
-    const _captR = {total:resumo.total_atrasado||0, parcelas:resumo.parcelas||0, inad:resumo.clientes_inadimplentes||0, nfs:resumo.nfs||0};
-    _pinRegistrar('kpi-recebimentos-atrasado', 'Recebimentos · total atrasado', 'recebimentos', function(c){
-      c.innerHTML = '<div style="font-size:24px;font-weight:800;color:#dc2626;">'+fK(_captR.total)+'</div>'
-        + '<div style="font-size:11px;color:var(--text-muted);margin-top:4px;">'+fI(_captR.parcelas)+' parcelas · '+fI(_captR.inad)+' clientes</div>';
-    });
-    setTimeout(function(){
-      const kg = document.getElementById('kg-rec');
-      if(!kg) return;
-      const card = kg.querySelectorAll('.kc')[0];
-      if(!card || card.querySelector('.pin-btn')) return;
-      card.style.position = 'relative';
-      const btn = document.createElement('div');
-      btn.style.cssText = 'position:absolute;top:6px;right:6px;';
-      btn.innerHTML = _pinBotao('kpi-recebimentos-atrasado');
-      card.appendChild(btn);
-      _pinAtualizarBotoes();
-    }, 50);
-  }
-
   // ─── Chart aging (doughnut + valor) ───
   const agingData = FAIXAS_ORD.map(function(f){return (aging[f]||{}).valor || 0;});
   const agingTotal = agingData.reduce(function(s,v){return s+v;}, 0);
@@ -2961,8 +2940,6 @@ function renderCV(){
     {l:'Em aberto',v:fK(ta),s:'A pagar',cls:ta>0?'hl':''},
     {l:'Dev. cliente',v:fK(tdvc),s:fP(tv>0?tdvc/tv*100:0)+' do fat.',cls:tv>0&&tdvc/tv>0.01?'dn':''},
     {l:'Dev. fornecedor',v:fK(tdvf),s:'Subtraído das compras',cls:''},
-    {l:'Financiado forn.',v:fK(tc_liq-tp),s:'Compras menos pago no período',cls:''},
-    {l:'Lucro bruto',v:fK(tl),s:'Resultado operacional',cls:tl>0?'up':'dn'},
   ]);
 
   const comLiqs=evo.map(e=>comLiq(e.com,e.dvf));

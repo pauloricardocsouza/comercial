@@ -4,6 +4,39 @@ Lista das melhorias do sistema de BI da R2 Soluções para o Grupo Pinto Cerquei
 
 ---
 
+## v4.69-comercial · 13/mai/2026
+
+**Limpeza Home + Sumário Executivo + Compras × Vendas + Estoque + Excesso + Financeiro**
+
+1. **Home: pin removido.** Toda a infraestrutura de pins (Firestore `users/<uid>/pins`, drag-and-drop, snapshots, botões 📍/📌, `_pinRegistrar`/`_pinToggle`/`_pinRenderHome`) foi excluída. A home volta a ser estática.
+
+2. **Sumário Executivo:**
+   - Cards e gráficos agora respeitam o filtro de período (`activePers`). Antes os totais ignoravam o filtro de mês.
+   - Gráfico "Margem bruta por mês" removido.
+   - **Novo quadro "Metas do mês atual":** linhas = lojas com meta cadastrada para o YM corrente, colunas = Meta · Realizado · % atingido + linha total. Verde quando ≥ 100%, amarelo entre 95–100%, vermelho < 95%.
+
+3. **Compras × Vendas:**
+   - Filtro de Departamento removido (esta página apenas — outras páginas mantém).
+   - Cards "Financiado forn." e "Lucro bruto" excluídos do header.
+
+4. **Estoque:**
+   - Texto "candidatos a desova" removido do KPI.
+   - Tabela "Estoque por departamento" agora rola horizontalmente em mobile (scroll touch habilitado).
+   - **Novo quadro "Vendas × Departamento"** com drilldown depto → seção → categoria. Colunas: Média venda 3 meses (R$) · Estoque (preço venda) · Dias de estoque. Aproxima fat mensal por SKU com `avgPrice × qt_ym` cruzando `V.vendas_por_sku × E.produtos`.
+
+5. **Navegação:** botão "Voltar" flutuante agora respeita `env(safe-area-inset-bottom)` em mobile (escapa da barra do Safari/Chrome iOS) e usa background sólido + z-index máximo pra ficar visível sobre qualquer conteúdo.
+
+6. **Excesso de estoque:** botões "XLSX" e "PDF" em cada quadro (Excesso por fornecedor · Top 50 e Top 100 SKUs). PDF gerado via jsPDF + autotable; XLSX via SheetJS.
+
+7. **Financeiro:**
+   - Removidos: gráfico "Agenda · próximos 30 dias" e tabela "Top 15 · contas de despesa".
+   - **Novo calendário de pagamentos** da conta 10001 (COMPRA DE MERCADORIAS). Grid mensal navegável (← / → / Hoje), heatmap por valor diário, sábado/domingo somam na segunda-feira. Default: mês atual.
+   - **Novo quadro 2026** das contas 99912 (Multa e Juros) + 99907 (Encargos Conta Garantida). Meses × contas + totais. Como o JSON atual não traz quebra mensal por conta individual, o quadro renderiza zerado com aviso até o ETL prover `pagas.por_conta_mensal[]` ou `pagas.titulos[]` (ver `INTEGRACAO_ETL_v4.69.md`).
+
+8. **Dependências:** jsPDF 2.5.1 + jsPDF-autotable 3.8.2 adicionados via CDN.
+
+---
+
 ## v4.64 · 06/mai/2026
 
 **Evolução Mensal: cache removido + logging defensivo pra investigar bug recorrente**
