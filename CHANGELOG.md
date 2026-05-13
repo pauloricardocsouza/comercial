@@ -4,6 +4,16 @@ Lista das melhorias do sistema de BI da R2 Soluções para o Grupo Pinto Cerquei
 
 ---
 
+## v4.73-comercial · 13/mai/2026
+
+**Calendário de pagamentos: heatmap azul + valores exatos**
+
+1. **Heatmap em tons de azul** (no lugar do laranja). Usa o navy da paleta (`#2E476F`, `_PAL.ac`) com alpha de 0.15 a 0.90 conforme o valor do dia. Texto vira branco quando o fundo fica mais escuro (intensidade > 0.45).
+
+2. **Valores sem abreviação.** Antes mostrava `R$254.9k`, `R$491.0k` (fAbbr). Agora mostra `R$ 254.901`, `R$ 491.000` no quadradinho (fK — integer com R$). O **Total no mês** e o **tooltip** (hover) mostram o valor completo com centavos (fB). `white-space:nowrap` + `text-overflow:ellipsis` evitam quebra em telas estreitas.
+
+---
+
 ## v4.72-comercial · 13/mai/2026
 
 **Metas oficiais carregadas (xlsx) + loader com versão de seed**

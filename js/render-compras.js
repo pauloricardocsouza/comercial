@@ -2770,17 +2770,17 @@ function _renderCalendarioPagamentos(titulosAbertos){
     function _bg(v){
       const i = _intensidade(v);
       if(i === 0) return 'var(--surface-2)';
-      // gradiente: laranja claro → laranja forte
-      const alpha = 0.15 + i * 0.65;
-      return 'rgba(245,134,52,'+alpha.toFixed(2)+')';
+      // v4.73: gradiente azul claro → azul navy (cor _PAL.ac = #2E476F = 46,71,111)
+      const alpha = 0.15 + i * 0.75;
+      return 'rgba(46,71,111,'+alpha.toFixed(2)+')';
     }
 
     const diasSemanaLbl = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
     const hojeStr = (new Date()).toISOString().substring(0,10);
 
-    let h = '<div style="display:flex;justify-content:space-between;align-items:center;font-size:11px;color:var(--text-muted);margin-bottom:6px;">'
-         +    '<span>Total no mês: <strong style="color:var(--text);">'+fK(totalMes)+'</strong></span>'
-         +    '<span>Sáb/Dom somam na seg seguinte · cor proporcional ao valor do dia</span>'
+    let h = '<div style="display:flex;justify-content:space-between;align-items:center;font-size:11px;color:var(--text-muted);margin-bottom:6px;flex-wrap:wrap;gap:6px;">'
+         +    '<span>Total no mês: <strong style="color:var(--text);">'+fB(totalMes,2)+'</strong></span>'
+         +    '<span>Sáb/Dom somam na seg seguinte · azul mais escuro = dia com maior valor</span>'
          +  '</div>';
     h += '<div style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px;">';
     diasSemanaLbl.forEach(function(s){
@@ -2798,13 +2798,14 @@ function _renderCalendarioPagamentos(titulosAbertos){
       const ehHoje = (d.key === hojeStr);
       const bg = ehFds ? 'repeating-linear-gradient(45deg,var(--surface-2),var(--surface-2) 6px,rgba(0,0,0,.04) 6px,rgba(0,0,0,.04) 12px)' : _bg(d.valor);
       const borda = ehHoje ? '2px solid var(--accent)' : '1px solid var(--border)';
-      const corTxt = d.valor > 0 && _intensidade(d.valor) > 0.55 ? '#1a1a1a' : 'var(--text)';
-      h += '<div title="'+esc(d.key)+(d.valor>0?(' · '+fK(d.valor)+' · '+fI(d.titulos)+' títulos'):' · sem títulos')+(ehFds?' · fim de semana':'')+'" '
-         + 'style="aspect-ratio:2.2/1;min-height:48px;max-height:80px;background:'+bg+';border:'+borda+';border-radius:5px;'
+      // v4.73: texto branco quando fundo azul fica escuro
+      const corTxt = d.valor > 0 && _intensidade(d.valor) > 0.45 ? '#fff' : 'var(--text)';
+      h += '<div title="'+esc(d.key)+(d.valor>0?(' · '+fB(d.valor,2)+' · '+fI(d.titulos)+' títulos'):' · sem títulos')+(ehFds?' · fim de semana':'')+'" '
+         + 'style="aspect-ratio:2.2/1;min-height:50px;max-height:84px;background:'+bg+';border:'+borda+';border-radius:5px;'
          + 'padding:4px 6px;display:flex;flex-direction:column;justify-content:space-between;'
          + 'font-size:11px;color:'+corTxt+';overflow:hidden;">'
          +   '<div style="font-weight:700;font-size:12px;">'+d.d+'</div>'
-         +   (d.valor > 0 ? '<div style="font-size:10.5px;font-weight:600;line-height:1.1;text-align:right;">'+fAbbr(d.valor)+'</div>' : (ehFds?'<div style="font-size:9px;color:var(--text-muted);">—</div>':''))
+         +   (d.valor > 0 ? '<div style="font-size:10.5px;font-weight:700;line-height:1.1;text-align:right;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+fK(d.valor)+'</div>' : (ehFds?'<div style="font-size:9px;color:var(--text-muted);">—</div>':''))
          + '</div>';
     });
     h += '</div>';
