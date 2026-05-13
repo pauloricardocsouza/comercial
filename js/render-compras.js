@@ -109,14 +109,22 @@ function renderEstoqueNovo(){
   // Estrutura: agregar por (depto.cod) → (secao.cod) → (categoria.cod)
   // a partir de E.produtos. Mostra Estoque a custo + Estoque a preço de venda.
   // O usuário expande um depto pra ver suas seções e cada seção pra ver categorias.
-  html += '<div class="cc"><div class="cct">Estoque por departamento</div>'
-       +    '<div class="ccs">Clique (ou toque) no departamento para ver seções, depois categorias. Valor em <strong>custo</strong> e em <strong>preço de venda</strong>.</div>'
+  html += '<div class="cc">'
+       +    '<div class="cch">'
+       +      '<div><div class="cct">Estoque por departamento</div>'
+       +        '<div class="ccs" id="est-hier-bc">Clique em um departamento para ver as seções, depois categorias. Valor em <strong>custo</strong> e em <strong>preço de venda</strong>.</div></div>'
+       +      '<button id="est-hier-back" style="display:none;padding:6px 14px;border-radius:6px;background:var(--accent-bg);color:var(--accent-text);border:none;font-weight:700;cursor:pointer;font-size:12px;">← Voltar</button>'
+       +    '</div>'
        +    '<div class="tscroll" style="margin-top:10px;-webkit-overflow-scrolling:touch;"><div id="est-hier-table"></div></div>'
        + '</div>';
 
-  // Quadro Vendas × Departamento (v4.69)
-  html += '<div class="cc"><div class="cct">Vendas × Departamento</div>'
-       +    '<div class="ccs">Clique no departamento para ver seções, depois categorias. <strong>Média de venda</strong> = média mensal dos últimos 3 meses fechados, em R$ a preço de venda. <strong>Valor estoque</strong> em preço de venda. <strong>Dias de estoque</strong> = (valor estoque ÷ média mensal) × 30.</div>'
+  // Quadro Vendas × Departamento (v4.69, drill-down em v4.71)
+  html += '<div class="cc">'
+       +    '<div class="cch">'
+       +      '<div><div class="cct">Vendas × Departamento</div>'
+       +        '<div class="ccs" id="est-vd-bc">Clique em um departamento para ver as seções, depois categorias. <strong>Média de venda</strong> = média mensal dos últimos 3 meses fechados em R$. <strong>Estoque</strong> em preço de venda. <strong>Dias de estoque</strong> = (estoque ÷ média) × 30.</div></div>'
+       +      '<button id="est-vd-back" style="display:none;padding:6px 14px;border-radius:6px;background:var(--accent-bg);color:var(--accent-text);border:none;font-weight:700;cursor:pointer;font-size:12px;">← Voltar</button>'
+       +    '</div>'
        +    '<div class="tscroll" style="margin-top:10px;-webkit-overflow-scrolling:touch;"><div id="est-vd-table"></div></div>'
        + '</div>';
 
@@ -175,9 +183,9 @@ function renderEstoqueNovo(){
       plugins:{legend:{position:'right',labels:{padding:8,usePointStyle:true,boxWidth:8,font:{size:10}}},
                tooltip:{callbacks:{label:function(ctx){return ctx.label+': '+fK(ctx.raw)+(teCusto>0?' ('+fP(ctx.raw/teCusto*100)+')':'');}}}}}});
 
-  // ─── Tabela hierárquica de estoque (depto → seção → categoria) ───
-  // Pré-calcula a hierarquia uma vez. Estado de expansão fica em window._estHierExp.
-  if(!window._estHierExp) window._estHierExp = {deptos:new Set(), secoes:new Set()};
+  // ─── Tabela "Estoque por departamento" (drill-down · v4.71) ────────
+  // Modelo igual ao Departamentos: nível depto → seção → categoria, com
+  // botão "← Voltar". Click na linha desce um nível.
   const _hier = (function(){
     const deptos = new Map();
     (E.produtos||[]).forEach(function(p){
@@ -207,76 +215,87 @@ function renderEstoqueNovo(){
     return Array.from(deptos.values()).sort(function(a,b){return b.vl_custo-a.vl_custo;});
   })();
 
+  if(!window._estHierState) window._estHierState = {nivel:'depto', path:{}};
+  // Reset ao re-entrar na página
+  window._estHierState = {nivel:'depto', path:{}};
+
   function _renderEstHier(){
-    const exp = window._estHierExp;
+    const st = window._estHierState;
+    let items = [], bcTxt = '';
+    if(st.nivel === 'depto'){
+      items = _hier;
+      bcTxt = 'Clique em um departamento para ver as seções';
+    } else if(st.nivel === 'secao'){
+      const d = _hier.find(function(x){return x.cod === st.path.deptoCod;});
+      items = d ? Array.from(d.secoes.values()).sort(function(a,b){return b.vl_custo-a.vl_custo;}) : [];
+      bcTxt = 'Seções de: '+esc(st.path.deptoNome||'?');
+    } else {
+      const d = _hier.find(function(x){return x.cod === st.path.deptoCod;});
+      const s = d ? d.secoes.get(st.path.secaoCod) : null;
+      items = s ? Array.from(s.cats.values()).sort(function(a,b){return b.vl_custo-a.vl_custo;}) : [];
+      bcTxt = 'Categorias de: '+esc(st.path.secaoNome||'?')+' · '+esc(st.path.deptoNome||'?');
+    }
+    const bcEl = document.getElementById('est-hier-bc');
+    if(bcEl) bcEl.innerHTML = bcTxt;
+    const back = document.getElementById('est-hier-back');
+    if(back) back.style.display = (st.nivel === 'depto') ? 'none' : 'inline-block';
+
     let h = '<table class="t" style="font-size:12px;"><thead><tr>'
-          + '<th class="L">Departamento / Seção / Categoria</th>'
+          + '<th class="L">'+(st.nivel==='depto'?'Departamento':st.nivel==='secao'?'Seção':'Categoria')+'</th>'
           + '<th>SKUs</th>'
           + '<th>Estoque (custo)</th>'
           + '<th>Estoque (preço venda)</th>'
           + '<th>Markup</th>'
           + '</tr></thead><tbody>';
-    _hier.forEach(function(d){
-      const dExp = exp.deptos.has(d.cod);
-      const dMk = d.vl_custo>0 ? ((d.vl_preco-d.vl_custo)/d.vl_custo*100) : 0;
-      h += '<tr style="cursor:pointer;background:var(--surface-2);font-weight:600;" data-est-depto="'+esc(d.cod)+'">'
-        +    '<td class="L"><span style="display:inline-block;width:14px;text-align:center;color:var(--accent);">'+(dExp?'▼':'▶')+'</span> '+esc(d.nome)+'</td>'
-        +    '<td>'+fI(d.skus)+'</td>'
-        +    '<td class="val-strong">'+fK(d.vl_custo)+'</td>'
-        +    '<td>'+fK(d.vl_preco)+'</td>'
-        +    '<td>'+fP(dMk)+'</td>'
-        +  '</tr>';
-      if(dExp){
-        const secs = Array.from(d.secoes.values()).sort(function(a,b){return b.vl_custo-a.vl_custo;});
-        secs.forEach(function(s){
-          const sKey = d.cod+'/'+s.cod;
-          const sExp = exp.secoes.has(sKey);
-          const sMk = s.vl_custo>0 ? ((s.vl_preco-s.vl_custo)/s.vl_custo*100) : 0;
-          h += '<tr style="cursor:pointer;" data-est-secao="'+esc(sKey)+'">'
-            +    '<td class="L" style="padding-left:32px;"><span style="display:inline-block;width:14px;text-align:center;color:var(--text-muted);">'+(sExp?'▼':'▶')+'</span> '+esc(s.nome)+'</td>'
-            +    '<td>'+fI(s.skus)+'</td>'
-            +    '<td>'+fK(s.vl_custo)+'</td>'
-            +    '<td>'+fK(s.vl_preco)+'</td>'
-            +    '<td>'+fP(sMk)+'</td>'
-            +  '</tr>';
-          if(sExp){
-            const cats = Array.from(s.cats.values()).sort(function(a,b){return b.vl_custo-a.vl_custo;});
-            cats.forEach(function(c){
-              const cMk = c.vl_custo>0 ? ((c.vl_preco-c.vl_custo)/c.vl_custo*100) : 0;
-              h += '<tr style="color:var(--text-muted);">'
-                +    '<td class="L" style="padding-left:60px;font-size:11.5px;">└ '+esc(c.nome)+'</td>'
-                +    '<td>'+fI(c.skus)+'</td>'
-                +    '<td>'+fK(c.vl_custo)+'</td>'
-                +    '<td>'+fK(c.vl_preco)+'</td>'
-                +    '<td>'+fP(cMk)+'</td>'
-                +  '</tr>';
-            });
-          }
-        });
-      }
-    });
+    if(!items.length){
+      h += '<tr><td colspan="5" style="text-align:center;color:var(--text-muted);padding:14px;">Nenhum item neste nível.</td></tr>';
+    } else {
+      items.forEach(function(it){
+        const mk = it.vl_custo>0 ? ((it.vl_preco-it.vl_custo)/it.vl_custo*100) : 0;
+        const clickable = (st.nivel !== 'categoria');
+        const cursor = clickable ? 'cursor:pointer;' : '';
+        const titleAttr = clickable ? ' title="Clique para ver '+(st.nivel==='depto'?'seções':'categorias')+'"' : '';
+        h += '<tr style="'+cursor+'" data-cod="'+esc(it.cod)+'" data-nome="'+escAttr(it.nome||'')+'"'+titleAttr+'>'
+          +    '<td class="L"><strong>'+esc(it.nome||'')+'</strong>'+(clickable?' <span style="color:var(--text-muted);font-size:10px;">→</span>':'')+'</td>'
+          +    '<td>'+fI(it.skus)+'</td>'
+          +    '<td class="val-strong">'+fK(it.vl_custo)+'</td>'
+          +    '<td>'+fK(it.vl_preco)+'</td>'
+          +    '<td>'+fP(mk)+'</td>'
+          +  '</tr>';
+      });
+    }
     h += '</tbody></table>';
     const cont = document.getElementById('est-hier-table');
-    if(cont){
-      cont.innerHTML = h;
-      cont.querySelectorAll('[data-est-depto]').forEach(function(tr){
+    if(!cont) return;
+    cont.innerHTML = h;
+    if(st.nivel !== 'categoria'){
+      cont.querySelectorAll('tr[data-cod]').forEach(function(tr){
         tr.addEventListener('click', function(){
-          const k = tr.getAttribute('data-est-depto');
-          if(exp.deptos.has(k)) exp.deptos.delete(k); else exp.deptos.add(k);
-          _renderEstHier();
-        });
-      });
-      cont.querySelectorAll('[data-est-secao]').forEach(function(tr){
-        tr.addEventListener('click', function(ev){
-          ev.stopPropagation();
-          const k = tr.getAttribute('data-est-secao');
-          if(exp.secoes.has(k)) exp.secoes.delete(k); else exp.secoes.add(k);
+          const cod = tr.dataset.cod;
+          const nm  = tr.dataset.nome;
+          if(st.nivel === 'depto'){
+            st.path = {deptoCod:cod, deptoNome:nm};
+            st.nivel = 'secao';
+          } else if(st.nivel === 'secao'){
+            st.path.secaoCod = cod;
+            st.path.secaoNome = nm;
+            st.nivel = 'categoria';
+          }
           _renderEstHier();
         });
       });
     }
   }
   _renderEstHier();
+  const backHier = document.getElementById('est-hier-back');
+  if(backHier){
+    backHier.addEventListener('click', function(){
+      const st = window._estHierState;
+      if(st.nivel === 'categoria'){ st.nivel = 'secao'; st.path.secaoCod = null; st.path.secaoNome = null; }
+      else if(st.nivel === 'secao'){ st.nivel = 'depto'; st.path = {}; }
+      _renderEstHier();
+    });
+  }
 
   // ─── v4.69: Quadro Vendas × Departamento ───────────────────────────
   // Mostra média de venda 3 meses (R$), valor estoque (preço venda) e dias
@@ -349,7 +368,8 @@ function renderEstoqueNovo(){
     });
     const deptosArr = Array.from(deptos.values()).sort(function(a,b){return b.vlEstoquePV - a.vlEstoquePV;});
 
-    if(!window._estVDExp) window._estVDExp = {deptos:new Set(), secoes:new Set()};
+    // v4.71: drill-down (igual Departamentos)
+    window._estVDState = {nivel:'depto', path:{}};
 
     function _dias(estoquePV, media){
       if(!media || media <= 0) return null;
@@ -363,72 +383,80 @@ function renderEstoqueNovo(){
     }
 
     function _render(){
-      const exp = window._estVDExp;
+      const st = window._estVDState;
+      let items = [], bcTxt = '';
+      if(st.nivel === 'depto'){
+        items = deptosArr;
+        bcTxt = 'Clique em um departamento para ver as seções';
+      } else if(st.nivel === 'secao'){
+        const d = deptosArr.find(function(x){return x.cod === st.path.deptoCod;});
+        items = d ? Array.from(d.secoes.values()).sort(function(a,b){return b.vlEstoquePV - a.vlEstoquePV;}) : [];
+        bcTxt = 'Seções de: '+esc(st.path.deptoNome||'?');
+      } else {
+        const d = deptosArr.find(function(x){return x.cod === st.path.deptoCod;});
+        const s = d ? d.secoes.get(st.path.secaoCod) : null;
+        items = s ? Array.from(s.cats.values()).sort(function(a,b){return b.vlEstoquePV - a.vlEstoquePV;}) : [];
+        bcTxt = 'Categorias de: '+esc(st.path.secaoNome||'?')+' · '+esc(st.path.deptoNome||'?');
+      }
+      const bcEl = document.getElementById('est-vd-bc');
+      if(bcEl) bcEl.innerHTML = bcTxt;
+      const back = document.getElementById('est-vd-back');
+      if(back) back.style.display = (st.nivel === 'depto') ? 'none' : 'inline-block';
+
       let h = '<table class="t" style="font-size:12px;"><thead><tr>'
-            + '<th class="L">Departamento / Seção / Categoria</th>'
+            + '<th class="L">'+(st.nivel==='depto'?'Departamento':st.nivel==='secao'?'Seção':'Categoria')+'</th>'
             + '<th>SKUs</th>'
             + '<th>Média venda (3 meses)</th>'
             + '<th>Estoque (preço venda)</th>'
             + '<th>Dias de estoque</th>'
             + '</tr></thead><tbody>';
-      deptosArr.forEach(function(d){
-        const dExp = exp.deptos.has(d.cod);
-        const dMedia = d.fat3 / 3;
-        h += '<tr style="cursor:pointer;background:var(--surface-2);font-weight:600;" data-vd-depto="'+esc(d.cod)+'">'
-          +    '<td class="L"><span style="display:inline-block;width:14px;text-align:center;color:var(--accent);">'+(dExp?'▼':'▶')+'</span> '+esc(d.nome)+'</td>'
-          +    '<td>'+fI(d.skus)+'</td>'
-          +    '<td>'+fK(dMedia)+'</td>'
-          +    '<td class="val-strong">'+fK(d.vlEstoquePV)+'</td>'
-          +    '<td>'+_diasFmt(_dias(d.vlEstoquePV, dMedia))+'</td>'
-          +  '</tr>';
-        if(dExp){
-          const secs = Array.from(d.secoes.values()).sort(function(a,b){return b.vlEstoquePV - a.vlEstoquePV;});
-          secs.forEach(function(s){
-            const sKey = d.cod+'/'+s.cod;
-            const sExp = exp.secoes.has(sKey);
-            const sMedia = s.fat3 / 3;
-            h += '<tr style="cursor:pointer;" data-vd-secao="'+esc(sKey)+'">'
-              +    '<td class="L" style="padding-left:32px;"><span style="display:inline-block;width:14px;text-align:center;color:var(--text-muted);">'+(sExp?'▼':'▶')+'</span> '+esc(s.nome)+'</td>'
-              +    '<td>'+fI(s.skus)+'</td>'
-              +    '<td>'+fK(sMedia)+'</td>'
-              +    '<td>'+fK(s.vlEstoquePV)+'</td>'
-              +    '<td>'+_diasFmt(_dias(s.vlEstoquePV, sMedia))+'</td>'
-              +  '</tr>';
-            if(sExp){
-              const cats = Array.from(s.cats.values()).sort(function(a,b){return b.vlEstoquePV - a.vlEstoquePV;});
-              cats.forEach(function(c){
-                const cMedia = c.fat3 / 3;
-                h += '<tr style="color:var(--text-muted);">'
-                  +    '<td class="L" style="padding-left:60px;font-size:11.5px;">└ '+esc(c.nome)+'</td>'
-                  +    '<td>'+fI(c.skus)+'</td>'
-                  +    '<td>'+fK(cMedia)+'</td>'
-                  +    '<td>'+fK(c.vlEstoquePV)+'</td>'
-                  +    '<td>'+_diasFmt(_dias(c.vlEstoquePV, cMedia))+'</td>'
-                  +  '</tr>';
-              });
-            }
-          });
-        }
-      });
+      if(!items.length){
+        h += '<tr><td colspan="5" style="text-align:center;color:var(--text-muted);padding:14px;">Nenhum item neste nível.</td></tr>';
+      } else {
+        items.forEach(function(it){
+          const media = (it.fat3 || 0) / 3;
+          const clickable = (st.nivel !== 'categoria');
+          const cursor = clickable ? 'cursor:pointer;' : '';
+          const titleAttr = clickable ? ' title="Clique para ver '+(st.nivel==='depto'?'seções':'categorias')+'"' : '';
+          h += '<tr style="'+cursor+'" data-cod="'+esc(it.cod)+'" data-nome="'+escAttr(it.nome||'')+'"'+titleAttr+'>'
+            +    '<td class="L"><strong>'+esc(it.nome||'')+'</strong>'+(clickable?' <span style="color:var(--text-muted);font-size:10px;">→</span>':'')+'</td>'
+            +    '<td>'+fI(it.skus)+'</td>'
+            +    '<td>'+fK(media)+'</td>'
+            +    '<td class="val-strong">'+fK(it.vlEstoquePV||0)+'</td>'
+            +    '<td>'+_diasFmt(_dias(it.vlEstoquePV||0, media))+'</td>'
+            +  '</tr>';
+        });
+      }
       h += '</tbody></table>';
       cont.innerHTML = h;
-      cont.querySelectorAll('[data-vd-depto]').forEach(function(tr){
-        tr.addEventListener('click', function(){
-          const k = tr.getAttribute('data-vd-depto');
-          if(exp.deptos.has(k)) exp.deptos.delete(k); else exp.deptos.add(k);
-          _render();
+      if(st.nivel !== 'categoria'){
+        cont.querySelectorAll('tr[data-cod]').forEach(function(tr){
+          tr.addEventListener('click', function(){
+            const cod = tr.dataset.cod;
+            const nm  = tr.dataset.nome;
+            if(st.nivel === 'depto'){
+              st.path = {deptoCod:cod, deptoNome:nm};
+              st.nivel = 'secao';
+            } else if(st.nivel === 'secao'){
+              st.path.secaoCod = cod;
+              st.path.secaoNome = nm;
+              st.nivel = 'categoria';
+            }
+            _render();
+          });
         });
-      });
-      cont.querySelectorAll('[data-vd-secao]').forEach(function(tr){
-        tr.addEventListener('click', function(ev){
-          ev.stopPropagation();
-          const k = tr.getAttribute('data-vd-secao');
-          if(exp.secoes.has(k)) exp.secoes.delete(k); else exp.secoes.add(k);
-          _render();
-        });
-      });
+      }
     }
     _render();
+    const backVD = document.getElementById('est-vd-back');
+    if(backVD){
+      backVD.addEventListener('click', function(){
+        const st = window._estVDState;
+        if(st.nivel === 'categoria'){ st.nivel = 'secao'; st.path.secaoCod = null; st.path.secaoNome = null; }
+        else if(st.nivel === 'secao'){ st.nivel = 'depto'; st.path = {}; }
+        _render();
+      });
+    }
   })();
 }
 
@@ -2495,7 +2523,7 @@ function renderFinanceiroNovo(){
        + '<strong>Pagas:</strong> '+esc(periodoIni)+' a '+esc(periodoFim)+' · '
        + '<strong>'+fI(resPago.titulos||0)+'</strong> títulos · '
        + '<strong>'+fI(resPago.fornecedores||0)+'</strong> fornecedores · '
-       + 'Retrato a pagar gerado em '+esc((meta.geradoEm||'').substring(0,10))
+       + 'Retrato a pagar gerado em '+esc(fDt((meta.geradoEm||'').substring(0,10)))
        + '</div>';
 
   // KPIs
@@ -2772,11 +2800,11 @@ function _renderCalendarioPagamentos(titulosAbertos){
       const borda = ehHoje ? '2px solid var(--accent)' : '1px solid var(--border)';
       const corTxt = d.valor > 0 && _intensidade(d.valor) > 0.55 ? '#1a1a1a' : 'var(--text)';
       h += '<div title="'+esc(d.key)+(d.valor>0?(' · '+fK(d.valor)+' · '+fI(d.titulos)+' títulos'):' · sem títulos')+(ehFds?' · fim de semana':'')+'" '
-         + 'style="aspect-ratio:1/1;background:'+bg+';border:'+borda+';border-radius:6px;'
+         + 'style="aspect-ratio:2.2/1;min-height:48px;max-height:80px;background:'+bg+';border:'+borda+';border-radius:5px;'
          + 'padding:4px 6px;display:flex;flex-direction:column;justify-content:space-between;'
          + 'font-size:11px;color:'+corTxt+';overflow:hidden;">'
          +   '<div style="font-weight:700;font-size:12px;">'+d.d+'</div>'
-         +   (d.valor > 0 ? '<div style="font-size:10px;font-weight:600;line-height:1.1;text-align:right;">'+fAbbr(d.valor)+'</div>' : (ehFds?'<div style="font-size:9px;color:var(--text-muted);">—</div>':''))
+         +   (d.valor > 0 ? '<div style="font-size:10.5px;font-weight:600;line-height:1.1;text-align:right;">'+fAbbr(d.valor)+'</div>' : (ehFds?'<div style="font-size:9px;color:var(--text-muted);">—</div>':''))
          + '</div>';
     });
     h += '</div>';
@@ -5407,7 +5435,7 @@ function _nfFechRender(){
            +    '<td style="font-weight:600;">'+fK(n.valor)+'</td>'
            +    '<td class="L"><span class="kg-tag '+stInfo.cls+'" style="font-size:10px;">'+stInfo.txt+'</span></td>'
            +    '<td class="L"><input type="text" class="nff-motivo" data-key="'+esc(n.key)+'" value="'+esc((ign && ign.motivo)||'')+'" placeholder="opcional" style="width:140px;padding:4px 6px;border:1px solid var(--border);border-radius:3px;font-size:11px;background:var(--surface);"></td>'
-           +    '<td class="L" style="font-size:10.5px;color:var(--text-muted);">'+(ign?esc(ign.marcado_por_email||ign.marcado_por_nome||'')+'<br><span style="font-size:9.5px;">'+esc((ign.marcado_em||'').substring(0,10))+'</span>':'-')+'</td>'
+           +    '<td class="L" style="font-size:10.5px;color:var(--text-muted);">'+(ign?esc(ign.marcado_por_email||ign.marcado_por_nome||'')+'<br><span style="font-size:9.5px;">'+esc(fDt((ign.marcado_em||'').substring(0,10)))+'</span>':'-')+'</td>'
            +  '</tr>';
     });
 

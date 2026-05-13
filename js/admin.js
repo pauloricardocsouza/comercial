@@ -280,7 +280,7 @@ function buildExtrato(p){
         : `<span class="tag grn" style="font-size:9px;padding:2px 6px;">Pago</span>`;
       html += `<div class="ext-linha ent">
         <div class="ext-tipo ent">⬇ ENTRADA</div>
-        <div class="ext-data">${fD(e.dt)}</div>
+        <div class="ext-data">${fDt(e.dt)}</div>
         <div class="ext-forn">${esc(e.fo||"")}</div>
         <div class="ext-nf"><span class="cod" style="font-size:9px;">${e.nf}</span></div>
         <div class="ext-qtd">${fN(e.q,2)} un</div>
@@ -295,7 +295,7 @@ function buildExtrato(p){
     devsOrd.forEach(function(d){
       html += `<div class="ext-linha dev">
         <div class="ext-tipo dev">⟲ DEV.FORN.</div>
-        <div class="ext-data">${fD(d.dt)}</div>
+        <div class="ext-data">${fDt(d.dt)}</div>
         <div class="ext-forn">${esc(d.fo||"")}</div>
         <div class="ext-nf"><span class="tag dnd" style="font-size:9px;padding:2px 5px;">${d.mo||'—'}</span></div>
         <div class="ext-qtd">${fN(d.q,2)} un</div>
@@ -389,7 +389,7 @@ window.openProd=function(cod){
       <div class="ph-meta">
         <div class="ph-mi"><div class="pml">Fornecedor</div><div class="pmv">${p.f||'—'}</div></div>
         <!-- Item 2: datas em DD/MM/AAAA -->
-        <div class="ph-mi"><div class="pml">Cadastrado</div><div class="pmv">${fD(p.dc)}</div></div>
+        <div class="ph-mi"><div class="pml">Cadastrado</div><div class="pmv">${fDt(p.dc)}</div></div>
         <div class="ph-mi"><div class="pml">P.venda cad.</div><div class="pmv">${p.ep>0?fB(p.ep):'—'}</div></div>
         <div class="ph-mi"><div class="pml">Custo atual</div><div class="pmv">${p.ec>0?fB(p.ec):'—'}</div></div>
       </div>
@@ -470,7 +470,7 @@ window.openProd=function(cod){
       <div class="ds-body np"><div class="tscroll"><table class="t">
         <thead><tr><th class="L">Data</th><th class="L">Fornecedor</th><th class="L">NF</th><th>Qtde</th><th>Valor</th><th class="L">Motivo</th><th class="L">Forma</th></tr></thead>
         <tbody>${(p.dv||[]).map(d=>`<tr>
-          <td class="L">${fD(d.dt)}</td><td class="L" style="font-size:11px;">${d.fo||'—'}</td>
+          <td class="L">${fDt(d.dt)}</td><td class="L" style="font-size:11px;">${d.fo||'—'}</td>
           <td class="L"><span style="font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--text-muted);">${d.nf||'—'}</span></td>
           <td>${fN(d.q,2)}</td><td class="val-neg">${fB(d.v,2)}</td>
           <td class="L"><span class="tag dnd" style="font-size:9px;">${d.mo||'—'}</span></td>
@@ -547,7 +547,7 @@ window.openProd=function(cod){
       <div class="kc"><div class="kl">Preço venda cad.</div><div class="kv">${p.ep>0?fB(p.ep,2):'—'}</div></div>
       <div class="kc"><div class="kl">Markup cadastro</div><div class="kv">${p.emk>0?'+'+fP(p.emk,1):'—'}</div></div>
     </div>
-    <div style="font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--text-muted);">Última entrada: <strong style="color:var(--text);">${fD(p.edt)}</strong></div>
+    <div style="font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--text-muted);">Última entrada: <strong style="color:var(--text);">${fDt(p.edt)}</strong></div>
   `:'<div style="text-align:center;padding:20px;color:var(--text-muted);font-size:12px;">Sem estoque em 21/04/2026.</div>';
 
   // Financeiro
@@ -580,7 +580,7 @@ window.openProd=function(cod){
   // Entradas tabela (item 2: datas DD/MM/AAAA)
   document.getElementById('tb-ent').innerHTML=(p.en||[]).map(e=>{
     const stBadge=e.vla>0?`<span class="tag ori">R$${fN(e.vla,0)} aberto</span>`:e.vlp>0?'<span class="tag grn">Pago</span>':'<span class="tag">—</span>';
-    return`<tr><td class="L">${fD(e.dt)}</td><td class="L" style="max-width:180px;">${esc(e.fo||"")}</td>
+    return`<tr><td class="L">${fDt(e.dt)}</td><td class="L" style="max-width:180px;">${esc(e.fo||"")}</td>
     <td class="L"><span style="font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--text-muted);">${e.nf}</span></td>
     <td>${fN(e.q,2)}</td><td>${fB(e.pu,4)}</td><td class="val-strong">${fB(e.vlc,2)}</td><td class="L">${stBadge}</td></tr>`;
   }).join('');
@@ -606,7 +606,7 @@ window.openProd=function(cod){
     const pcEl=document.getElementById('c-diag-pc');
     if(pcEl&&(p.ph||[]).length>0){
       const phD=(p.ph||[]).filter(x=>x.pu>0);
-      mkC('c-diag-pc',{type:'line',data:{labels:phD.map(x=>fD(x.dt)),datasets:[
+      mkC('c-diag-pc',{type:'line',data:{labels:phD.map(x=>fDt(x.dt)),datasets:[
         {label:'Preço compra',data:phD.map(x=>x.pu),borderColor:'#F58634',backgroundColor:'rgba(245,134,52,.12)',fill:true,tension:.3,pointRadius:4,pointBackgroundColor:'#F58634'},
         {label:'Preço venda',data:phD.map(()=>p.pmv),borderColor:'#2E476F',borderDash:[6,3],pointRadius:0,tension:0},
       ]},options:{responsive:true,maintainAspectRatio:false,
@@ -865,7 +865,7 @@ function openForn(nome){
     <div class="ds-body np"><div class="tscroll"><table class="t">
       <thead><tr><th class="L">Data</th><th class="L">Produto</th><th>Qtde</th><th>Valor</th><th class="L">Motivo</th></tr></thead>
       <tbody>${devs.map(d=>`<tr>
-        <td class="L">${fD(d.dt)}</td>
+        <td class="L">${fDt(d.dt)}</td>
         <td class="L" style="font-size:11px;" onclick="openProd(${escJs(d.pc)})" style="cursor:pointer;">
           <span style="font-family:'JetBrains Mono',monospace;font-size:9px;color:var(--text-muted);">#${esc(d.pc)}</span>
           <span style="font-weight:600;"> ${esc(d.pd||"")}</span>
@@ -1022,7 +1022,7 @@ function buildFornExtrato(evo, ents, devs, prods){
       const hiddenCount=Math.max(0,nf.itens.length-3);
       html+=`<div class="ext-linha ent">
         <div class="ext-tipo ent">⬇ NF</div>
-        <div class="ext-data">${fD(nf.dt)}</div>
+        <div class="ext-data">${fDt(nf.dt)}</div>
         <div class="ext-forn" style="display:flex;flex-direction:column;gap:2px;">
           ${nf.itens.slice(0,3).map(function(e){
             return`<span style="font-size:11px;"><span style="font-family:'JetBrains Mono',monospace;font-size:9px;color:var(--text-muted);">#${esc(e.pc)}</span> ${esc(e.pd||"")}</span>`;
@@ -1041,7 +1041,7 @@ function buildFornExtrato(evo, ents, devs, prods){
     devsMes.forEach(function(d){
       html+=`<div class="ext-linha dev">
         <div class="ext-tipo dev">⟲ DEV.</div>
-        <div class="ext-data">${fD(d.dt)}</div>
+        <div class="ext-data">${fDt(d.dt)}</div>
         <div class="ext-forn"><span style="font-family:'JetBrains Mono',monospace;font-size:9px;color:var(--text-muted);">#${esc(d.pc)}</span> ${esc(d.pd||"")}</div>
         <div class="ext-nf"><span class="tag dnd" style="font-size:9px;">${d.mo||'—'}</span></div>
         <div class="ext-qtd">${fN(d.q,0)} un</div>

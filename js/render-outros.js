@@ -1220,7 +1220,7 @@ function _vbRenderAplicPagina(){
     const ca = a.custo_fin_antes;
     const cd = a.custo_fin_depois;
     return '<tr>'
-      + '<td class="L val-dim">'+fD(a.dt)+'</td>'
+      + '<td class="L val-dim">'+fDt(a.dt)+'</td>'
       + '<td class="L val-dim">'+esc((a.filial||'').substring(0,18))+'</td>'
       + '<td class="L val-dim">'+esc(a.num_verba||'')+'</td>'
       + '<td class="L val-dim">'+fI(a.cod_prod||0)+'</td>'

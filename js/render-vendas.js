@@ -3482,8 +3482,8 @@ function renderVDiarias(){
 // O sistema calcula premium (% acima dos dias normais), influência mensal etc.
 // ════════════════════════════════════════════════════════════════════════
 
-// Estado global da página Dias C&P
-let _dcpFiltroLoja = 'GRUPO';      // 'GRUPO', 'ATP-V', 'ATP-A', 'CP1', 'CP3', 'CP5', 'CP40'
+// Estado global da página Dias C&P (v4.71: filtra entre as 4 filiais com C&P)
+let _dcpFiltroLoja = 'ATP-V';
 let _dcpDiasCadastrados = {};      // {loja: {ym: ['YYYY-MM-DD', ...]}}
 let _dcpFirestoreCarregado = false;
 
@@ -3570,15 +3570,12 @@ async function _dcpSalvar(loja, ym, dias){
   }
 }
 
-// Mapeamento de label de loja
+// Mapeamento de label de loja (v4.71: 4 filiais com C&P ativo)
 const _DCP_LOJAS = [
-  {cod:'GRUPO', label:'GPC Consolidado'},
   {cod:'ATP-V', label:'ATP - Varejo'},
   {cod:'ATP-A', label:'ATP - Atacado'},
-  {cod:'CP1',   label:'Comercial Pinto'},
   {cod:'CP3',   label:'Cestão L1'},
-  {cod:'CP5',   label:'Inhambupe'},
-  {cod:'CP40',  label:'Barros 40'}
+  {cod:'CP5',   label:'Inhambupe'}
 ];
 
 // Calcula métricas por loja a partir de V.diario + dias cadastrados
@@ -3761,12 +3758,15 @@ function _dcpRenderConteudo(){
   const body = document.getElementById('dcp-body');
   if(!body) return;
 
-  // Detecta lojas disponíveis no diário
+  // v4.71: sempre as 4 filiais com C&P (sem filtragem pelo diário — a base
+  // ativa pode não ter todas, mas as abas mostram a lista oficial).
   const lojasNoDiario = new Set();
   (V.diario || []).forEach(function(r){ if(r.loja) lojasNoDiario.add(r.loja); });
-  const lojasDispon = _DCP_LOJAS.filter(function(l){
-    return l.cod === 'GRUPO' || lojasNoDiario.has(l.cod);
-  });
+  const lojasDispon = _DCP_LOJAS.filter(function(l){return lojasNoDiario.has(l.cod);});
+  // Se o filtro atual não está disponível na base, troca para a primeira disponível
+  if(lojasDispon.length && !lojasDispon.find(function(l){return l.cod === _dcpFiltroLoja;})){
+    _dcpFiltroLoja = lojasDispon[0].cod;
+  }
 
   let html = '';
 
@@ -3883,7 +3883,7 @@ function _dcpRenderConteudo(){
       + '<div style="display:flex;flex-direction:column;gap:8px;margin-top:10px;">';
     const medalhas = ['🥇','🥈','🥉'];
     top3Eventos.forEach(function(ev, i){
-      const datasCurta = ev.datas_cp.map(function(d){return d.substring(8,10)+'/'+d.substring(5,7);}).join(' / ');
+      const datasCurta = ev.datas_cp.map(function(d){return fDt(d);}).join(' · ');
       const ymL = _ymToLabel(ev.ym);
       const premiumStr = ev.premium_pct != null ? ' · Premium '+(ev.premium_pct>=0?'+':'')+fP(ev.premium_pct,0) : '';
       html += '<div style="display:flex;align-items:center;gap:14px;padding:10px;background:var(--surface-2);border-radius:6px;">'
@@ -3920,7 +3920,7 @@ function _dcpRenderConteudo(){
     if(melhor){
       const dt = new Date(melhor.data+'T12:00:00');
       const dn = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'][dt.getDay()];
-      melhorTxt = melhor.data.substring(8,10)+'/'+melhor.data.substring(5,7)+' · '+dn;
+      melhorTxt = fDt(melhor.data)+' · '+dn;
       melhorVal = fK(melhor.fat);
     }
     html += '<tr>'
@@ -4050,97 +4050,171 @@ function _dcpBindEventos(){
   }
 }
 
-// UI modal de cadastro de dias C&P
+// UI modal de cadastro de dias C&P (v4.71: sem seleção de loja — os dias
+// são os mesmos pras 4 filiais com C&P (ATP-V, ATP-A, CP3, CP5). Usuário
+// escolhe mês e intervalo DE → ATÉ. Lista os meses cadastrados pra edição.
 function _dcpAbrirCadastroUI(){
-  // Determina qual loja cadastrar
-  let lojaParaCadastro = _dcpFiltroLoja;
-  if(lojaParaCadastro === 'GRUPO'){
-    // GRUPO não pode cadastrar diretamente. Pede pra escolher uma loja específica.
-    const opcoes = _DCP_LOJAS.filter(function(l){return l.cod !== 'GRUPO';})
-                              .map(function(l){return l.cod+' · '+l.label;}).join('\n');
-    const escolha = prompt('A visão GRUPO é a soma de todas as lojas. Para cadastrar dias C&P, escolha uma loja específica:\n\n'+opcoes+'\n\nDigite o código (ATP-V, ATP-A, CP1, CP3, CP5 ou CP40):');
-    if(!escolha) return;
-    lojaParaCadastro = escolha.trim().toUpperCase();
-    if(!_DCP_LOJAS.find(function(l){return l.cod === lojaParaCadastro;})){
-      alert('Código inválido.');
-      return;
-    }
-  }
-
-  // Lista todos os meses disponíveis no diário
+  // Lista todos os meses disponíveis no diário (qualquer loja)
   const mesesNoDiario = new Set();
   (V.diario || []).forEach(function(r){
-    if(r.loja === lojaParaCadastro || lojaParaCadastro === 'GRUPO') mesesNoDiario.add(r.data.substring(0,7));
+    if(r.data) mesesNoDiario.add(r.data.substring(0,7));
   });
-  const mesesOrd = Array.from(mesesNoDiario).sort().reverse();
+  // Inclui também meses já cadastrados (mesmo se não estão mais no diário)
+  _DCP_LOJAS.forEach(function(l){
+    const atual = _dcpDiasCadastrados[l.cod] || {};
+    Object.keys(atual).forEach(function(ym){ if(ym && ym.indexOf('2026') === 0) mesesNoDiario.add(ym); });
+  });
+  // Restringe a 2026 (foco operacional atual)
+  const mesesOrd = Array.from(mesesNoDiario).filter(function(ym){return ym.indexOf('2026') === 0;}).sort();
+
+  // Referência (usa ATP-V — todas as 4 lojas têm o mesmo conjunto, por design)
+  const _diasRefAtuais = _dcpDiasCadastrados['ATP-V'] || {};
+
+  // Funções utilitárias do modal (declaradas no escopo do _dcpAbrirCadastroUI)
+  function _diasDoMes(ym){
+    const a = parseInt(ym.substring(0,4),10);
+    const m = parseInt(ym.substring(5,7),10);
+    return new Date(a, m, 0).getDate();
+  }
+  function _gerarIntervalo(ym, de, ate){
+    const out = [];
+    const lim = _diasDoMes(ym);
+    let a = Math.max(1, de|0), b = Math.min(lim, ate|0);
+    if(a > b){ const t=a; a=b; b=t; }
+    for(let d = a; d <= b; d++){
+      out.push(ym + '-' + String(d).padStart(2,'0'));
+    }
+    return out;
+  }
 
   // Modal
   const overlay = document.createElement('div');
   overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px;';
-  overlay.innerHTML = '<div style="background:white;border-radius:10px;max-width:600px;width:100%;max-height:90vh;overflow-y:auto;padding:20px;box-shadow:0 10px 40px rgba(0,0,0,.3);">'
+  overlay.innerHTML = '<div style="background:white;border-radius:10px;max-width:680px;width:100%;max-height:90vh;overflow-y:auto;padding:22px;box-shadow:0 10px 40px rgba(0,0,0,.3);">'
     + '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">'
-    +   '<h3 style="margin:0;font-size:16px;font-weight:700;color:var(--text);">Cadastrar dias C&amp;P · '+esc(lojaParaCadastro)+'</h3>'
+    +   '<h3 style="margin:0;font-size:16px;font-weight:700;color:var(--text);">Cadastrar dias C&amp;P</h3>'
     +   '<button id="dcp-modal-close" style="background:transparent;border:none;cursor:pointer;font-size:18px;color:var(--text-muted);padding:4px;">✕</button>'
     + '</div>'
     + '<div style="font-size:11.5px;color:var(--text-muted);margin-bottom:14px;line-height:1.5;">'
-    +   'Para cada mês, informe as datas que foram dias C&amp;P (ofertas) separadas por vírgula. Exemplo: <code>04, 05, 06</code> para os dias 4, 5 e 6 do mês. Deixe em branco para apagar.'
+    +   'Os dias C&amp;P são os mesmos para as 4 filiais (ATP-V, ATP-A, Cestão L1, Inhambupe). Escolha o mês, informe a data <strong>de</strong> e <strong>até</strong>, e salve. Para editar, basta abrir um mês já cadastrado.'
     + '</div>'
-    + '<div id="dcp-modal-body" style="display:flex;flex-direction:column;gap:10px;"></div>'
+    + '<div style="background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:14px;margin-bottom:16px;">'
+    +   '<div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px;">Novo cadastro / edição</div>'
+    +   '<div style="display:grid;grid-template-columns:1fr 90px 90px auto;gap:8px;align-items:end;">'
+    +     '<div><label style="display:block;font-size:10px;color:var(--text-muted);margin-bottom:3px;">Mês</label>'
+    +       '<select id="dcp-novo-ym" style="width:100%;padding:7px 8px;border:1px solid var(--border-strong);border-radius:5px;font-size:12px;background:white;">'
+    +         mesesOrd.map(function(ym){return '<option value="'+esc(ym)+'">'+_ymToLabel(ym)+'</option>';}).join('')
+    +       '</select></div>'
+    +     '<div><label style="display:block;font-size:10px;color:var(--text-muted);margin-bottom:3px;">De (dia)</label>'
+    +       '<input id="dcp-novo-de" type="number" min="1" max="31" placeholder="ex 4" style="width:100%;padding:7px 8px;border:1px solid var(--border-strong);border-radius:5px;font-size:12px;"></div>'
+    +     '<div><label style="display:block;font-size:10px;color:var(--text-muted);margin-bottom:3px;">Até (dia)</label>'
+    +       '<input id="dcp-novo-ate" type="number" min="1" max="31" placeholder="ex 6" style="width:100%;padding:7px 8px;border:1px solid var(--border-strong);border-radius:5px;font-size:12px;"></div>'
+    +     '<button id="dcp-novo-aplicar" style="padding:8px 14px;background:var(--accent);color:white;border:none;border-radius:5px;font-size:12px;font-weight:700;cursor:pointer;">Aplicar</button>'
+    +   '</div>'
+    +   '<div id="dcp-novo-preview" style="margin-top:8px;font-size:11px;color:var(--text-muted);min-height:14px;"></div>'
+    + '</div>'
+    + '<div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px;">Meses cadastrados</div>'
+    + '<div id="dcp-modal-body" style="display:flex;flex-direction:column;gap:8px;"></div>'
     + '<div style="display:flex;justify-content:flex-end;gap:8px;margin-top:18px;border-top:1px solid var(--border);padding-top:12px;">'
-    +   '<button id="dcp-modal-cancel" style="padding:8px 16px;border:1px solid var(--border-strong);background:white;border-radius:5px;cursor:pointer;font-size:12px;">Cancelar</button>'
-    +   '<button id="dcp-modal-save" style="padding:8px 16px;background:var(--accent);color:white;border:none;border-radius:5px;cursor:pointer;font-size:12px;font-weight:700;">Salvar</button>'
+    +   '<button id="dcp-modal-cancel" style="padding:8px 16px;border:1px solid var(--border-strong);background:white;border-radius:5px;cursor:pointer;font-size:12px;">Fechar</button>'
+    +   '<button id="dcp-modal-save" style="padding:8px 16px;background:var(--accent);color:white;border:none;border-radius:5px;cursor:pointer;font-size:12px;font-weight:700;">Salvar nas 4 filiais</button>'
     + '</div>'
     + '</div>';
   document.body.appendChild(overlay);
 
-  const modalBody = document.getElementById('dcp-modal-body');
-  const diasAtuais = _dcpDiasCadastrados[lojaParaCadastro] || {};
+  // Estado interno do modal: edits[ym] = ['YYYY-MM-DD', ...]
+  const edits = {};
   mesesOrd.forEach(function(ym){
-    const diasDoMes = diasAtuais[ym] || [];
-    const valorInicial = diasDoMes.map(function(d){return d.substring(8,10);}).join(', ');
-    modalBody.innerHTML += '<div style="display:flex;align-items:center;gap:12px;">'
-      + '<div style="min-width:80px;font-weight:700;font-size:12.5px;color:var(--text);">'+_ymToLabel(ym)+'</div>'
-      + '<input type="text" data-ym="'+esc(ym)+'" value="'+esc(valorInicial)+'" '
-      + 'placeholder="ex: 04, 05, 06" '
-      + 'style="flex:1;padding:6px 10px;border:1px solid var(--border-strong);border-radius:5px;font-size:12px;font-family:JetBrains Mono,monospace;">'
-      + '</div>';
+    edits[ym] = (_diasRefAtuais[ym] || []).slice();
   });
 
-  // Bind
-  document.getElementById('dcp-modal-close').addEventListener('click', function(){overlay.remove();});
-  document.getElementById('dcp-modal-cancel').addEventListener('click', function(){overlay.remove();});
-  document.getElementById('dcp-modal-save').addEventListener('click', async function(){
-    const inputs = modalBody.querySelectorAll('input[data-ym]');
-    const tarefas = [];
-    inputs.forEach(function(inp){
-      const ym = inp.getAttribute('data-ym');
-      const txt = inp.value.trim();
-      const dias = [];
-      if(txt){
-        const partes = txt.split(/[,\s]+/).filter(function(x){return x.length;});
-        partes.forEach(function(p){
-          const n = parseInt(p, 10);
-          if(!isNaN(n) && n >= 1 && n <= 31){
-            const dd = String(n).padStart(2,'0');
-            dias.push(ym+'-'+dd);
-          }
-        });
-      }
-      // Compara com atual pra evitar saves desnecessários
-      const atual = (diasAtuais[ym] || []).slice().sort().join(',');
-      const novo = dias.slice().sort().join(',');
-      if(atual !== novo){
-        tarefas.push(_dcpSalvar(lojaParaCadastro, ym, dias));
-      }
-    });
-    if(!tarefas.length){
-      overlay.remove();
+  const modalBody = document.getElementById('dcp-modal-body');
+  function _redesenhaLista(){
+    if(!mesesOrd.length){
+      modalBody.innerHTML = '<div style="padding:14px;text-align:center;color:var(--text-muted);font-size:12px;">Nenhum mês de 2026 disponível.</div>';
       return;
     }
-    document.getElementById('dcp-modal-save').textContent = 'Salvando...';
-    document.getElementById('dcp-modal-save').disabled = true;
+    let h = '';
+    mesesOrd.forEach(function(ym){
+      const dias = edits[ym] || [];
+      const ddList = dias.map(function(d){return d.substring(8,10);}).sort().join(', ');
+      const vazio = !dias.length;
+      h += '<div style="display:flex;align-items:center;gap:10px;padding:8px 10px;background:'+(vazio?'transparent':'var(--surface-2)')+';border:1px solid var(--border);border-radius:6px;">'
+        +   '<div style="min-width:90px;font-weight:700;font-size:12.5px;color:var(--text);">'+_ymToLabel(ym)+'</div>'
+        +   '<div style="flex:1;font-family:JetBrains Mono,monospace;font-size:12px;color:'+(vazio?'var(--text-muted)':'var(--text)')+';">'+(vazio?'(sem dias)':esc(ddList))+'</div>'
+        +   '<button class="dcp-clear-mes" data-ym="'+esc(ym)+'" style="padding:4px 10px;border:1px solid var(--border-strong);background:white;color:var(--text-muted);border-radius:4px;cursor:pointer;font-size:11px;" title="Limpar dias deste mês">Limpar</button>'
+        + '</div>';
+    });
+    modalBody.innerHTML = h;
+    modalBody.querySelectorAll('.dcp-clear-mes').forEach(function(b){
+      b.addEventListener('click', function(){
+        const ym = b.getAttribute('data-ym');
+        edits[ym] = [];
+        _redesenhaLista();
+      });
+    });
+  }
+  _redesenhaLista();
+
+  // Botão "Aplicar" (gera intervalo e adiciona ao mês selecionado)
+  const inpDe   = document.getElementById('dcp-novo-de');
+  const inpAte  = document.getElementById('dcp-novo-ate');
+  const selYm   = document.getElementById('dcp-novo-ym');
+  const preview = document.getElementById('dcp-novo-preview');
+  function _atualizaPreview(){
+    const ym = selYm.value;
+    const de = parseInt(inpDe.value, 10);
+    const ate = parseInt(inpAte.value, 10);
+    if(!ym || isNaN(de) || isNaN(ate)){ preview.textContent = 'Preencha mês, de e até.'; return; }
+    const lim = _diasDoMes(ym);
+    if(de < 1 || ate < 1 || de > lim || ate > lim){
+      preview.textContent = 'Dias fora do mês ('+_ymToLabel(ym)+' tem '+lim+' dias).';
+      return;
+    }
+    const range = _gerarIntervalo(ym, de, ate);
+    preview.textContent = range.length+' dia(s): '+range.map(function(d){return d.substring(8,10);}).join(', ');
+  }
+  selYm.addEventListener('change', _atualizaPreview);
+  inpDe.addEventListener('input', _atualizaPreview);
+  inpAte.addEventListener('input', _atualizaPreview);
+
+  document.getElementById('dcp-novo-aplicar').addEventListener('click', function(){
+    const ym = selYm.value;
+    const de = parseInt(inpDe.value, 10);
+    const ate = parseInt(inpAte.value, 10);
+    if(!ym || isNaN(de) || isNaN(ate)){ alert('Preencha mês, de e até.'); return; }
+    const range = _gerarIntervalo(ym, de, ate);
+    // Mescla com o que já existe pro mês (sem duplicar)
+    const set = new Set(edits[ym] || []);
+    range.forEach(function(d){set.add(d);});
+    edits[ym] = Array.from(set).sort();
+    _redesenhaLista();
+    preview.textContent = 'Aplicado: '+range.length+' dia(s) adicionado(s) em '+_ymToLabel(ym)+'.';
+    inpDe.value = ''; inpAte.value = '';
+  });
+
+  // Fechar
+  function _close(){ overlay.remove(); }
+  document.getElementById('dcp-modal-close').addEventListener('click', _close);
+  document.getElementById('dcp-modal-cancel').addEventListener('click', _close);
+
+  // Salvar nas 4 filiais
+  document.getElementById('dcp-modal-save').addEventListener('click', async function(){
+    const tarefas = [];
+    mesesOrd.forEach(function(ym){
+      const novoSorted = (edits[ym] || []).slice().sort();
+      _DCP_LOJAS.forEach(function(l){
+        const atual = ((_dcpDiasCadastrados[l.cod] || {})[ym] || []).slice().sort();
+        if(atual.join(',') !== novoSorted.join(',')){
+          tarefas.push(_dcpSalvar(l.cod, ym, novoSorted));
+        }
+      });
+    });
+    if(!tarefas.length){ _close(); return; }
+    const btn = document.getElementById('dcp-modal-save');
+    btn.textContent = 'Salvando...'; btn.disabled = true;
     await Promise.all(tarefas);
-    overlay.remove();
+    _close();
     _dcpRenderConteudo();
   });
 }

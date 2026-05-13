@@ -4,6 +4,25 @@ Lista das melhorias do sistema de BI da R2 Soluções para o Grupo Pinto Cerquei
 
 ---
 
+## v4.71-comercial · 13/mai/2026
+
+**Estoque drill-down + datas DD-MM-AAAA + calendário mais baixo + Dias C&P simplificado**
+
+1. **Estoque: tabelas viraram drill-down.** As duas tabelas — "Estoque por departamento" e "Vendas × Departamento" — agora funcionam igual à "Tabela detalhada" de Departamentos. Cada nível mostra **uma única lista** (depto, depois seção, depois categoria) com botão **"← Voltar"** no header. Clique na linha desce um nível. Mesma UX, mais limpa, melhor em mobile.
+
+2. **Datas padronizadas em DD-MM-AAAA.** Substituídas as ocorrências de `fD()` (DD/MM/AAAA) por `fDt()` em admin.js e render-outros.js. Trocados também `toLocaleDateString('pt-BR')` (DD/MM/AAAA) para `fDt()` em quatro pontos de core.js (data de atualização de índice, último acesso, audit log, processamento) e patterns custom `substring(8,10)+'/'+...` no Dias C&P. Datas `geradoEm` e `marcado_em` também passam por `fDt()` no Financeiro e NF Fechamento.
+
+3. **Calendário de pagamentos: altura reduzida.** Cada dia agora usa `aspect-ratio:2.2/1` com `min-height:48px;max-height:80px` em vez de `aspect-ratio:1/1` — fica proporcional ao valor mostrado, sem ficar gigante em desktop. Mantém legibilidade em mobile via min-height.
+
+4. **Dias C&P reformulado:**
+   - **Só 4 filiais** com botão de aba: ATP Varejo, ATP Atacado, Cestão L1, Inhambupe. Removidos GRUPO, Comercial Pinto (CP1) e Barros 40 (CP40) das abas.
+   - **Botão "Cadastrar dias C&P" não pede loja** — os dias são os mesmos para as 4 filiais e o salvamento replica em todas automaticamente.
+   - **Cadastro por intervalo:** usuário escolhe mês, informa **dia DE** e **dia ATÉ**, e o sistema gera todas as datas do range. Acumula em cima do que já existe no mês (sem perder dias previamente cadastrados).
+   - **Edição:** o modal lista todos os meses cadastrados de 2026 com os dias atuais visíveis. Pra editar, basta adicionar mais um intervalo, ou clicar em "Limpar" no mês desejado e cadastrar de novo.
+   - Botão "Salvar nas 4 filiais" persiste só os meses que mudaram (otimização).
+
+---
+
 ## v4.70-comercial · 13/mai/2026
 
 **Vencidos removido + padronização de filtros + Fornecedores e Forn-GPC 2026-only**

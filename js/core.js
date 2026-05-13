@@ -216,7 +216,7 @@ const AUTH_MODE = 'firebase'; // 'mock' | 'firebase'
 // Convenção:
 //   X.x → alteração grande (quebra de compatibilidade, nova feature grande)
 //   x.X → alteração suave (fix, ajuste visual, pequeno refinamento)
-const APP_VERSION = '4.70-comercial';
+const APP_VERSION = '4.71-comercial';
 
 // ================================================================
 // HELPERS DE CHART.JS — compatíveis com Safari/iOS (sem spread ops)
@@ -3031,7 +3031,7 @@ async function renderHistorico(){
         +'<td class="L">'+acao+'</td></tr>';
     }).join('');
 
-    const dataAtualizacao = idx.atualizado_em ? new Date(idx.atualizado_em).toLocaleDateString('pt-BR') : '—';
+    const dataAtualizacao = idx.atualizado_em ? fDt(new Date(idx.atualizado_em)) : '—';
     inner.innerHTML = bannerSnap
       +'<div class="ds"><div class="ds-hdr">'
       +'<div class="ds-ico" style="background:var(--accent-bg);color:var(--accent-text);">'
@@ -3080,7 +3080,7 @@ async function renderAdmUsuarios(){
 
   el.innerHTML = '<div style="display:flex;flex-direction:column;gap:8px;">' + usuarios.map(function(u){
     const tplPerfil = perfis[u.perfil] || {nome: u.perfil};
-    const ult = u.ultimo_acesso ? new Date(u.ultimo_acesso).toLocaleDateString('pt-BR') + ' ' + new Date(u.ultimo_acesso).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}) : 'Nunca';
+    const ult = u.ultimo_acesso ? fDt(new Date(u.ultimo_acesso)) + ' ' + new Date(u.ultimo_acesso).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}) : 'Nunca';
     const statusBadge = u.ativo
       ? '<span class="tag grn" style="font-size:9px;">ATIVO</span>'
       : '<span class="tag" style="font-size:9px;background:#ddd;color:#666;">INATIVO</span>';
@@ -3674,7 +3674,7 @@ async function renderAdmAuditoria(){
 
     tbody.innerHTML = f.map(function(l){
       const dt = new Date(l.timestamp);
-      const dtStr = dt.toLocaleDateString('pt-BR') + ' ' + dt.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+      const dtStr = fDt(dt) + ' ' + dt.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
       const tipoInfo = AUDIT_TIPOS[l.tipo] || {label:l.tipo, cor:'gray'};
       const corMap = {green:'var(--success-text,#0a7c4a)', red:'var(--danger-text,#c33)', orange:'#d97706', purple:'#7c3aed', blue:'#2563eb', gray:'var(--text-muted)'};
       const det = l.detalhes ? Object.entries(l.detalhes).map(function(p){
@@ -5702,7 +5702,7 @@ async function _procRenderHist(id, rel, base){
   }
   histDiv.innerHTML = list.map(u=>{
     const dt = u.uploaded_at && u.uploaded_at.toDate ? u.uploaded_at.toDate() : null;
-    const dtTxt = dt ? dt.toLocaleDateString('pt-BR')+' '+dt.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}) : '—';
+    const dtTxt = dt ? fDt(dt)+' '+dt.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}) : '—';
     const per = (u.periodo_ini && u.periodo_fim) ? (u.periodo_ini.split('-').reverse().join('/')+' a '+u.periodo_fim.split('-').reverse().join('/')) : '';
     const tamanho = u.arquivo_tamanho ? (u.arquivo_tamanho/1024/1024).toFixed(2)+' MB' : '';
     const quem = u.uploaded_by_email || '';
