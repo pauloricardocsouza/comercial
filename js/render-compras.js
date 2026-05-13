@@ -3745,6 +3745,16 @@ window._openFornNovo = function(cod){
 
     html += '</div></div></div>';
 
+    // v4.68: aviso se houver NFs ignoradas pra este fornecedor
+    if(extDet.nfIgnoradas && extDet.nfIgnoradas.count > 0){
+      html += '<div class="cc" style="margin-top:8px;background:#fef3c7;border:1px solid #f59e0b;">'
+           +    '<div style="padding:10px 14px;color:#92400e;font-size:12px;display:flex;align-items:center;gap:10px;">'
+           +      '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="flex-shrink:0;"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>'
+           +      '<div style="flex:1;"><strong>'+fI(extDet.nfIgnoradas.count)+' lançamentos de NF</strong> ('+fK(extDet.nfIgnoradas.valor)+') foram excluídos deste extrato por estarem marcados em NF Fechamento.</div>'
+           +    '</div>'
+           + '</div>';
+    }
+
   } else if(typeof E === 'undefined' || !E || !E.produtos){
     html += '<div class="cc" style="margin-top:14px;background:#fef3c7;border:1px solid #d97706;">'
          +    '<div style="padding:14px;color:#92400e;font-size:12px;">'
@@ -4086,11 +4096,23 @@ function _diagFornExtratoDetalhado(fornCod){
 
   // Junta todas as entradas_detalhadas do fornecedor, indexando por NF.
   // Chave da NF: data + nf + fornecedor_cod (mesma NF aparece em N produtos).
+  // v4.68: aplica filtro de NFs ignoradas — exclui NFs que o usuário marcou
+  // pra fechamento (mais um aviso no rodapé do extrato).
   const nfMap = new Map();
+  const baseSlugCur = (typeof _getBaseSlug === 'function') ? _getBaseSlug() : 'atp';
+  const filialCur = (_filialAtual && _filialAtual.sigla) || '';
+  let _nfIgnExcluidasCount = 0;
+  let _nfIgnExcluidasValor = 0;
   E.produtos.forEach(function(p){
     const eds = p.entradas_detalhadas || [];
     eds.forEach(function(ed){
       if(ed.fornecedor_cod !== fornCod) return;
+      // Pula se a NF está marcada como ignorada
+      if(typeof _isNfIgnorada === 'function' && _isNfIgnorada(baseSlugCur, filialCur, ed.nf, ed.fornecedor_cod, ed.data)){
+        _nfIgnExcluidasCount++;
+        _nfIgnExcluidasValor += ed.valor || 0;
+        return;
+      }
       const key = (ed.data||'') + '|' + (ed.nf||'') + '|' + ed.fornecedor_cod;
       if(!nfMap.has(key)){
         nfMap.set(key, {
@@ -4168,6 +4190,12 @@ function _diagFornExtratoDetalhado(fornCod){
     delete m.totalSkus;
     return m;
   }).sort(function(a,b){return a.ym.localeCompare(b.ym);});
+
+  // v4.68: estatística de NFs ignoradas
+  result.nfIgnoradas = {
+    count: _nfIgnExcluidasCount,
+    valor: _nfIgnExcluidasValor
+  };
 
   return result;
 }
@@ -5024,6 +5052,7 @@ function renderPage(pg){
   else if(pg==='cubo')renderCubo();
   else if(pg==='admin')renderAdmin();
   else if(pg==='proc')renderProc();
+  else if(pg==='nf-fechamento')renderNfFechamento();
   else if(pg==='historico')renderHistorico();
   else if(pg==='ajuda')renderAjuda();
   else if(pg && pg.indexOf('v-') === 0){
@@ -5112,6 +5141,449 @@ function renderHome(){
     + '@media(max-width:380px){'
     +   '.fin-card-val{font-size:15px !important;}'
     +   '.ext-nf-row{padding:8px 10px !important;font-size:11px !important;}'
+    + '}';
+  document.head.appendChild(st);
+})();
+
+// ════════════════════════════════════════════════════════════════════════════
+// v4.68-comercial: PÁGINA NF FECHAMENTO
+// ════════════════════════════════════════════════════════════════════════════
+// Permite que usuários admin/gestor marquem NFs específicas para serem
+// IGNORADAS em todas as análises de compra (extrato, KPIs, gráficos, cubo).
+// A marca é compartilhada via Firestore (canônico) com cache localStorage.
+// ════════════════════════════════════════════════════════════════════════════
+
+// Estado interno da página (filtros, lista, busca)
+let _nfFechFiltros = {
+  ymIni: '', ymFim: '',     // YYYY-MM
+  filial: '',                // sigla
+  forn_cod: '',              // cod ou '' (todos)
+  busca_nf: '',              // texto livre no número da NF
+  mostrar: 'todas'           // 'todas' | 'ignoradas' | 'ativas'
+};
+
+async function renderNfFechamento(){
+  const cont = document.getElementById('page-nf-fechamento');
+  if(!cont) return;
+
+  // Verifica permissão
+  if(!_podeMarcarNfs()){
+    cont.innerHTML = ''
+      + '<div class="page-head"><h1>NF Fechamento</h1></div>'
+      + '<div class="cc" style="margin-top:14px;background:#fef3c7;border:1px solid #d97706;">'
+      +   '<div style="padding:18px;color:#92400e;font-size:13px;">'
+      +     '<strong>Acesso restrito.</strong> Esta página é destinada a usuários com perfil Admin ou Gestor.'
+      +   '</div>'
+      + '</div>';
+    return;
+  }
+
+  // Loading state
+  cont.innerHTML = '<div class="page-head"><h1>NF Fechamento</h1><div class="desc">Carregando dados…</div></div>';
+
+  // Garante NFs ignoradas carregadas
+  await _carregarNfsIgnoradas();
+
+  // Verifica fonte de dados
+  if(typeof E === 'undefined' || !E || !E.produtos){
+    cont.innerHTML = ''
+      + '<div class="page-head"><h1>NF Fechamento</h1></div>'
+      + '<div class="cc" style="margin-top:14px;background:#fef3c7;border:1px solid #d97706;">'
+      +   '<div style="padding:18px;color:#92400e;font-size:13px;">'
+      +     '<strong>Dados de estoque não carregados.</strong> Esta página depende das entradas detalhadas (E.produtos[].entradas_detalhadas). Aguarde o carregamento ou troque de base.'
+      +   '</div>'
+      + '</div>';
+    return;
+  }
+
+  // Setup inicial dos filtros: período = últimos 4 meses
+  if(!_nfFechFiltros.ymIni){
+    const ymsDisp = _nfFechColetarYms();
+    if(ymsDisp.length){
+      _nfFechFiltros.ymFim = ymsDisp[ymsDisp.length - 1];
+      _nfFechFiltros.ymIni = ymsDisp[Math.max(0, ymsDisp.length - 4)];
+    }
+  }
+  if(!_nfFechFiltros.filial){
+    _nfFechFiltros.filial = (_filialAtual && _filialAtual.sigla) || '';
+  }
+
+  _nfFechRender();
+}
+
+function _nfFechColetarYms(){
+  // Lista todos os YMs presentes nas entradas_detalhadas dos produtos
+  const set = new Set();
+  E.produtos.forEach(function(p){
+    (p.entradas_detalhadas || []).forEach(function(ed){
+      if(ed.data) set.add(ed.data.slice(0,7));
+    });
+  });
+  return Array.from(set).sort();
+}
+
+function _nfFechColetarFornecedores(){
+  // Retorna [{cod, nome}] dos fornecedores presentes nas entradas, ordenados por nome
+  const map = new Map();
+  E.produtos.forEach(function(p){
+    (p.entradas_detalhadas || []).forEach(function(ed){
+      if(ed.fornecedor_cod && !map.has(ed.fornecedor_cod)){
+        map.set(ed.fornecedor_cod, ed.fornecedor || ('#'+ed.fornecedor_cod));
+      }
+    });
+  });
+  return Array.from(map.entries()).map(function(e){
+    return {cod: e[0], nome: e[1]};
+  }).sort(function(a,b){return (a.nome||'').localeCompare(b.nome||'');});
+}
+
+function _nfFechAgregarNFs(){
+  // Aplica filtros e retorna lista de NFs únicas com produtos agregados.
+  // Mesma chave usada no Diag. Fornecedor: data + nf + forn_cod.
+  const nfMap = new Map();
+  const f = _nfFechFiltros;
+  const baseSlug = (typeof _getBaseSlug === 'function') ? _getBaseSlug() : 'atp';
+  const filialSig = f.filial || (_filialAtual && _filialAtual.sigla) || '';
+
+  E.produtos.forEach(function(p){
+    (p.entradas_detalhadas || []).forEach(function(ed){
+      const ym = (ed.data || '').slice(0,7);
+      if(f.ymIni && ym < f.ymIni) return;
+      if(f.ymFim && ym > f.ymFim) return;
+      if(f.forn_cod && String(ed.fornecedor_cod) !== String(f.forn_cod)) return;
+      if(f.busca_nf){
+        const q = f.busca_nf.toLowerCase();
+        if(String(ed.nf || '').toLowerCase().indexOf(q) === -1) return;
+      }
+      const key = _mkNfKey(baseSlug, filialSig, ed.nf, ed.fornecedor_cod, ed.data);
+      if(!nfMap.has(key)){
+        nfMap.set(key, {
+          key: key,
+          base: baseSlug,
+          filial: filialSig,
+          num_nota: ed.nf,
+          forn_cod: ed.fornecedor_cod,
+          forn_nome: ed.fornecedor,
+          data: ed.data,
+          ym: ym,
+          valor: 0,
+          qt: 0,
+          status: ed.status,
+          produtos: []
+        });
+      }
+      const n = nfMap.get(key);
+      n.valor += ed.valor || 0;
+      n.qt += ed.qt || 0;
+      if(ed.status === 'aberto') n.status = 'aberto';
+      n.produtos.push({cod: p.cod, desc: p.desc || '', qt: ed.qt || 0, valor: ed.valor || 0});
+    });
+  });
+
+  let lista = Array.from(nfMap.values());
+
+  // Filtro mostrar
+  if(f.mostrar === 'ignoradas'){
+    lista = lista.filter(function(n){ return _nfsIgnCache && _nfsIgnCache.nfs && _nfsIgnCache.nfs[n.key]; });
+  } else if(f.mostrar === 'ativas'){
+    lista = lista.filter(function(n){ return !(_nfsIgnCache && _nfsIgnCache.nfs && _nfsIgnCache.nfs[n.key]); });
+  }
+
+  // Ordena por data desc
+  lista.sort(function(a,b){return (b.data||'').localeCompare(a.data||'');});
+  return lista;
+}
+
+function _nfFechRender(){
+  const cont = document.getElementById('page-nf-fechamento');
+  if(!cont) return;
+
+  const ymsDisp = _nfFechColetarYms();
+  const fornecedores = _nfFechColetarFornecedores();
+  const lista = _nfFechAgregarNFs();
+  const f = _nfFechFiltros;
+
+  // Totais (na lista filtrada)
+  let totIgn = 0, totAtv = 0, valIgn = 0, valAtv = 0;
+  lista.forEach(function(n){
+    const ign = _nfsIgnCache && _nfsIgnCache.nfs && _nfsIgnCache.nfs[n.key];
+    if(ign){ totIgn++; valIgn += n.valor; }
+    else { totAtv++; valAtv += n.valor; }
+  });
+  const totalNfs = lista.length;
+  const totalIgnGeral = _nfsIgnCache && _nfsIgnCache.nfs ? Object.keys(_nfsIgnCache.nfs).length : 0;
+
+  // Limita lista exibida pra não travar (paginação simples)
+  const MAX_EXIBIR = 500;
+  const listaExib = lista.slice(0, MAX_EXIBIR);
+  const truncada = lista.length > MAX_EXIBIR;
+
+  let html = ''
+    + '<div class="page-head">'
+    +   '<h1>NF Fechamento</h1>'
+    +   '<div class="desc">Marque NFs de entrada para serem ignoradas nas análises de compra. Filtre por período, filial, fornecedor ou número de NF. As marcações ficam visíveis no extrato detalhado do Diag. Fornecedor imediatamente; para os KPIs agregados, cubo e demais análises, o efeito é aplicado no próximo processamento ETL (que lê a lista de NFs ignoradas e as exclui durante a agregação). Marcações são compartilhadas com todos os usuários.</div>'
+    + '</div>'
+
+    // Filtros
+    + '<div class="cc" style="margin-top:14px;">'
+    +   '<div class="cct">Filtros</div>'
+    +   '<div style="display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-top:10px;font-size:12px;" class="nff-filt-grid">';
+
+  // YM ini/fim
+  html += '<div><label style="display:block;color:var(--text-muted);font-size:10px;text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px;font-weight:700;">Período (início)</label>'
+       +   '<select id="nff-ymi" style="width:100%;padding:6px 8px;border:1px solid var(--border);border-radius:4px;background:var(--surface);font-size:12px;">';
+  ymsDisp.forEach(function(y){
+    html += '<option value="'+esc(y)+'"'+(f.ymIni===y?' selected':'')+'>'+esc(_ymToLabel(y))+'</option>';
+  });
+  html += '</select></div>';
+
+  html += '<div><label style="display:block;color:var(--text-muted);font-size:10px;text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px;font-weight:700;">Período (fim)</label>'
+       +   '<select id="nff-ymf" style="width:100%;padding:6px 8px;border:1px solid var(--border);border-radius:4px;background:var(--surface);font-size:12px;">';
+  ymsDisp.forEach(function(y){
+    html += '<option value="'+esc(y)+'"'+(f.ymFim===y?' selected':'')+'>'+esc(_ymToLabel(y))+'</option>';
+  });
+  html += '</select></div>';
+
+  // Filial (somente leitura — segue base atual)
+  html += '<div><label style="display:block;color:var(--text-muted);font-size:10px;text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px;font-weight:700;">Filial</label>'
+       +   '<input value="'+esc(f.filial || '(consolidado)')+'" disabled style="width:100%;padding:6px 8px;border:1px solid var(--border);border-radius:4px;background:var(--surface-2);font-size:12px;color:var(--text-muted);"></div>';
+
+  // Fornecedor
+  html += '<div><label style="display:block;color:var(--text-muted);font-size:10px;text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px;font-weight:700;">Fornecedor</label>'
+       +   '<select id="nff-forn" style="width:100%;padding:6px 8px;border:1px solid var(--border);border-radius:4px;background:var(--surface);font-size:12px;">'
+       +     '<option value="">— Todos —</option>';
+  fornecedores.forEach(function(fr){
+    html += '<option value="'+esc(fr.cod)+'"'+(String(f.forn_cod)===String(fr.cod)?' selected':'')+'>'+esc(fr.nome)+'</option>';
+  });
+  html += '</select></div>';
+
+  // Mostrar
+  html += '<div><label style="display:block;color:var(--text-muted);font-size:10px;text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px;font-weight:700;">Mostrar</label>'
+       +   '<select id="nff-show" style="width:100%;padding:6px 8px;border:1px solid var(--border);border-radius:4px;background:var(--surface);font-size:12px;">'
+       +     '<option value="todas"'+(f.mostrar==='todas'?' selected':'')+'>Todas</option>'
+       +     '<option value="ativas"'+(f.mostrar==='ativas'?' selected':'')+'>Apenas ativas</option>'
+       +     '<option value="ignoradas"'+(f.mostrar==='ignoradas'?' selected':'')+'>Apenas ignoradas</option>'
+       +   '</select></div>';
+  html += '</div>'; // fecha grid
+
+  // Busca + KPIs resumidos
+  html += '<div style="margin-top:10px;display:grid;grid-template-columns:1fr auto;gap:10px;align-items:end;" class="nff-second-row">'
+       +   '<div><label style="display:block;color:var(--text-muted);font-size:10px;text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px;font-weight:700;">Buscar número da NF</label>'
+       +     '<input id="nff-busca" value="'+esc(f.busca_nf||'')+'" placeholder="Ex: 4836230" style="width:100%;padding:6px 8px;border:1px solid var(--border);border-radius:4px;background:var(--surface);font-size:12px;">'
+       +   '</div>'
+       +   '<div style="display:flex;gap:8px;">'
+       +     '<button id="nff-aplicar" class="ebtn" style="background:var(--accent);color:white;border:none;padding:8px 14px;font-size:12px;font-weight:600;border-radius:4px;cursor:pointer;">Aplicar filtros</button>'
+       +     '<button id="nff-limpar" class="ebtn" style="background:var(--surface-2);border:1px solid var(--border);padding:8px 14px;font-size:12px;border-radius:4px;cursor:pointer;">Limpar</button>'
+       +   '</div>'
+       + '</div>';
+  html += '</div>'; // fecha cc
+
+  // KPIs resumo
+  html += '<div style="margin-top:14px;display:grid;grid-template-columns:repeat(4,1fr);gap:10px;" class="nff-kpis">'
+       +   '<div class="fin-card" style="background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:14px;">'
+       +     '<div style="color:var(--text-muted);font-size:10px;text-transform:uppercase;letter-spacing:.08em;font-weight:700;">NFs na seleção</div>'
+       +     '<div class="fin-card-val" style="font-size:22px;font-weight:700;margin-top:6px;">'+fI(totalNfs)+'</div>'
+       +     (truncada ? '<div style="color:var(--text-muted);font-size:10.5px;margin-top:3px;">Exibindo '+MAX_EXIBIR+' · refine filtros</div>' : '')
+       +   '</div>'
+       +   '<div class="fin-card" style="background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:14px;">'
+       +     '<div style="color:var(--text-muted);font-size:10px;text-transform:uppercase;letter-spacing:.08em;font-weight:700;">Ativas (entram nas análises)</div>'
+       +     '<div class="fin-card-val" style="font-size:22px;font-weight:700;margin-top:6px;color:#15803d;">'+fI(totAtv)+'</div>'
+       +     '<div style="color:var(--text-muted);font-size:10.5px;margin-top:3px;">'+fK(valAtv)+'</div>'
+       +   '</div>'
+       +   '<div class="fin-card" style="background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:14px;">'
+       +     '<div style="color:var(--text-muted);font-size:10px;text-transform:uppercase;letter-spacing:.08em;font-weight:700;">Ignoradas (excluídas das análises)</div>'
+       +     '<div class="fin-card-val" style="font-size:22px;font-weight:700;margin-top:6px;color:#d97706;">'+fI(totIgn)+'</div>'
+       +     '<div style="color:var(--text-muted);font-size:10.5px;margin-top:3px;">'+fK(valIgn)+'</div>'
+       +   '</div>'
+       +   '<div class="fin-card" style="background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:14px;">'
+       +     '<div style="color:var(--text-muted);font-size:10px;text-transform:uppercase;letter-spacing:.08em;font-weight:700;">Total ignorado (sistema)</div>'
+       +     '<div class="fin-card-val" style="font-size:22px;font-weight:700;margin-top:6px;">'+fI(totalIgnGeral)+'</div>'
+       +     '<div style="color:var(--text-muted);font-size:10.5px;margin-top:3px;">NFs marcadas em todas as bases</div>'
+       +   '</div>'
+       + '</div>';
+
+  // Tabela
+  if(!listaExib.length){
+    html += '<div class="cc" style="margin-top:14px;">'
+         +   '<div style="padding:30px;text-align:center;color:var(--text-muted);font-size:13px;">'
+         +     'Nenhuma NF encontrada com os filtros atuais.'
+         +   '</div>'
+         + '</div>';
+  } else {
+    html += '<div class="ds" style="margin-top:14px;">'
+         +    '<div class="ds-hdr">'
+         +      '<div class="ds-ico"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></div>'
+         +      '<div><div class="ds-title">NFs no período</div><div class="ds-sub">Marque a coluna "Ignorar" para excluir uma NF das análises. Clique nela para expandir os produtos.</div></div>'
+         +    '</div>'
+         +    '<div class="ds-body" style="padding:0;">'
+         +      '<div class="tscroll" style="max-height:600px;overflow-y:auto;">'
+         +      '<table class="t nff-tbl"><thead><tr>'
+         +        '<th class="L" style="width:38px;">Ign.</th>'
+         +        '<th class="L">Data</th>'
+         +        '<th class="L">Nº NF</th>'
+         +        '<th class="L">Fornecedor</th>'
+         +        '<th>Qtde</th>'
+         +        '<th>Valor</th>'
+         +        '<th class="L">Status</th>'
+         +        '<th class="L">Motivo</th>'
+         +        '<th class="L">Marcado por</th>'
+         +      '</tr></thead><tbody>';
+
+    listaExib.forEach(function(n){
+      const ign = (_nfsIgnCache && _nfsIgnCache.nfs && _nfsIgnCache.nfs[n.key]) || null;
+      const dataFmt = n.data ? n.data.split('-').reverse().join('/') : '-';
+      const stMap = {pago:{cls:'ok',txt:'Pago'},aberto:{cls:'wn',txt:'Em aberto'},parcial:{cls:'wn',txt:'Parcial'},desconhecido:{cls:'',txt:'—'}};
+      const stInfo = stMap[n.status] || stMap['desconhecido'];
+
+      html += '<tr class="nff-row'+(ign?' nff-row-ign':'')+'" data-key="'+esc(n.key)+'" style="'+(ign?'background:#fef3c7;':'')+'">'
+           +    '<td class="L"><input type="checkbox" class="nff-chk" data-key="'+esc(n.key)+'"'+(ign?' checked':'')+' style="cursor:pointer;width:18px;height:18px;"></td>'
+           +    '<td class="L">'+esc(dataFmt)+'</td>'
+           +    '<td class="L"><span style="font-family:JetBrains Mono,monospace;font-size:11px;">'+esc(n.num_nota||'-')+'</span></td>'
+           +    '<td class="L"><span style="font-size:11.5px;">'+esc((n.forn_nome||'#'+n.forn_cod).substring(0,40))+'</span><div style="font-size:10px;color:var(--text-muted);">#'+esc(n.forn_cod||'')+' · '+fI(n.produtos.length)+' SKUs</div></td>'
+           +    '<td>'+fI(n.qt)+' un</td>'
+           +    '<td style="font-weight:600;">'+fK(n.valor)+'</td>'
+           +    '<td class="L"><span class="kg-tag '+stInfo.cls+'" style="font-size:10px;">'+stInfo.txt+'</span></td>'
+           +    '<td class="L"><input type="text" class="nff-motivo" data-key="'+esc(n.key)+'" value="'+esc((ign && ign.motivo)||'')+'" placeholder="opcional" style="width:140px;padding:4px 6px;border:1px solid var(--border);border-radius:3px;font-size:11px;background:var(--surface);"></td>'
+           +    '<td class="L" style="font-size:10.5px;color:var(--text-muted);">'+(ign?esc(ign.marcado_por_email||ign.marcado_por_nome||'')+'<br><span style="font-size:9.5px;">'+esc((ign.marcado_em||'').substring(0,10))+'</span>':'-')+'</td>'
+           +  '</tr>';
+    });
+
+    html += '</tbody></table>'
+         + '</div>'  // fecha tscroll
+         + '</div>'  // fecha ds-body
+         + '</div>'; // fecha ds
+  }
+
+  cont.innerHTML = html;
+  _nfFechBindHandlers();
+}
+
+function _nfFechBindHandlers(){
+  const cont = document.getElementById('page-nf-fechamento');
+  if(!cont) return;
+
+  // Filtros
+  const btnApl = cont.querySelector('#nff-aplicar');
+  if(btnApl){
+    btnApl.onclick = function(){
+      _nfFechFiltros.ymIni = (cont.querySelector('#nff-ymi') || {}).value || '';
+      _nfFechFiltros.ymFim = (cont.querySelector('#nff-ymf') || {}).value || '';
+      _nfFechFiltros.forn_cod = (cont.querySelector('#nff-forn') || {}).value || '';
+      _nfFechFiltros.busca_nf = (cont.querySelector('#nff-busca') || {}).value || '';
+      _nfFechFiltros.mostrar = (cont.querySelector('#nff-show') || {}).value || 'todas';
+      _nfFechRender();
+    };
+  }
+  const btnLim = cont.querySelector('#nff-limpar');
+  if(btnLim){
+    btnLim.onclick = function(){
+      const yms = _nfFechColetarYms();
+      _nfFechFiltros = {
+        ymIni: yms[Math.max(0, yms.length - 4)] || '',
+        ymFim: yms[yms.length - 1] || '',
+        filial: _nfFechFiltros.filial,
+        forn_cod: '', busca_nf: '', mostrar: 'todas'
+      };
+      _nfFechRender();
+    };
+  }
+
+  // Enter no campo de busca = aplicar
+  const inpBusca = cont.querySelector('#nff-busca');
+  if(inpBusca){
+    inpBusca.onkeydown = function(e){
+      if(e.key === 'Enter'){ if(btnApl) btnApl.click(); }
+    };
+  }
+
+  // Checkboxes
+  cont.querySelectorAll('.nff-chk').forEach(function(chk){
+    chk.onchange = async function(){
+      const key = chk.getAttribute('data-key');
+      const tr = chk.closest('tr');
+      const motivoInp = cont.querySelector('.nff-motivo[data-key="'+key+'"]');
+      const motivo = motivoInp ? motivoInp.value : '';
+
+      // Coleta payload a partir do estado atual
+      const lista = _nfFechAgregarNFs();
+      const nf = lista.find(function(n){return n.key === key;});
+      if(!nf){
+        console.warn('[nff] NF não encontrada para chave', key);
+        chk.checked = !chk.checked;
+        return;
+      }
+
+      chk.disabled = true;
+      try {
+        if(chk.checked){
+          const r = await _marcarNfIgnorada({
+            base: nf.base, filial: nf.filial, num_nota: nf.num_nota,
+            forn_cod: nf.forn_cod, forn_nome: nf.forn_nome,
+            data: nf.data, valor: nf.valor, motivo: motivo
+          });
+          if(!r.ok){
+            alert('Falha ao marcar NF: ' + (r.erro || 'erro desconhecido'));
+            chk.checked = false;
+            return;
+          }
+        } else {
+          const r = await _desmarcarNfIgnorada(nf.base, nf.filial, nf.num_nota, nf.forn_cod, nf.data);
+          if(!r.ok){
+            alert('Falha ao desmarcar NF: ' + (r.erro || 'erro desconhecido'));
+            chk.checked = true;
+            return;
+          }
+        }
+        // Re-render mais leve: só atualiza a linha
+        _nfFechRender();
+      } finally {
+        chk.disabled = false;
+      }
+    };
+  });
+
+  // Inputs de motivo: salva ao perder foco se a NF está marcada
+  cont.querySelectorAll('.nff-motivo').forEach(function(inp){
+    inp.onblur = async function(){
+      const key = inp.getAttribute('data-key');
+      const chk = cont.querySelector('.nff-chk[data-key="'+key+'"]');
+      if(!chk || !chk.checked) return; // só salva motivo se NF está ignorada
+      const novoMotivo = inp.value;
+      if(_nfsIgnCache && _nfsIgnCache.nfs && _nfsIgnCache.nfs[key]){
+        if(_nfsIgnCache.nfs[key].motivo === novoMotivo) return; // sem mudança
+        // Re-marca pra atualizar motivo
+        const nf = _nfsIgnCache.nfs[key];
+        await _marcarNfIgnorada({
+          base: nf.base, filial: nf.filial, num_nota: nf.num_nota,
+          forn_cod: nf.forn_cod, forn_nome: nf.forn_nome,
+          data: nf.data, valor: nf.valor, motivo: novoMotivo
+        });
+      }
+    };
+  });
+}
+
+// CSS responsivo da página NF Fechamento
+(function(){
+  if(document.getElementById('nff-css')) return;
+  const st = document.createElement('style');
+  st.id = 'nff-css';
+  st.textContent = ''
+    + '.nff-row-ign td{color:#92400e;}'
+    + '.nff-row:hover{background:var(--surface-2) !important;}'
+    + '.nff-row-ign:hover{background:#fde68a !important;}'
+    // Tablet
+    + '@media(max-width:900px){'
+    +   '.nff-filt-grid{grid-template-columns:repeat(2,1fr) !important;}'
+    +   '.nff-kpis{grid-template-columns:repeat(2,1fr) !important;}'
+    + '}'
+    // Mobile
+    + '@media(max-width:720px){'
+    +   '.nff-filt-grid{grid-template-columns:1fr !important;}'
+    +   '.nff-kpis{grid-template-columns:1fr !important;}'
+    +   '.nff-second-row{grid-template-columns:1fr !important;}'
+    +   '.nff-tbl th:nth-child(7),.nff-tbl td:nth-child(7),'  // status
+    +     '.nff-tbl th:nth-child(9),.nff-tbl td:nth-child(9){display:none;}' // marcado por
     + '}';
   document.head.appendChild(st);
 })();

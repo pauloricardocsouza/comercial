@@ -216,7 +216,7 @@ const AUTH_MODE = 'firebase'; // 'mock' | 'firebase'
 // Convenção:
 //   X.x → alteração grande (quebra de compatibilidade, nova feature grande)
 //   x.X → alteração suave (fix, ajuste visual, pequeno refinamento)
-const APP_VERSION = '4.67-comercial';
+const APP_VERSION = '4.68-comercial';
 
 // ================================================================
 // HELPERS DE CHART.JS — compatíveis com Safari/iOS (sem spread ops)
@@ -1006,6 +1006,7 @@ const PAGINAS_CATALOGO = [
   {id:'alertas',      nome:'Alertas',             grupo:'Compras'},
   {id:'diagnostico',  nome:'Diag. Produto',       grupo:'Compras'},
   {id:'diag-forn',    nome:'Diag. Fornecedor',    grupo:'Compras'},
+  {id:'nf-fechamento',nome:'NF Fechamento',       grupo:'Compras'},
   {id:'v-visao-grupo',    nome:'Visão Consolidada',   grupo:'Vendas'},
   {id:'v-evolucao',       nome:'Evolução Mensal',     grupo:'Vendas'},
   // [removido em v4.13] páginas individuais de loja (v-atp-varejo, v-atp-atacado, v-cestao, v-inh)
@@ -6594,4 +6595,190 @@ if(document.readyState !== 'loading'){
     const link = e.target.closest('.sb-link');
     if(link){ _navClearOnSidebar(); }
   }, true);
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// v4.68-comercial: NFs IGNORADAS · service layer
+// ════════════════════════════════════════════════════════════════════════════
+// Estrutura Firestore: config/nfs_ignoradas_v1
+//   {
+//     nfs: {
+//       "<base>__<filial>__<num_nota>__<forn_cod>__<data>": {
+//         base, filial, num_nota, forn_cod, forn_nome, data, valor,
+//         marcado_por, marcado_em, motivo
+//       }
+//     },
+//     atualizado_em, atualizado_por
+//   }
+// Estrutura localStorage: chave 'nfs_ignoradas_v1' (mesma forma)
+//
+// Uso:
+//   await _carregarNfsIgnoradas()
+//   _isNfIgnorada(base, filial, num_nota, forn_cod, data) → bool
+//   await _marcarNfIgnorada({base, filial, num_nota, forn_cod, forn_nome, data, valor, motivo})
+//   await _desmarcarNfIgnorada(base, filial, num_nota, forn_cod, data)
+//
+// O filtro é aplicado em E.produtos[].entradas_detalhadas (a fonte canônica
+// de NF individual com data, valor, fornecedor) por _filtrarEntradasNfIgnoradas().
+
+let _nfsIgnCache = null;        // {nfs: {key: {...}}}
+let _nfsIgnLoading = null;
+const NFS_IGN_LS_KEY = 'nfs_ignoradas_v1';
+
+function _mkNfKey(base, filial, num_nota, forn_cod, data){
+  return String(base||'').toLowerCase() + '__'
+       + String(filial||'').toUpperCase() + '__'
+       + String(num_nota||'') + '__'
+       + String(forn_cod||'') + '__'
+       + String(data||'');
+}
+
+async function _carregarNfsIgnoradas(){
+  if(_nfsIgnCache) return _nfsIgnCache;
+  if(_nfsIgnLoading) return _nfsIgnLoading;
+
+  _nfsIgnLoading = (async function(){
+    // Firestore primeiro
+    if(AUTH_MODE === 'firebase' && window.fbDb){
+      try {
+        const doc = await window.fbDb.collection('config').doc('nfs_ignoradas_v1').get();
+        if(doc.exists){
+          const data = doc.data();
+          _nfsIgnCache = {nfs: (data && data.nfs) || {}};
+          try { localStorage.setItem(NFS_IGN_LS_KEY, JSON.stringify(_nfsIgnCache)); } catch(e){}
+          return _nfsIgnCache;
+        } else {
+          _nfsIgnCache = {nfs:{}};
+          try { localStorage.setItem(NFS_IGN_LS_KEY, JSON.stringify(_nfsIgnCache)); } catch(e){}
+          return _nfsIgnCache;
+        }
+      } catch(e){
+        console.warn('[nfsIgn] erro ao ler Firestore, caindo pro cache local:', e.message);
+      }
+    }
+    // Fallback: localStorage
+    try {
+      const raw = localStorage.getItem(NFS_IGN_LS_KEY);
+      _nfsIgnCache = raw ? JSON.parse(raw) : {nfs:{}};
+      if(!_nfsIgnCache.nfs) _nfsIgnCache.nfs = {};
+    } catch(e){
+      _nfsIgnCache = {nfs:{}};
+    }
+    return _nfsIgnCache;
+  })();
+
+  return _nfsIgnLoading;
+}
+
+// Verifica sincronamente. Funciona depois de _carregarNfsIgnoradas() ter rodado.
+function _isNfIgnorada(base, filial, num_nota, forn_cod, data){
+  if(!_nfsIgnCache || !_nfsIgnCache.nfs) return false;
+  const k = _mkNfKey(base, filial, num_nota, forn_cod, data);
+  return !!_nfsIgnCache.nfs[k];
+}
+
+// Filtra um array de entradas_detalhadas, removendo NFs marcadas como ignoradas.
+// Cada entrada deve ter: data, fornecedor_cod, nf.
+// 'baseSlug' é opcional — se não informado, usa _getBaseSlug() do helper interno.
+function _filtrarEntradasNfIgnoradas(entradas, baseSlug, filial){
+  if(!entradas || !entradas.length) return entradas || [];
+  if(!_nfsIgnCache || !_nfsIgnCache.nfs || !Object.keys(_nfsIgnCache.nfs).length){
+    return entradas; // shortcut: nenhuma NF ignorada
+  }
+  const base = baseSlug || (typeof _getBaseSlug === 'function' ? _getBaseSlug() : 'atp');
+  const fil  = filial || (_filialAtual && _filialAtual.sigla) || '';
+  return entradas.filter(function(ed){
+    return !_isNfIgnorada(base, fil, ed.nf, ed.fornecedor_cod, ed.data);
+  });
+}
+
+async function _marcarNfIgnorada(payload){
+  // payload: {base, filial, num_nota, forn_cod, forn_nome, data, valor, motivo}
+  await _carregarNfsIgnoradas();
+  const sess = _getSessao();
+  const key = _mkNfKey(payload.base, payload.filial, payload.num_nota, payload.forn_cod, payload.data);
+  _nfsIgnCache.nfs[key] = {
+    base: payload.base,
+    filial: payload.filial,
+    num_nota: payload.num_nota,
+    forn_cod: payload.forn_cod,
+    forn_nome: payload.forn_nome || '',
+    data: payload.data,
+    valor: payload.valor || 0,
+    motivo: payload.motivo || '',
+    marcado_por_uid: sess ? sess.uid : null,
+    marcado_por_email: sess ? sess.email : null,
+    marcado_por_nome: sess ? sess.nome : null,
+    marcado_em: new Date().toISOString()
+  };
+  return _persistirNfsIgnoradas('marcar', key);
+}
+
+async function _desmarcarNfIgnorada(base, filial, num_nota, forn_cod, data){
+  await _carregarNfsIgnoradas();
+  const key = _mkNfKey(base, filial, num_nota, forn_cod, data);
+  delete _nfsIgnCache.nfs[key];
+  return _persistirNfsIgnoradas('desmarcar', key);
+}
+
+async function _persistirNfsIgnoradas(acao, nfKey){
+  if(!_nfsIgnCache) _nfsIgnCache = {nfs:{}};
+
+  // localStorage sempre
+  try { localStorage.setItem(NFS_IGN_LS_KEY, JSON.stringify(_nfsIgnCache)); } catch(e){}
+
+  // Invalida caches que dependem de NFs (para re-renderização)
+  // O extrato detalhado e qualquer agregado de compra a partir de E.produtos
+  // recalcula no próximo render. Cubo: invalida via _cuLoading.
+  if(typeof Cu !== 'undefined' && Cu){
+    // Cubo não recarrega (vem do gz); mas qualquer pivot recalcula on render
+  }
+
+  // Firestore se disponível
+  if(AUTH_MODE === 'firebase' && window.fbDb){
+    try {
+      if(window.fbAuth && window.fbAuth.currentUser){
+        await window.fbAuth.currentUser.getIdToken(true);
+      }
+    } catch(e){}
+    try {
+      const sess = _getSessao();
+      await window.fbDb.collection('config').doc('nfs_ignoradas_v1').set({
+        nfs: _nfsIgnCache.nfs,
+        atualizado_em: new Date().toISOString(),
+        atualizado_por: sess ? sess.email : 'desconhecido'
+      });
+      _auditLog('nf_'+acao, {nfKey: nfKey, detalhes: _nfsIgnCache.nfs[nfKey] || {nfKey: nfKey}});
+      return {ok:true};
+    } catch(e){
+      console.error('[nfsIgn] falha ao salvar Firestore:', e);
+      return {ok:false, erro: e.message || String(e)};
+    }
+  }
+  return {ok:true, modo:'local'};
+}
+
+// Bootstrap: carrega NFs ignoradas após login pra que filtros funcionem em qualquer página.
+document.addEventListener('DOMContentLoaded', function(){
+  // Tenta a cada 2s nos primeiros 20s, até o usuário estar logado.
+  let tentativas = 0;
+  const t = setInterval(function(){
+    tentativas++;
+    if(tentativas > 10){ clearInterval(t); return; }
+    const sess = (typeof _getSessao === 'function') ? _getSessao() : null;
+    if(sess){
+      _carregarNfsIgnoradas().catch(function(e){
+        console.warn('[nfsIgn] bootstrap falhou:', e.message);
+      });
+      clearInterval(t);
+    }
+  }, 2000);
+});
+
+// Helper público pra UIs: retorna true se o usuário pode marcar NFs.
+function _podeMarcarNfs(){
+  const sess = (typeof _getSessao === 'function') ? _getSessao() : null;
+  if(!sess) return false;
+  const perfil = sess.perfil;
+  return perfil === 'admin' || perfil === 'gestor';
 }

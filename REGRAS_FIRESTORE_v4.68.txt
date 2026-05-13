@@ -1,0 +1,125 @@
+// REGRAS FIRESTORE · v4.68 · 12/mai/2026
+// Cole essas regras no Firebase Console substituindo as atuais.
+// Console: https://console.firebase.google.com/project/gpcomercial-7816f/firestore/rules
+//
+// MUDANÇAS DESDE v4.39:
+// - SEM mudanças estruturais: NFs ignoradas (config/nfs_ignoradas_v1) já é
+//   coberto pela regra existente /config/{doc} (admin escreve, todos leem).
+//
+//   ATENÇÃO: a regra atual /config/{doc} permite SOMENTE admin escrever.
+//   Como pediu acesso pra gestor + admin, este arquivo TRAZ a regra ajustada.
+// MUDANÇAS DESDE v4.32:
+// - Removida regra antiga /supervisoresIgnorados/{base} (não usada desde v4.37,
+//   substituída por config/supervisores_loja_v2 que já é coberto por /config/{doc}).
+//
+// COMO APLICAR:
+// 1. Abre o Firebase Console no link acima
+// 2. Cola TUDO desta página (de "rules_version" até o "}" final), substituindo o que está lá
+// 3. Clica "Publicar"
+// 4. Aguarda confirmação visual
+
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function authed() {
+      return request.auth != null;
+    }
+
+    function userDoc() {
+      return get(/databases/$(database)/documents/usuarios/$(request.auth.uid)).data;
+    }
+
+    function isAdmin() {
+      return authed() && userDoc().perfil == 'admin' && userDoc().ativo == true;
+    }
+
+    match /usuarios/{uid} {
+      allow read: if authed() && (request.auth.uid == uid || isAdmin());
+      allow list: if isAdmin();
+      allow create: if isAdmin();
+      allow update: if isAdmin()
+        || (authed() && request.auth.uid == uid
+            && request.resource.data.diff(resource.data).changedKeys()
+                .hasOnly(['senha_temp', 'ultimo_acesso']));
+      allow delete: if isAdmin();
+    }
+
+    match /perfisTemplate/{key} {
+      allow read: if authed();
+      allow write: if isAdmin();
+    }
+
+    // /config/nfs_ignoradas_v1: NFs marcadas para serem ignoradas nas análises.
+    // Acessível a admin + gestor (escrita), todos autenticados (leitura).
+    // Documento estrutural: { nfs: {key: {...}}, atualizado_em, atualizado_por }
+    match /config/nfs_ignoradas_v1 {
+      allow read: if authed();
+      allow write: if authed() && (
+        userDoc().perfil == 'admin' ||
+        userDoc().perfil == 'gestor'
+      ) && userDoc().ativo == true;
+    }
+
+    // /config/{doc} cobre TODOS os documentos de configuração:
+    // - config/gpc_fornecedores_atp, gpc_fornecedores_cp1, etc.
+    // - config/hidden_skus_atp, hidden_skus_cp, etc.
+    // - config/estoque_ideal_atp, etc.
+    // - config/metas_gpc_v2  (v4.34)
+    // - config/supervisores_loja_v2  (v4.37 — antes era supervisores_loja)
+    match /config/{doc} {
+      allow read: if authed();
+      allow write: if isAdmin();
+    }
+
+    match /auditLog/{id} {
+      allow create: if authed();
+      allow read, list: if isAdmin();
+      allow update, delete: if false;
+    }
+
+    match /uploads/{uploadId} {
+      allow read, list: if isAdmin();
+      allow create: if authed();
+      allow update, delete: if isAdmin();
+    }
+
+    // Análises de pivot salvas pelos usuários
+    match /analises_pivot/{id} {
+      allow read: if authed() && (
+        resource.data.escopo == 'time'
+        || resource.data.owner_uid == request.auth.uid
+        || isAdmin()
+      );
+      allow list: if authed();
+      allow create: if authed()
+        && request.resource.data.owner_uid == request.auth.uid
+        && request.resource.data.nome is string
+        && request.resource.data.nome.size() > 0;
+      allow update: if authed() && (
+        resource.data.owner_uid == request.auth.uid || isAdmin()
+      );
+      allow delete: if authed() && (
+        resource.data.owner_uid == request.auth.uid || isAdmin()
+      );
+    }
+
+    // Pins fixados na home (cada usuário gerencia os seus)
+    // Documentos em users/{uid}/pins/{pinId}
+    match /users/{uid}/pins/{pinId} {
+      allow read, list: if authed() && request.auth.uid == uid;
+      allow create, update, delete: if authed() && request.auth.uid == uid;
+    }
+
+    // Dias de oferta (C&P) cadastrados por loja e mês
+    // Documento ID: 'LOJA_YYYY-MM' (ex: 'ATP-V_2026-04')
+    match /dias_cp/{docId} {
+      allow read, list: if authed();
+      allow create, update, delete: if isAdmin();
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
