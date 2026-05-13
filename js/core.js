@@ -216,7 +216,7 @@ const AUTH_MODE = 'firebase'; // 'mock' | 'firebase'
 // Convenção:
 //   X.x → alteração grande (quebra de compatibilidade, nova feature grande)
 //   x.X → alteração suave (fix, ajuste visual, pequeno refinamento)
-const APP_VERSION = '4.73-comercial';
+const APP_VERSION = '4.74-comercial';
 
 // ================================================================
 // HELPERS DE CHART.JS — compatíveis com Safari/iOS (sem spread ops)
@@ -339,17 +339,41 @@ function _auditLog(tipo, detalhes, identidadeOverride){
 // Departamentos por SKU, Curva ABC, Fornecedores) NÃO têm como descontar
 // supervisor — o ETL não traz vendedor por SKU. Não inclua essas.
 // Páginas baseadas em V.diario (Vendas Diárias, Dias C&P) também não.
+// v4.74: agora lista TODAS as páginas do sistema. Cada uma pode ser
+// pré-configurada pelo admin mesmo quando o filtro ainda não aplica
+// (ex: páginas de Compras baseadas em E.produtos, que não trazem
+// cod_supervisor por SKU). Quando o ETL passar a fornecer o dado, basta
+// flipar aplicaFiltro:true.
 const _SUP_IGN_PAGINAS_CATALOGO = [
-  // Compras (cv consome via getEvo + V.mensal)
+  // ─── Compras ───
+  // Aplicam (V.mensal/V.vendedores via _vendasMensalPor / aplicaFiltroSupVMensalRow / Filtros)
   {id:'cv',             label:'Compras × Vendas',        grupo:'Compras',      aplicaFiltro:true},
-  // Vendas (todas usam V.mensal via _vendasMensalPor com pagina, ou aplicaFiltroSupVMensalRow)
-  {id:'executivo',      label:'Visão executiva',         grupo:'Vendas',       aplicaFiltro:true},
+  {id:'executivo',      label:'Visão executiva',         grupo:'Compras',      aplicaFiltro:true},
+  // Não aplicam hoje (base = E.produtos / F / cubo · sem cod_supervisor por SKU/título)
+  {id:'deptos',         label:'Departamentos',           grupo:'Compras',      aplicaFiltro:false},
+  {id:'estoque',        label:'Estoque',                 grupo:'Compras',      aplicaFiltro:false},
+  {id:'excesso',        label:'Excesso de estoque',      grupo:'Compras',      aplicaFiltro:false},
+  {id:'financeiro',     label:'Financeiro',              grupo:'Compras',      aplicaFiltro:false},
+  {id:'fornecedores',   label:'Fornecedores',            grupo:'Compras',      aplicaFiltro:false},
+  {id:'forn-gpc',       label:'GPC',                     grupo:'Compras',      aplicaFiltro:false},
+  {id:'abc',            label:'Curva ABC',               grupo:'Compras',      aplicaFiltro:false},
+  {id:'alertas',        label:'Alertas',                 grupo:'Compras',      aplicaFiltro:false},
+  {id:'diagnostico',    label:'Diag. Produto',           grupo:'Compras',      aplicaFiltro:false},
+  {id:'diag-forn',      label:'Diag. Fornecedor',        grupo:'Compras',      aplicaFiltro:false},
+  {id:'nf-fechamento',  label:'NF Fechamento',           grupo:'Compras',      aplicaFiltro:false},
+  // ─── Vendas ───
   {id:'v-visao-grupo',  label:'Visão Consolidada',       grupo:'Vendas',       aplicaFiltro:true},
   {id:'v-evolucao',     label:'Evolução Mensal',         grupo:'Vendas',       aplicaFiltro:true},
+  {id:'v-itens',        label:'Itens & Deptos',          grupo:'Vendas',       aplicaFiltro:false},
+  {id:'v-vendas-diarias',label:'Vendas Diárias',         grupo:'Vendas',       aplicaFiltro:false},
+  {id:'v-dias-cp',      label:'Dias C & P',              grupo:'Vendas',       aplicaFiltro:false},
+  {id:'v-metas',        label:'Metas',                   grupo:'Vendas',       aplicaFiltro:true},
   {id:'recebimentos',   label:'Inadimplência',           grupo:'Vendas',       aplicaFiltro:true},
   {id:'v-benchmarking', label:'RCA',                     grupo:'Vendas',       aplicaFiltro:true},
   {id:'v-ano2026',      label:'Análise 2026',            grupo:'Vendas',       aplicaFiltro:true},
   {id:'v-drilldown',    label:'Drill-Down por Vendedor', grupo:'Vendas',       aplicaFiltro:true},
+  // ─── Análise ───
+  {id:'cubo',           label:'Análise Dinâmica',        grupo:'Análise',      aplicaFiltro:false},
 ];
 
 let _supIgnoradosCache = null;     // {paginas: {pagina: {loja: [cod, ...]}}}
@@ -5186,7 +5210,21 @@ function buildFilterBar(pageId){
       document.querySelectorAll('.pfb-dept').forEach(s=>s.value=activeDept);
     }
     updateFilterSummary();
-    renderedPages.forEach(pg=>renderPage(pg));
+    // v4.74: re-render apenas a página ativa; as demais (já visitadas) viram
+    // "stale" e serão re-renderizadas quando o usuário navegar até elas.
+    // Antes: renderedPages.forEach(pg=>renderPage(pg)) — gastava CPU em
+    // páginas que nem estavam visíveis (5-10× mais lento).
+    const active = document.querySelector('.page.active');
+    const activeId = active ? active.id.replace('page-','') : null;
+    if(activeId && renderedPages.has(activeId)){
+      renderPage(activeId);
+    }
+    // Invalida o resto: na próxima visita o renderPage será disparado de novo
+    if(renderedPages && renderedPages.forEach){
+      const toInvalidate = [];
+      renderedPages.forEach(pg=>{ if(pg !== activeId) toInvalidate.push(pg); });
+      toInvalidate.forEach(pg=>renderedPages.delete(pg));
+    }
   });
 
   return bar;

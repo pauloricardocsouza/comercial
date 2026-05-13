@@ -1335,7 +1335,7 @@ function getEstoqueIdeal(base){
     const v = localStorage.getItem('estoqueIdeal:'+base) || localStorage.getItem('estoqueIdeal');
     if(v){ const n=parseInt(v); if(n>0&&n<=999) return n; }
   }catch(e){}
-  return 45;
+  return 180; // v4.74: default é o limite de excesso da página Excesso de estoque
 }
 function setEstoqueIdeal(n, base){
   base = base || _getBaseAtivaParaConfig() || 'default';
@@ -1529,7 +1529,7 @@ function renderAdmin(){
             <div class="ds-sub">Histórico de acessos e ações no sistema</div>
           </div>
           <div style="margin-left:auto;font-size:10px;color:var(--text-muted);font-family:JetBrains Mono,monospace;text-transform:uppercase;letter-spacing:.05em;">
-            ⚠ Mock — dados de exemplo
+            ${AUTH_MODE === 'firebase' ? 'Firestore · auditLog (últimos 500)' : '⚠ Mock — sem Firebase'}
           </div>
         </div>
         <div class="ds-body">
@@ -1566,7 +1566,7 @@ function renderAdmin(){
         <div class="ds-body">
           <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap;">
             <div style="flex:1;min-width:260px;">
-              <label style="font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.1em;display:block;margin-bottom:6px;">Dias ideais de estoque</label>
+              <label style="font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.1em;display:block;margin-bottom:6px;">Limite de cobertura para considerar excesso (dias)</label>
               <div style="display:flex;align-items:center;gap:8px;">
                 <input id="cfg-estoque-ideal" type="number" min="1" max="999" value="${getEstoqueIdeal(_baseAdminSelecionada)}"
                   style="width:100px;padding:9px 12px;border:1px solid var(--border-strong);border-radius:7px;font-size:14px;background:var(--surface);color:var(--text);font-family:'JetBrains Mono',monospace;font-weight:700;text-align:center;">
@@ -1575,7 +1575,7 @@ function renderAdmin(){
                 <span id="cfg-ei-msg" style="font-size:11px;color:var(--success-text);margin-left:4px;opacity:0;transition:opacity .3s;">✓ Salvo</span>
               </div>
               <div style="font-size:11px;color:var(--text-muted);margin-top:6px;line-height:1.4;">
-                Usado na análise de Excesso de Estoque. Define a partir de quantos dias de cobertura um SKU é considerado em excesso.
+                Usado na página <strong>Excesso de Estoque</strong>: SKUs com cobertura acima deste valor entram na lista de excesso por giro. Default 180 dias (≈ 6 meses). Status PARADO/MORTO/CRÍTICO sempre entram independentemente.
               </div>
             </div>
           </div>
@@ -1802,7 +1802,7 @@ function _renderSupIgnUI(){
     html += '<select id="adm-sup-pagina" style="width:100%;padding:8px 10px;border:1px solid var(--border-strong);border-radius:5px;font-size:12.5px;background:var(--surface);">';
     // Agrupa MANTENDO ordem do catálogo: novo optgroup quando o grupo muda
     let grupoAtual = null;
-    catalogo.forEach(function(p, i){
+    catalogo.forEach(function(p){
       if(p.grupo !== grupoAtual){
         if(grupoAtual !== null) html += '</optgroup>';
         html += '<optgroup label="'+esc(p.grupo)+'">';
@@ -1810,14 +1810,15 @@ function _renderSupIgnUI(){
       }
       const cfgEsta = (cfg.paginas && cfg.paginas[p.id]) || {};
       const totIgn = Object.keys(cfgEsta).reduce(function(s,l){return s + (cfgEsta[l]||[]).length;}, 0);
+      const prefixo = p.aplicaFiltro === false ? '○ ' : '';
       html += '<option value="'+escAttr(p.id)+'"'+(p.id===paginaSel?' selected':'')+'>'
-        + esc(p.label) + (totIgn>0 ? ' · '+totIgn+' ignorado(s)' : '')
+        + prefixo + esc(p.label) + (totIgn>0 ? ' · '+totIgn+' ignorado(s)' : '')
         + '</option>';
     });
     if(grupoAtual !== null) html += '</optgroup>';
     html += '</select>';
     html += '<div style="font-size:10px;color:var(--text-muted);margin-top:4px;">'
-      +    'Listagem inclui apenas páginas que de fato aplicam o filtro hoje.'
+      +    'Páginas com <strong>○</strong> aceitam configuração mas o filtro ainda não aplica (a fonte de dados não traz cod_supervisor).'
       +    '</div>';
     html += '</div>';
     // Atalhos
@@ -1828,10 +1829,16 @@ function _renderSupIgnUI(){
     html += '</div>';
 
     // Indicador da página selecionada
-    html += '<div style="margin-bottom:12px;padding:10px 12px;background:var(--accent-bg);border-left:3px solid var(--accent);border-radius:5px;font-size:12px;">';
+    const aplicaAgora = paginaInfo.aplicaFiltro !== false;
+    const bgInd  = aplicaAgora ? 'var(--accent-bg)'   : '#fef3c7';
+    const corInd = aplicaAgora ? 'var(--accent)'      : '#d97706';
+    const tagInd = aplicaAgora
+      ? '<span style="color:var(--text-dim);">Marque os supervisores que devem ser excluídos do cálculo nesta página.</span>'
+      : '<span style="color:#92400e;">A configuração é salva, mas o filtro <strong>ainda não aplica</strong> nesta página (fonte de dados sem cod_supervisor por SKU/título). Será habilitado quando o ETL fornecer a quebra.</span>';
+    html += '<div style="margin-bottom:12px;padding:10px 12px;background:'+bgInd+';border-left:3px solid '+corInd+';border-radius:5px;font-size:12px;">';
     html += '<strong style="color:var(--text);">'+esc(paginaInfo.label)+'</strong>';
     html += ' <span style="color:var(--text-muted);">·</span> ';
-    html += '<span style="color:var(--text-dim);">Marque os supervisores que devem ser excluídos do cálculo nesta página.</span>';
+    html += tagInd;
     html += '</div>';
 
     // Cards por loja
@@ -1857,10 +1864,12 @@ function _renderSupIgnUI(){
     });
     html += '</div>';
 
+    const totAplicam   = catalogo.filter(function(p){return p.aplicaFiltro !== false;}).length;
+    const totNaoAplicam = catalogo.length - totAplicam;
     html += '<div style="margin-top:10px;padding:8px 10px;background:var(--surface-2);border-left:3px solid var(--accent);border-radius:4px;font-size:11px;color:var(--text-dim);line-height:1.5;">';
-    html += '<strong>Como funciona:</strong> a configuração é por página. Cada página da lista acima tem sua própria seleção. Útil para esconder grupos como INATIVOS, NEGOCIAÇÕES ESPECIAIS ou GPC INTRAGRUPO em algumas análises mas mantê-los visíveis em outras.';
-    html += '<br><br><strong>Páginas listadas (8):</strong> Compras × Vendas, Visão executiva, Visão Consolidada, Evolução Mensal, Inadimplência, RCA, Análise 2026, Drill-Down. Para essas o sistema desconta os supervisores marcados aqui dos totais agregados (cruzando <code>V.vendedores.supervisores_por_filial</code> e ratendo pelo perfil mensal de cada loja).';
-    html += '<br><br><strong>Páginas que não estão aqui</strong> (Estoque, Excesso, Departamentos, Fornecedores, Curva ABC, Cubo, Diag. Produto, Diag. Fornecedor, Itens & Deptos, Vendas Diárias, Dias C&amp;P, Metas) usam fontes que ainda não trazem cod_supervisor por SKU/dia. Quando o ETL passar a fornecer essa quebra, basta adicionar ao catálogo em <code>core.js</code>.';
+    html += '<strong>Como funciona:</strong> a configuração é por página. Cada página da lista tem sua própria seleção. Útil para esconder grupos como INATIVOS, NEGOCIAÇÕES ESPECIAIS ou GPC INTRAGRUPO em algumas análises mas mantê-los visíveis em outras.';
+    html += '<br><br><strong>'+catalogo.length+' páginas no catálogo</strong> ('+totAplicam+' aplicam o filtro hoje, '+totNaoAplicam+' aceitam pré-configuração). O sistema desconta os supervisores marcados dos totais agregados cruzando <code>V.vendedores.supervisores_por_filial</code> e rateando pelo perfil mensal de cada loja.';
+    html += '<br><br><strong>Páginas com <code>○</code></strong> não aplicam o filtro hoje porque a fonte de dados (E.produtos, F.titulos, V.diario) não traz <code>cod_supervisor</code> no nível certo. Quando o ETL passar a fornecer essa quebra, basta mudar <code>aplicaFiltro:false → true</code> em <code>core.js</code>.';
     html += '<br><br><strong>Aviso ATP:</strong> os supervisores de ATP-V (VAREJO, GPC INTRAGRUPO) e ATP-A (ATACADO BALCÃO) aparecem na lista mas com <code>fat_liq=0</code> no ETL atual. Marcá-los aqui não tem efeito até esse bug ser corrigido no ETL.';
     html += '</div>';
 

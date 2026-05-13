@@ -4,6 +4,40 @@ Lista das melhorias do sistema de BI da R2 Soluções para o Grupo Pinto Cerquei
 
 ---
 
+## v4.74-comercial · 13/mai/2026
+
+**Auditoria do admin + supervisores ignorados em TODAS as páginas + correções**
+
+### Supervisores ignorados (Administração)
+- **Catálogo agora cobre TODAS as 23 páginas do sistema** (antes só 8). Cada página marca se o filtro aplica de fato hoje (`aplicaFiltro:true`) ou se é pré-configuração (`aplicaFiltro:false`).
+- UI marca com **○** as páginas onde o filtro ainda não aplica (fonte de dados sem `cod_supervisor` por SKU/título). Card de instrução muda de azul (aplica) para amarelo (pré-configuração) quando uma dessas é selecionada.
+- **Nova página com filtro aplicado:** `v-metas` (Metas) — `_metasGetRealizado` agora desconta supervisores ignorados via `aplicaFiltroSupVMensalRow(r, 'v-metas')`.
+
+### Bugs / labels desatualizados corrigidos
+- **Auditoria** mostrava `⚠ Mock — dados de exemplo` no header mas os dados vêm do Firestore quando `AUTH_MODE === 'firebase'`. Label agora reflete o modo real: `Firestore · auditLog (últimos 500)` ou `⚠ Mock — sem Firebase`.
+- **"Dias ideais de estoque" (Parâmetros gerais)** era uma config zumbi — salvava em localStorage mas não era consumida por `renderExcessoNovo` (a página atual de Excesso). **Conectada** agora: o valor controla o limite de cobertura (default 180 dias) acima do qual SKUs entram na lista de excesso por giro. Status PARADO/MORTO/CRÍTICO continuam entrando independentemente. Label atualizado para "Limite de cobertura para considerar excesso (dias)".
+
+### Performance
+- **Filtro de período (pfb-apply)** antes chamava `renderedPages.forEach(pg=>renderPage(pg))` — re-renderizava TODAS as páginas já visitadas mesmo invisíveis. Agora re-renderiza só a página **ativa** e invalida as demais — quando o usuário navegar até elas, o render dispara automaticamente. Em sessões longas com 5-10 páginas visitadas, reduz o tempo do Apply de segundos para ~100 ms.
+
+### Mapeamento da auditoria (relatório)
+Configurações do admin verificadas:
+
+| Config | Status |
+|---|---|
+| Usuários | OK (Firestore quando admin) |
+| Perfis e permissões | OK (Firestore) |
+| Auditoria | OK (Firestore — label corrigido) |
+| Diagnóstico do sistema | OK (smoke tests on demand) |
+| Parâmetros gerais → Dias ideais | **Corrigido** (agora aplica em Excesso) |
+| Supervisores ignorados | **Expandido** (todas as páginas) |
+| SKUs ocultos | OK (per base, localStorage — sem sync entre usuários) |
+| Lista de fornecedores GPC | OK (per base, localStorage — sem sync entre usuários) |
+
+**Trade-off conhecido:** SKUs ocultos e Lista GPC moram em `localStorage` por usuário — outros admins não veem a config. Migrar para Firestore exigiria regras adicionais; deixado fora do escopo desta varredura.
+
+---
+
 ## v4.73-comercial · 13/mai/2026
 
 **Calendário de pagamentos: heatmap azul + valores exatos**

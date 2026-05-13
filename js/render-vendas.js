@@ -4363,10 +4363,16 @@ async function _metasSalvarFirestore(){
 }
 
 // Pega o realizado de uma loja num mês específico (do V.mensal)
+// v4.74: aplica o filtro de supervisores ignorados da página 'v-metas'.
 function _metasGetRealizado(lojaCod, ym){
   if(!V || !V.mensal) return 0;
   const r = V.mensal.find(function(x){return x.loja === lojaCod && x.ym === ym;});
-  return r ? (r.fat_liq || 0) : 0;
+  if(!r) return 0;
+  if(typeof aplicaFiltroSupVMensalRow === 'function'){
+    const rf = aplicaFiltroSupVMensalRow(r, 'v-metas');
+    return rf ? (rf.fat_liq || 0) : 0;
+  }
+  return r.fat_liq || 0;
 }
 
 // Pega a meta de uma loja num mês específico

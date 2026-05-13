@@ -590,11 +590,14 @@ function renderExcessoNovo(){
   function _giro(p){ return metodo === 'maior_mes' ? (p.__giro_dia_novo||0) : (p.giro_dias||0); }
   function _status(p){ return p.status; }
 
+  // v4.74: limite de cobertura agora vem da configuração 'Dias ideais de estoque'
+  // (default 180). Permite o admin calibrar quando a base mudar de perfil.
+  const _limCobertura = (typeof getEstoqueIdeal === 'function') ? getEstoqueIdeal() : 180;
   const excessos = produtos.filter(function(p){
     const st = _status(p);
     if(['PARADO','MORTO','CRITICO'].indexOf(st)>=0) return true;
     const g = _giro(p);
-    if(g && g > 180) return true;
+    if(g && g > _limCobertura) return true;
     return false;
   });
 
