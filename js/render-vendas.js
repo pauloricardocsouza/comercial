@@ -4275,13 +4275,14 @@ async function _metasCarregarFirestore(){
       _metasDados = {
         lojas: data.lojas || {},
         atualizadoEm: data.atualizadoEm,
-        atualizadoPor: data.atualizadoPor
+        atualizadoPor: data.atualizadoPor,
+        seed_version: data.seed_version || 0
       };
     } else {
-      _metasDados = {lojas:{}};
+      _metasDados = {lojas:{}, seed_version: 0};
     }
     _metasFirestoreCarregado = true;
-    // Sempre tenta carregar seed: a fn é idempotente por loja
+    // Sempre tenta carregar seed (idempotente por versão)
     await _metasTentarCarregarSeed();
   } catch(e){
     console.warn('[metas] erro carregando:', e);
@@ -4290,29 +4291,53 @@ async function _metasCarregarFirestore(){
   }
 }
 
-// Carrega metas_seed.json (arquivo estático no dist) e mescla em _metasDados.
-// Salva no Firestore se o usuário estiver autenticado. Idempotente: se rodar
-// 2x e o Firestore já tiver dados, não sobrescreve.
+// Carrega metas_seed.json (arquivo estático no dist).
+// Comportamento:
+//   - 1ª vez (Firestore vazio para a loja): importa todos os YMs do seed.
+//   - Seed nova (seed.meta.version > seed_version armazenada): faz merge
+//     PER-YM, sobrescrevendo cada mês do seed e preservando meses extras
+//     que o usuário cadastrou pelo sistema.
+//   - Seed igual: não faz nada (idempotente).
 async function _metasTentarCarregarSeed(){
   try {
     const resp = await fetch('metas_seed.json?ts='+Date.now());
     if(!resp.ok) return;
     const seed = await resp.json();
     if(!seed || !seed.lojas) return;
-    // Merge: seed entra apenas onde a loja ainda não tem nenhuma meta
     if(!_metasDados.lojas) _metasDados.lojas = {};
-    let importou = false;
-    Object.keys(seed.lojas).forEach(function(loja){
-      const atual = _metasDados.lojas[loja] || {};
-      if(Object.keys(atual).length === 0){
-        _metasDados.lojas[loja] = Object.assign({}, seed.lojas[loja]);
-        importou = true;
-      }
-    });
-    if(importou){
-      console.log('[metas] seed inicial carregado e gravado no Firestore');
-      await _metasSalvarFirestore();
+
+    const seedVersion = (seed.meta && seed.meta.version) ? seed.meta.version : 1;
+    const storedVersion = _metasDados.seed_version || 0;
+
+    let mudou = false;
+
+    if(seedVersion > storedVersion){
+      // Seed nova → overwrite per-YM (preserva meses não-presentes no seed)
+      Object.keys(seed.lojas).forEach(function(loja){
+        if(!_metasDados.lojas[loja]) _metasDados.lojas[loja] = {};
+        Object.keys(seed.lojas[loja] || {}).forEach(function(ym){
+          const novo = seed.lojas[loja][ym];
+          if(_metasDados.lojas[loja][ym] !== novo){
+            _metasDados.lojas[loja][ym] = novo;
+            mudou = true;
+          }
+        });
+      });
+      _metasDados.seed_version = seedVersion;
+      if(mudou) console.log('[metas] seed v'+seedVersion+' aplicada (per-YM overwrite, preservando meses extras)');
+    } else {
+      // Comportamento legado: preencher apenas lojas vazias
+      Object.keys(seed.lojas).forEach(function(loja){
+        const atual = _metasDados.lojas[loja] || {};
+        if(Object.keys(atual).length === 0){
+          _metasDados.lojas[loja] = Object.assign({}, seed.lojas[loja]);
+          mudou = true;
+        }
+      });
+      if(mudou) console.log('[metas] seed inicial aplicada (lojas vazias)');
     }
+
+    if(mudou) await _metasSalvarFirestore();
   } catch(e){
     console.warn('[metas] seed indisponível:', e.message);
   }
@@ -4325,6 +4350,7 @@ async function _metasSalvarFirestore(){
     const db = firebase.firestore();
     await db.collection('config').doc('metas_gpc_v2').set({
       lojas: _metasDados.lojas,
+      seed_version: _metasDados.seed_version || 0,
       atualizadoEm: firebase.firestore.FieldValue.serverTimestamp(),
       atualizadoPor: auth.currentUser.email || auth.currentUser.uid
     });

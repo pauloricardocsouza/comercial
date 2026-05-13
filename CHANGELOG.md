@@ -4,6 +4,24 @@ Lista das melhorias do sistema de BI da R2 Soluções para o Grupo Pinto Cerquei
 
 ---
 
+## v4.72-comercial · 13/mai/2026
+
+**Metas oficiais carregadas (xlsx) + loader com versão de seed**
+
+1. **`metas_seed.json` atualizado para v2** com os valores do xlsx "metas para o sistema.xlsx". Mudanças efetivas em relação ao seed v1:
+   - **ATP-V 2026 (jan–mai):** antes eram valores rateados do perfil 2025 (5.521.505 / 5.410.588 / 6.646.067 / 6.125.000 / 6.148.936). Agora arredondados: **5.900.000 / 5.500.000 / 6.700.000 / 6.100.000 / 6.300.000**.
+   - **ATP-A 2026 (jan–mai):** antes 2.378.494 / 1.889.411 / 2.453.932 / 2.275.000 / 2.351.063. Agora: **2.000.000 / 1.800.000 / 2.400.000 / 2.300.000 / 2.200.000**.
+   - CP3, CP5 e todos os meses de 2025 permanecem iguais ao seed v1.
+
+2. **Loader (`_metasTentarCarregarSeed`) agora versionado.** O JSON traz `meta.version` e o Firestore guarda `seed_version`. Quando o seed tem versão maior:
+   - Faz **merge per-YM** (sobrescreve cada mês presente no seed)
+   - **Preserva** meses cadastrados pelo usuário via UI que não estão no seed
+   - Persiste a nova `seed_version` no Firestore para não reaplicar
+
+   Comportamento legado mantido para lojas com Firestore zerado (1ª importação completa). Ações do usuário direto no sistema continuam funcionando sem conflito.
+
+---
+
 ## v4.71-comercial · 13/mai/2026
 
 **Estoque drill-down + datas DD-MM-AAAA + calendário mais baixo + Dias C&P simplificado**
