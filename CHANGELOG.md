@@ -4,6 +4,27 @@ Lista das melhorias do sistema de BI da R2 Soluções para o Grupo Pinto Cerquei
 
 ---
 
+## v4.70-comercial · 13/mai/2026
+
+**Vencidos removido + padronização de filtros + Fornecedores e Forn-GPC 2026-only**
+
+1. **Página "Vencidos" removida do menu.** A análise de contas a receber em atraso fica concentrada em **Inadimplência** (Vendas › Inadimplência), que usa `recebimentos_<base>.json`. A função `renderVencidosNovo`, helpers `_vencCache`/`_vencCalcular`/`_vencAplicarFiltros` e referências em `PAGINAS_CATALOGO`, dispatcher, deps de dados modulares e labels de navegação foram todas excluídas.
+
+2. **Verbas: filtro padronizado.** O select de mês único próprio da página foi substituído pela mesma `pfb` (period filter bar) de Compras × Vendas. Filtra `aplicacoes` por `activePers` (estado global) — mesma seleção de meses persiste ao navegar entre páginas.
+
+3. **Fornecedores: 2026-only + filtro padronizado.**
+   - Página agora só apresenta dados de 2026 (cubo OLAP carrega sob demanda na primeira visita, com placeholder "Carregando…").
+   - Filtro de meses passa a ser o padrão `buildFilterBar('fornecedores')` controlado por `activePers`.
+   - Quadro "Top 10 · Devoluções a fornecedor" removido.
+   - KPIs rotulados como "no período" / "2026" em vez de "12m".
+
+4. **Forn-GPC: 2026-only + filtro padronizado + Composição removida.**
+   - Mesmo tratamento de Fornecedores: cubo lazy + `pfb` padrão + `activePers`.
+   - Gráfico "Composição · faturamento por fornecedor" removido.
+   - KPIs rotulados para o período 2026.
+
+---
+
 ## v4.69-comercial · 13/mai/2026
 
 **Limpeza Home + Sumário Executivo + Compras × Vendas + Estoque + Excesso + Financeiro**

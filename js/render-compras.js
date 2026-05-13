@@ -11,7 +11,7 @@
 // REMOVIDOS: 'executivo' e 'cv' (já migrados em 4b/4d, não precisam mais de D).
 
 const _PAGINAS_COMPRAS_COM_DADOS = [
-  'deptos','estoque','excesso','financeiro','vencidos',
+  'deptos','estoque','excesso','financeiro',
   'fornecedores','forn-gpc','abc','alertas','diagnostico','diag-forn'
 ];
 
@@ -30,8 +30,7 @@ function _renderComprasIndisponivel(pg){
     'excesso':      {alt:'cubo', altLabel:'Análise Dinâmica', altDesc:'Arquivo estoque_atp.json não encontrado. Use a Análise Dinâmica como alternativa.'},
     'diagnostico':  {alt:'cubo', altLabel:'Análise Dinâmica', altDesc:'Arquivo estoque_atp.json não encontrado. Use linha=SKU na Análise Dinâmica como alternativa.'},
     'diag-forn':    {alt:'cubo', altLabel:'Análise Dinâmica', altDesc:'Arquivo estoque_atp.json não encontrado. Use linha=Fornecedor na Análise Dinâmica como alternativa.'},
-    'financeiro':   {alt:'recebimentos', altLabel:'Recebimentos', altDesc:'Arquivo financeiro_atp.json não encontrado. Para vendas a prazo veja Recebimentos.'},
-    'vencidos':     {alt:'financeiro', altLabel:'Financeiro', altDesc:'Arquivo financeiro_atp.json não encontrado. Use a página Financeiro como alternativa.'}
+    'financeiro':   {alt:'recebimentos', altLabel:'Recebimentos', altDesc:'Arquivo financeiro_atp.json não encontrado. Para vendas a prazo veja Recebimentos.'}
   };
   const s = sugestoes[pg] || {alt:null, altLabel:null, altDesc:'Esta página depende do schema antigo (D) que está em migração.'};
 
@@ -1276,19 +1275,33 @@ function renderFornecedoresNovo(){
   const cont = document.getElementById('page-fornecedores');
   if(!cont || !E) return;
 
+  // v4.70: filtro de meses usa o padrão global (activePers · PERS=2026-01..04).
+  // Se o cubo ainda não foi carregado, dispara o lazy load e mostra placeholder.
   const ymsTodos = _fornYmsDisponiveis2026();
-  // Se não há dados de 2026 no cubo, cai pra agregação 12m antiga
-  const usarPeriodo = ymsTodos.length > 0;
-  const mesesAtivos = usarPeriodo
-    ? ((Array.isArray(_fornFiltroMeses) && _fornFiltroMeses.length)
-        ? _fornFiltroMeses.filter(function(y){return ymsTodos.indexOf(y)>=0;})
-        : ymsTodos)
-    : [];
-  const mesesSet = new Set(mesesAtivos);
+  if(ymsTodos.length === 0){
+    cont.innerHTML = '<div class="ph"><div class="pk">Compras</div><h2>Análise de <em>fornecedores</em></h2></div>'
+                   + '<div class="ph-sep"></div><div class="page-body">'
+                   + '<div class="cc" style="padding:30px;text-align:center;color:var(--text-muted);">'
+                   +   '<div style="margin-bottom:8px;">Carregando dados de 2026…</div>'
+                   +   '<div style="font-size:11px;">O cubo OLAP é carregado sob demanda (≈10 MB). Volte em alguns segundos.</div>'
+                   + '</div></div>';
+    if(typeof _carregarCuboLazy === 'function'){
+      _carregarCuboLazy().then(function(){
+        if(typeof renderedPages !== 'undefined') renderedPages.delete('fornecedores');
+        renderFornecedoresNovo();
+      }).catch(function(){});
+    }
+    return;
+  }
 
-  const fornAll = usarPeriodo
-    ? _fornAgregarPorPeriodo(mesesSet)
-    : _fornAgregar();
+  // Filtra apenas os meses que estão ativos em activePers (2026-only)
+  const _activeSet = (typeof activePers !== 'undefined' && activePers && activePers.has)
+    ? activePers
+    : new Set(ymsTodos);
+  const mesesAtivos = ymsTodos.filter(function(ym){return _activeSet.has(ym);});
+  const mesesSet = new Set(mesesAtivos.length ? mesesAtivos : ymsTodos);
+
+  const fornAll = _fornAgregarPorPeriodo(mesesSet);
   const fornAtivos = fornAll.filter(function(f){return f.v_compra>0;});
   const totCompra = fornAtivos.reduce(function(s,f){return s+f.v_compra;},0);
   const totVenda  = fornAll.reduce(function(s,f){return s+f.v_venda;},0);
@@ -1307,81 +1320,27 @@ function renderFornecedoresNovo(){
            + '<div class="ph-sep"></div>'
            + '<div class="page-body">';
 
-  // Banner explicativo + filtro de meses (modelo CV)
-  if(usarPeriodo){
-    const labelMes = (mesesAtivos.length === ymsTodos.length)
-      ? 'todos os meses de 2026'
-      : mesesAtivos.length+' de '+ymsTodos.length+' meses';
-    html += '<div class="cc" style="padding:12px 14px;margin-bottom:14px;">';
-    html += '<div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;">';
-    html += '<span style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;font-weight:700;">Período:</span>';
-    ymsTodos.forEach(function(ym){
-      const ativo = mesesSet.has(ym);
-      html += '<button class="forn-mes-btn" data-ym="'+esc(ym)+'" style="padding:5px 10px;font-size:11.5px;border:1px solid var(--border-strong);border-radius:5px;cursor:pointer;'
-           +   (ativo?'background:var(--accent);color:white;':'background:var(--surface);color:var(--text);')
-           + 'font-weight:600;">'+esc(_ymToLabel(ym))+'</button>';
-    });
-    if(mesesAtivos.length !== ymsTodos.length){
-      html += '<button id="forn-meses-clear" style="padding:5px 8px;font-size:11px;border:1px solid var(--border);border-radius:4px;cursor:pointer;background:transparent;color:var(--text-muted);">Limpar</button>';
-    }
-    html += '</div>';
-    html += '<div style="margin-top:10px;font-size:12px;color:var(--text-dim);">'
-         +   '<strong>'+fI(fornAll.length)+'</strong> fornecedores no período · '
-         +   '<strong>'+fI(fornAtivos.length)+'</strong> com compras · '+esc(labelMes)+' · '
-         +   'Retrato estoque: '+fDt(E.meta && E.meta.data_referencia)
-         + '</div>';
-    html += '<div style="margin-top:6px;font-size:11px;color:var(--text-muted);font-style:italic;">'
-         +   'Devoluções não são filtradas por mês (o ETL de devoluções não exporta detalhe mensal por fornecedor) — o valor exibido é o total do período disponível.'
-         + '</div>';
-    html += '</div>';
-  } else {
-    const periodoCompra = (E.meta && E.meta.periodo_vendas) ? E.meta.periodo_vendas.meses+' meses' : '12 meses';
-    html += '<div style="background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:10px 14px;margin-bottom:14px;font-size:12px;color:var(--text-dim);line-height:1.5;">'
-         + '<strong>Período:</strong> compras 12 meses · vendas '+periodoCompra+' · '
-         + '<strong>'+fI(fornAll.length)+'</strong> fornecedores cadastrados · '
-         + '<strong>'+fI(fornAtivos.length)+'</strong> com compras no período · '
-         + 'Retrato estoque: '+fDt(E.meta && E.meta.data_referencia)
-         + '</div>';
-  }
+  // v4.70: slot pra pfb padrão (injeta após render)
+  html += '<div id="forn-pfb-slot"></div>';
+
+  // Banner do período (resumo do que está sendo mostrado)
+  const labelMes = (mesesAtivos.length === ymsTodos.length || mesesAtivos.length === 0)
+    ? 'todos os meses ativos de 2026'
+    : mesesAtivos.length+' de '+ymsTodos.length+' meses de 2026';
+  html += '<div style="background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:10px 14px;margin-bottom:14px;font-size:12px;color:var(--text-dim);line-height:1.5;">'
+       + '<strong>Período:</strong> '+esc(labelMes)+' · '
+       + '<strong>'+fI(fornAll.length)+'</strong> fornecedores · '
+       + '<strong>'+fI(fornAtivos.length)+'</strong> com compras · '
+       + 'Retrato estoque: '+fDt(E.meta && E.meta.data_referencia)
+       + '</div>';
 
   html += '<div id="kg-forn-novo"></div>';
 
   // 2 charts lado a lado
-  html += '<div class="cc"><div class="cct">Top 12 · Compras 12 meses</div>'
+  html += '<div class="cc"><div class="cct">Top 12 · Compras 2026</div>'
        +    '<div class="ccs">Cor por margem real das vendas (verde >10%, amarelo 5-10%, vermelho &lt;5%)</div>'
        +    '<div style="height:280px;margin-top:8px;"><canvas id="c-forn-compra"></canvas></div>'
        +  '</div>';
-
-  // Devoluções (se houver)
-  const comDev = fornAll.filter(function(f){return f.dev_valor>0;}).sort(function(a,b){return b.dev_valor-a.dev_valor;});
-  if(comDev.length > 0){
-    const top10Dev = comDev.slice(0, 10);
-    html += '<div class="cc"><div class="cct">Top 10 · Devoluções a fornecedor</div>'
-         +    '<div class="ccs">'+fI(comDev.length)+' fornecedores receberam devoluções · total '+fK(totDev)+'</div>'
-         +    '<div class="tscroll" style="margin-top:8px;"><table class="t"><thead><tr>'
-         +      '<th class="L" style="width:24px;">#</th>'
-         +      '<th class="L">Fornecedor</th>'
-         +      '<th>Vl devolvido</th>'
-         +      '<th>Qt</th>'
-         +      '<th>NFs</th>'
-         +      '<th>Compras 12m</th>'
-         +      '<th>% devol/compra</th>'
-         +    '</tr></thead><tbody>';
-    top10Dev.forEach(function(f, i){
-      const cls = f.pct_devol > 5 ? 'dn' : f.pct_devol > 2 ? 'wn' : '';
-      const pctTxt = f.pct_devol > 999 ? '+999% ⚠' : fP(f.pct_devol);
-      html += '<tr>'
-           +    '<td class="L" style="color:var(--text-muted);font-weight:700;">'+(i+1)+'</td>'
-           +    '<td class="L" data-forn-cod="'+esc(f.cod)+'" title="Clique para ver diagnóstico do fornecedor"><strong>'+esc((f.nome||'').substring(0,42))+'</strong></td>'
-           +    '<td class="val-strong">'+fK(f.dev_valor)+'</td>'
-           +    '<td>'+fI(f.dev_qt||0)+'</td>'
-           +    '<td>'+fI(f.dev_nfs||0)+'</td>'
-           +    '<td>'+fK(f.v_compra)+'</td>'
-           +    '<td><span class="kg-tag '+cls+'">'+pctTxt+'</span></td>'
-           +  '</tr>';
-    });
-    html += '</tbody></table></div></div>';
-  }
 
   // Tabela completa com busca
   html += '<div class="cc">'
@@ -1413,16 +1372,17 @@ function renderFornecedoresNovo(){
   html += '</div>'; // page-body
   cont.innerHTML = html;
 
-  // KPIs
+  // KPIs (v4.70: 2026-only)
   const totCompraLiq = fornAtivos.reduce(function(s,f){return s+f.v_compra_liq;},0);
   const top1Nome = top1 ? (top1.nome||'').substring(0, 22) : '—';
+  const _qDevForn = fornAll.filter(function(f){return f.dev_valor>0;}).length;
   document.getElementById('kg-forn-novo').innerHTML = kgHtml([
-    {l:'Fornecedores ativos', v:fI(fornAtivos.length), s:'Com compras 12m · de '+fI(fornAll.length)+' cadastrados'},
-    {l:'Líder em compras',    v:top1Nome,              s:top1?fK(top1.v_compra_liq||top1.v_compra)+' líquidas nos últimos 12m':'-'},
+    {l:'Fornecedores ativos', v:fI(fornAtivos.length), s:'Com compras no período · de '+fI(fornAll.length)+' cadastrados'},
+    {l:'Líder em compras',    v:top1Nome,              s:top1?fK(top1.v_compra_liq||top1.v_compra)+' líquidas no período':'-'},
     {l:'Concentração top 10', v:fP(concTop10),         s:'do total de compras'},
-    {l:'Compras líquidas 12m',v:fK(totCompraLiq),      s:'Brutas '+fK(totCompra)+' − devoluções '+fK(totDev)},
+    {l:'Compras líquidas',    v:fK(totCompraLiq),      s:'Brutas '+fK(totCompra)+' − devoluções '+fK(totDev)},
     {l:'Margem global',       v:fP(margGlob),          s:'Lucro/Vendas com produtos desses fornecedores',cls:margGlob>10?'ok':margGlob>5?'':'wn'},
-    {l:'Devoluções',          v:fK(totDev),            s:fI(comDev.length)+' fornecedores · '+fP(totCompra>0?totDev/totCompra*100:0)+' das compras',cls:'dn'},
+    {l:'Devoluções',          v:fK(totDev),            s:fI(_qDevForn)+' fornecedores · '+fP(totCompra>0?totDev/totCompra*100:0)+' das compras',cls:'dn'},
   ]);
 
   // Chart 1: Top 12 compras (cor por margem)
@@ -1475,23 +1435,14 @@ function renderFornecedoresNovo(){
     });
   }
 
-  // Filtro de meses (modelo CV)
-  document.querySelectorAll('.forn-mes-btn').forEach(function(btn){
-    btn.addEventListener('click', function(){
-      const ym = btn.getAttribute('data-ym');
-      const atual = (_fornFiltroMeses && _fornFiltroMeses.length) ? _fornFiltroMeses.slice() : ymsTodos.slice();
-      const i = atual.indexOf(ym);
-      if(i >= 0) atual.splice(i, 1);
-      else atual.push(ym);
-      _fornFiltroMeses = atual.length === 0 ? null : atual;
-      renderFornecedoresNovo();
-    });
-  });
-  const btnClearF = document.getElementById('forn-meses-clear');
-  if(btnClearF) btnClearF.addEventListener('click', function(){
-    _fornFiltroMeses = null;
-    renderFornecedoresNovo();
-  });
+  // v4.70: injeta a pfb padrão (mesma de Compras × Vendas)
+  if(typeof buildFilterBar === 'function'){
+    const slot = document.getElementById('forn-pfb-slot');
+    if(slot){
+      slot.innerHTML = '';
+      slot.appendChild(buildFilterBar('fornecedores'));
+    }
+  }
 }
 
 function _fornRenderTabela(arr){
@@ -4790,367 +4741,6 @@ function _diagFornGerarObservacoes(f, skus){
   return obs;
 }
 
-// ════════════════════════════════════════════════════════════════════════
-// VENCIDOS NOVO · usa financeiro_atp.json (F) · sub-etapa 4p · 30/abr/2026
-// Foco em títulos vencidos de F.aberto.titulos com filtros avançados
-// ════════════════════════════════════════════════════════════════════════
-let _vencCache = null;            // {vencidos, futuros, gruposUnicos, fornUnicos}
-let _vencFiltros = {aging:'todos', grupo:'todos', forn:''};
-
-function _vencCalcular(){
-  if(_vencCache) return _vencCache;
-  const titulosAll = (F && F.aberto && F.aberto.titulos) || [];
-  // Filtra só conta de mercadorias (10001 + 99912)
-  const titulos = titulosAll.filter(function(t){return _ehContaMercadoria(t.conta);});
-  const hojeStr = new Date().toISOString().substring(0,10);
-
-  const vencidos = [];
-  const futuros = [];
-  titulos.forEach(function(t){
-    if(!t.data_venc) return;
-    if(t.data_venc < hojeStr) vencidos.push(t);
-    else futuros.push(t);
-  });
-
-  // Lista única de fornecedores nos vencidos (grupos não é mais necessário porque já vem filtrado)
-  const setF = new Set();
-  vencidos.forEach(function(t){
-    if(t.parceiro && t.parceiro.nome) setF.add(t.parceiro.nome);
-  });
-  const forns = Array.from(setF).sort();
-
-  _vencCache = {vencidos:vencidos, futuros:futuros, grupos:[], forns:forns};
-  return _vencCache;
-}
-
-function _vencAplicarFiltros(){
-  const c = _vencCache;
-  if(!c) return [];
-  const f = _vencFiltros;
-  const fornQ = (f.forn||'').toLowerCase();
-  return c.vencidos.filter(function(t){
-    // Aging
-    if(f.aging !== 'todos'){
-      const da = t.dias_atraso || 0;
-      if(f.aging === '1-7'   && (da < 1 || da > 7)) return false;
-      if(f.aging === '8-30'  && (da < 8 || da > 30)) return false;
-      if(f.aging === '31-90' && (da < 31 || da > 90)) return false;
-      if(f.aging === '91+'   && da < 91) return false;
-    }
-    // Filtro de grupo removido (já vem filtrado por conta de mercadorias)
-    // Fornecedor
-    if(fornQ){
-      const nm = ((t.parceiro && t.parceiro.nome) || '').toLowerCase();
-      if(nm.indexOf(fornQ) < 0) return false;
-    }
-    return true;
-  });
-}
-
-function renderVencidosNovo(){
-  const cont = document.getElementById('page-vencidos');
-  if(!cont || !F) return;
-  _vencCalcular();
-  // Reseta filtros ao re-entrar
-  _vencFiltros = {aging:'todos', grupo:'todos', forn:''};
-
-  const c = _vencCache;
-  const totVenc = c.vencidos.reduce(function(s,t){return s+(t.valor||0);},0);
-  const totFut  = c.futuros.reduce(function(s,t){return s+(t.valor||0);},0);
-  const totAberto = totVenc + totFut;
-  const pctVencido = totAberto>0 ? (totVenc/totAberto*100) : 0;
-
-  let html = '<div class="ph"><div class="pk">Financeiro</div><h2>Vencidos <em>a pagar</em></h2></div>'
-           + '<div class="ph-sep"></div>'
-           + '<div class="page-body">';
-
-  // Banner de filtro fixo
-  html += '<div style="background:#dbeafe;border:1px solid #93c5fd;border-radius:8px;padding:9px 14px;margin-bottom:10px;font-size:11.5px;color:#1e40af;">'
-       +   '<strong>Filtro ativo:</strong> mostrando apenas contas relacionadas a fornecedores de mercadorias '
-       +   '(10001 · COMPRA DE MERCADORIAS, 99912 · MULTA E JUROS DE MORA).'
-       + '</div>';
-
-  // Banner
-  const hojeStr = new Date().toISOString().substring(0,10);
-  html += '<div style="background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:10px 14px;margin-bottom:14px;font-size:12px;color:var(--text-dim);">'
-       + '<strong>Referência:</strong> '+esc(hojeStr.split('-').reverse().join('/'))+' · '
-       + '<strong>'+fI(c.vencidos.length)+'</strong> títulos vencidos · '
-       + '<strong>'+fK(totVenc)+'</strong> em atraso ('+fP(pctVencido)+' do total em aberto)'
-       + '</div>';
-
-  // KPIs
-  html += '<div id="kg-venc-novo"></div>';
-
-  // Filtros interativos
-  html += '<div class="cc" style="margin-bottom:14px;">'
-       +    '<div class="cct">Filtros</div>'
-       +    '<div style="display:flex;flex-wrap:wrap;gap:14px;align-items:center;margin-top:10px;">'
-       +      '<div>'
-       +        '<label style="display:block;font-size:11px;color:var(--text-muted);margin-bottom:4px;">Faixa de atraso</label>'
-       +        '<div id="vn-aging-chips" style="display:flex;gap:5px;flex-wrap:wrap;">'
-       +          ['todos','1-7','8-30','31-90','91+'].map(function(k){
-                    const lbl = k==='todos'?'Todos':k==='91+'?'91+ d':k+' d';
-                    return '<button class="vn-chip'+(k==='todos'?' active':'')+'" data-k="'+k+'" style="padding:5px 12px;border:1px solid var(--border-strong);background:'+(k==='todos'?'var(--accent)':'#fff')+';color:'+(k==='todos'?'#fff':'var(--text)')+';border-radius:14px;cursor:pointer;font-size:11px;font-weight:600;">'+lbl+'</button>';
-                  }).join('')
-       +        '</div>'
-       +      '</div>'
-       +      '<div style="min-width:240px;flex:1;">'
-       +        '<label style="display:block;font-size:11px;color:var(--text-muted);margin-bottom:4px;">Buscar fornecedor</label>'
-       +        '<input id="vn-forn-srch" type="text" placeholder="Digite parte do nome..." style="width:100%;padding:6px 10px;border:1px solid var(--border-strong);border-radius:6px;font-size:12px;background:#fff;">'
-       +      '</div>'
-       +      '<div>'
-       +        '<button id="vn-clear" style="padding:6px 12px;border:1px solid var(--border-strong);background:var(--surface);color:var(--text);border-radius:6px;cursor:pointer;font-size:11px;font-weight:600;">Limpar</button>'
-       +      '</div>'
-       +    '</div>'
-       +    '<div id="vn-status" style="margin-top:10px;font-size:11px;color:var(--text-muted);"></div>'
-       + '</div>';
-
-  // Charts
-  html += '<div class="row2">'
-       +    '<div class="cc"><div class="cct">Aging dos vencidos</div>'
-       +      '<div class="ccs">Distribuição do valor por faixa de atraso</div>'
-       +      '<div style="height:240px;margin-top:8px;"><canvas id="c-vn-aging"></canvas></div>'
-       +    '</div>'
-       +    '<div class="cc"><div class="cct">Vencidos por semana</div>'
-       +      '<div class="ccs">Quando os títulos perderam vencimento</div>'
-       +      '<div style="height:240px;margin-top:8px;"><canvas id="c-vn-semana"></canvas></div>'
-       +    '</div>'
-       + '</div>';
-
-  // Top fornecedores vencidos
-  html += '<div class="cc" style="margin-top:14px;"><div class="cct">Top 15 fornecedores · valor vencido</div>'
-       +    '<div class="ccs" id="vn-top-cap">Concentração e maior atraso por parceiro</div>'
-       +    '<div class="tscroll" style="margin-top:8px;"><table class="t" id="t-vn-top"><thead><tr>'
-       +      '<th class="L" style="width:24px;">#</th>'
-       +      '<th class="L">Fornecedor</th>'
-       +      '<th>Títulos</th>'
-       +      '<th>Valor vencido</th>'
-       +      '<th>Maior atraso</th>'
-       +      '<th>% do filtro</th>'
-       +    '</tr></thead><tbody id="tb-vn-top"></tbody></table></div>'
-       + '</div>';
-
-  // Tabela detalhada de títulos
-  html += '<div class="cc" style="margin-top:14px;"><div class="cct">Títulos vencidos · detalhe</div>'
-       +    '<div class="ccs" id="vn-tit-cap">Lista completa com aplicação dos filtros</div>'
-       +    '<div class="tscroll" style="margin-top:8px;max-height:560px;overflow-y:auto;"><table class="t"><thead><tr>'
-       +      '<th class="L" style="width:24px;">#</th>'
-       +      '<th class="L">Vencimento</th>'
-       +      '<th class="L">Fornecedor</th>'
-       +      '<th class="L">Conta</th>'
-       +      '<th>NF</th>'
-       +      '<th>Valor</th>'
-       +      '<th>Atraso</th>'
-       +    '</tr></thead><tbody id="tb-vn-tit"></tbody></table></div>'
-       + '</div>';
-
-  // A vencer (sumário separado, para contexto)
-  html += '<div class="cc" style="margin-top:14px;background:var(--surface-2);">'
-       +    '<div class="cct" style="opacity:0.85;">A vencer · '+fI(c.futuros.length)+' títulos · '+fK(totFut)+'</div>'
-       +    '<div class="ccs">Próximos vencimentos por mês (não afetados pelos filtros acima)</div>'
-       +    '<div id="vn-fut-cont" style="margin-top:8px;"></div>'
-       + '</div>';
-
-  html += '</div>';
-  cont.innerHTML = html;
-
-  // Listeners dos filtros
-  document.querySelectorAll('.vn-chip').forEach(function(b){
-    b.addEventListener('click', function(){
-      _vencFiltros.aging = b.dataset.k;
-      // Re-estiliza chips
-      document.querySelectorAll('.vn-chip').forEach(function(x){
-        const active = x.dataset.k === _vencFiltros.aging;
-        x.style.background = active ? 'var(--accent)' : '#fff';
-        x.style.color = active ? '#fff' : 'var(--text)';
-        x.classList.toggle('active', active);
-      });
-      _vencRender();
-    });
-  });
-  let timerSrch = null;
-  document.getElementById('vn-forn-srch').addEventListener('input', function(e){
-    clearTimeout(timerSrch);
-    timerSrch = setTimeout(function(){
-      _vencFiltros.forn = e.target.value || '';
-      _vencRender();
-    }, 200);
-  });
-  document.getElementById('vn-clear').addEventListener('click', function(){
-    _vencFiltros = {aging:'todos', grupo:'todos', forn:''};
-    document.getElementById('vn-forn-srch').value = '';
-    document.querySelectorAll('.vn-chip').forEach(function(x){
-      const active = x.dataset.k === 'todos';
-      x.style.background = active ? 'var(--accent)' : '#fff';
-      x.style.color = active ? '#fff' : 'var(--text)';
-    });
-    _vencRender();
-  });
-
-  // KPIs (uma vez, com totais brutos)
-  const maxDia = c.vencidos.length>0 ? c.vencidos.reduce(function(m,t){return Math.max(m, t.dias_atraso||0);},0) : 0;
-  const fmap = {};
-  c.vencidos.forEach(function(t){
-    const cod = t.parceiro && t.parceiro.cod;
-    const nm  = (t.parceiro && t.parceiro.nome) || '?';
-    if(!fmap[cod]) fmap[cod] = {nome:nm, val:0, n:0};
-    fmap[cod].val += t.valor || 0;
-    fmap[cod].n   += 1;
-  });
-  const top1Forn = Object.values(fmap).sort(function(a,b){return b.val-a.val;})[0];
-  document.getElementById('kg-venc-novo').innerHTML = kgHtml([
-    {l:'Total vencido', v:fK(totVenc), s:fI(c.vencidos.length)+' títulos · '+fP(pctVencido)+' do aberto', cls:'dn'},
-    {l:'Maior atraso', v:fI(maxDia)+' dias', s:'Caso mais antigo em aberto', cls:maxDia>90?'dn':maxDia>30?'wn':''},
-    {l:'A vencer', v:fK(totFut), s:fI(c.futuros.length)+' títulos no futuro'},
-    {l:'Top fornecedor', v:top1Forn?(top1Forn.nome||'').substring(0,18):'—', s:top1Forn?fK(top1Forn.val):'-'},
-    {l:'Fornecedores', v:fI(Object.keys(fmap).length), s:'Distintos com vencidos'},
-    {l:'Bucket 91+ d', v:fI(c.vencidos.filter(function(t){return (t.dias_atraso||0)>=91;}).length), s:fK(c.vencidos.filter(function(t){return (t.dias_atraso||0)>=91;}).reduce(function(s,t){return s+(t.valor||0);},0))+' em risco', cls:'dn'},
-  ]);
-
-  // A vencer mensal (estático, não reage ao filtro)
-  const futPorMes = {};
-  c.futuros.forEach(function(t){
-    const mes = (t.data_venc||'').substring(0,7);
-    if(!futPorMes[mes]) futPorMes[mes] = {n:0, val:0};
-    futPorMes[mes].n   += 1;
-    futPorMes[mes].val += t.valor || 0;
-  });
-  const futOrdenado = Object.keys(futPorMes).sort();
-  let futHtml = '<div class="tscroll"><table class="t"><thead><tr><th class="L">Mês</th><th>Títulos</th><th>Valor total</th><th>Ticket médio</th></tr></thead><tbody>';
-  futOrdenado.forEach(function(mes){
-    const f = futPorMes[mes];
-    const tkt = f.n>0 ? f.val/f.n : 0;
-    futHtml += '<tr><td class="L"><strong>'+_ymToLabel(mes)+'</strong></td><td>'+fI(f.n)+'</td><td class="val-strong">'+fK(f.val)+'</td><td>'+fK(tkt)+'</td></tr>';
-  });
-  futHtml += '</tbody></table></div>';
-  document.getElementById('vn-fut-cont').innerHTML = futHtml;
-
-  // Render dos charts e tabelas dependentes do filtro
-  _vencRender();
-}
-
-function _vencRender(){
-  const filtrados = _vencAplicarFiltros();
-  const totFiltrado = filtrados.reduce(function(s,t){return s+(t.valor||0);},0);
-  const c = _vencCache;
-
-  // Status
-  let stTxt;
-  const f = _vencFiltros;
-  const aplicaAlgum = f.aging!=='todos' || f.grupo!=='todos' || f.forn;
-  if(aplicaAlgum){
-    stTxt = fI(filtrados.length)+' de '+fI(c.vencidos.length)+' títulos · '+fK(totFiltrado)+' filtrado de '+fK(c.vencidos.reduce(function(s,t){return s+(t.valor||0);},0));
-  } else {
-    stTxt = 'Mostrando todos os '+fI(filtrados.length)+' títulos vencidos';
-  }
-  document.getElementById('vn-status').textContent = stTxt;
-
-  // Chart aging
-  const buckets = {'1-7':0, '8-30':0, '31-90':0, '91+':0};
-  const bcount  = {'1-7':0, '8-30':0, '31-90':0, '91+':0};
-  filtrados.forEach(function(t){
-    const da = t.dias_atraso || 0;
-    let k;
-    if(da <= 7) k = '1-7';
-    else if(da <= 30) k = '8-30';
-    else if(da <= 90) k = '31-90';
-    else k = '91+';
-    buckets[k] += t.valor || 0;
-    bcount[k]++;
-  });
-  const agOrd = ['1-7','8-30','31-90','91+'];
-  const agCol = {'1-7':_PAL.wn,'8-30':'#ea580c','31-90':_PAL.dn,'91+':'#7f1d1d'};
-  mkC('c-vn-aging',{type:'bar',
-    data:{labels:agOrd.map(function(k){return k+' dias';}),
-          datasets:[{label:'Valor', data:agOrd.map(function(k){return buckets[k];}),
-                     backgroundColor:agOrd.map(function(k){return agCol[k]+'CC';}), borderRadius:4}]},
-    options:{responsive:true,maintainAspectRatio:false,
-      plugins:{legend:{display:false},
-               tooltip:{callbacks:{label:function(ctx){return fK(ctx.raw)+' · '+fI(bcount[agOrd[ctx.dataIndex]])+' títulos';}}}},
-      scales:{x:{grid:{display:false}},y:{ticks:{callback:function(v){return fAbbr(v);}}}}}});
-
-  // Chart por semana
-  const semMap = {};
-  filtrados.forEach(function(t){
-    const d = new Date(t.data_venc+'T00:00:00Z');
-    const dia = d.getUTCDay();
-    const diff = (dia === 0 ? -6 : 1-dia);
-    const mon = new Date(d); mon.setUTCDate(d.getUTCDate()+diff);
-    const key = mon.toISOString().slice(0,10);
-    if(!semMap[key]) semMap[key] = {v:0, n:0};
-    semMap[key].v += t.valor || 0;
-    semMap[key].n += 1;
-  });
-  const semOrd = Object.keys(semMap).sort();
-  mkC('c-vn-semana',{type:'bar',
-    data:{labels:semOrd.map(function(k){return k.substring(8)+'/'+k.substring(5,7);}),
-          datasets:[{label:'Valor', data:semOrd.map(function(k){return semMap[k].v;}),
-                     backgroundColor:_PAL.hl+'CC', borderRadius:3}]},
-    options:{responsive:true,maintainAspectRatio:false,
-      plugins:{legend:{display:false},
-               tooltip:{callbacks:{title:function(ctx){return 'Semana de '+semOrd[ctx[0].dataIndex];},
-                                   label:function(ctx){var k=semOrd[ctx.dataIndex];return fK(ctx.raw)+' · '+fI(semMap[k].n)+' títulos';}}}},
-      scales:{x:{grid:{display:false},ticks:{font:{size:9}}},y:{ticks:{callback:function(v){return fAbbr(v);}}}}}});
-
-  // Tabela top fornecedores
-  const fmap = {};
-  filtrados.forEach(function(t){
-    const cod = t.parceiro && t.parceiro.cod;
-    const nm  = (t.parceiro && t.parceiro.nome) || '?';
-    if(!fmap[cod]) fmap[cod] = {cod:cod, nome:nm, val:0, n:0, maxd:0};
-    fmap[cod].val  += t.valor || 0;
-    fmap[cod].n    += 1;
-    if((t.dias_atraso||0) > fmap[cod].maxd) fmap[cod].maxd = t.dias_atraso || 0;
-  });
-  const top15 = Object.values(fmap).sort(function(a,b){return b.val-a.val;}).slice(0, 15);
-  let topHtml = '';
-  if(top15.length === 0){
-    topHtml = '<tr><td colspan="6" style="text-align:center;padding:14px;color:var(--text-muted);font-size:12px;">Nenhum fornecedor para o filtro atual.</td></tr>';
-  } else {
-    top15.forEach(function(x, i){
-      const pct = totFiltrado>0 ? (x.val/totFiltrado*100) : 0;
-      const dCls = x.maxd > 90 ? 'dn' : x.maxd > 30 ? 'wn' : '';
-      topHtml += '<tr>'
-              +    '<td class="L" style="color:var(--text-muted);font-weight:700;">'+(i+1)+'</td>'
-              +    '<td class="L"><strong>'+esc((x.nome||'').substring(0,42))+'</strong></td>'
-              +    '<td>'+fI(x.n)+'</td>'
-              +    '<td class="val-strong">'+fK(x.val)+'</td>'
-              +    '<td><span class="kg-tag '+dCls+'">'+fI(x.maxd)+' d</span></td>'
-              +    '<td>'+fP(pct)+'</td>'
-              +  '</tr>';
-    });
-  }
-  document.getElementById('tb-vn-top').innerHTML = topHtml;
-  document.getElementById('vn-top-cap').textContent = top15.length+' parceiros distintos · ranking sobre o filtro atual';
-
-  // Tabela de títulos (limita a 200 pra não estourar)
-  const titulosOrdenados = filtrados.slice().sort(function(a,b){return b.valor - a.valor;});
-  const visivel = titulosOrdenados.slice(0, 200);
-  let titHtml = '';
-  if(visivel.length === 0){
-    titHtml = '<tr><td colspan="7" style="text-align:center;padding:14px;color:var(--text-muted);font-size:12px;">Nenhum título para o filtro atual.</td></tr>';
-  } else {
-    visivel.forEach(function(t, i){
-      const dCls = (t.dias_atraso||0) > 90 ? 'dn' : (t.dias_atraso||0) > 30 ? 'wn' : '';
-      titHtml += '<tr>'
-              +    '<td class="L" style="color:var(--text-muted);font-weight:700;">'+(i+1)+'</td>'
-              +    '<td class="L">'+fDt(t.data_venc)+'</td>'
-              +    '<td class="L"><strong>'+esc(((t.parceiro&&t.parceiro.nome)||'').substring(0,32))+'</strong></td>'
-              +    '<td class="L">'+esc((t.conta_desc||'').substring(0,28))+'</td>'
-              +    '<td><span style="font-family:JetBrains Mono,monospace;font-size:10px;color:var(--text-muted);">'+esc(t.num_nota||'')+'</span></td>'
-              +    '<td class="val-strong">'+fK(t.valor||0)+'</td>'
-              +    '<td><span class="kg-tag '+dCls+'">'+fI(t.dias_atraso||0)+' d</span></td>'
-              +  '</tr>';
-    });
-    if(filtrados.length > 200){
-      titHtml += '<tr><td colspan="7" style="text-align:center;padding:10px;color:var(--text-muted);font-size:11px;">... e mais '+fI(filtrados.length-200)+' títulos. Refine os filtros para ver tudo.</td></tr>';
-    }
-  }
-  document.getElementById('tb-vn-tit').innerHTML = titHtml;
-  document.getElementById('vn-tit-cap').textContent = (filtrados.length>200)
-    ? 'Mostrando os 200 maiores · '+fI(filtrados.length)+' resultados no filtro'
-    : 'Lista completa · '+fI(filtrados.length)+' resultados no filtro';
-}
 
 // ════════════════════════════════════════════════════════════════════════
 // FORNECEDORES GPC NOVO · usa E + F.aberto · sub-etapa 4q · 30/abr/2026
@@ -5161,17 +4751,29 @@ function renderFornGPCNovo(){
   const cont = document.getElementById('page-forn-gpc');
   if(!cont || !E) return;
 
-  // Filtro de meses 2026 (modelo CV)
+  // v4.70: 2026-only via activePers (igual a Fornecedores)
   const ymsTodos = _fornYmsDisponiveis2026();
-  const usarPeriodo = ymsTodos.length > 0;
-  const mesesAtivos = usarPeriodo
-    ? ((Array.isArray(_fornFiltroMeses) && _fornFiltroMeses.length)
-        ? _fornFiltroMeses.filter(function(y){return ymsTodos.indexOf(y)>=0;})
-        : ymsTodos)
-    : [];
-  const mesesSet = new Set(mesesAtivos);
-
-  const fornAggBase = usarPeriodo ? _fornAgregarPorPeriodo(mesesSet) : _fornAgregar();
+  if(ymsTodos.length === 0){
+    cont.innerHTML = '<div class="ph"><div class="pk">Hierarquia · Intragrupo</div><h2><em>Fornecedores GPC</em> · Pinto Cerqueira</h2></div>'
+                   + '<div class="ph-sep"></div><div class="page-body">'
+                   + '<div class="cc" style="padding:30px;text-align:center;color:var(--text-muted);">'
+                   +   '<div style="margin-bottom:8px;">Carregando dados de 2026…</div>'
+                   +   '<div style="font-size:11px;">O cubo OLAP é carregado sob demanda. Volte em alguns segundos.</div>'
+                   + '</div></div>';
+    if(typeof _carregarCuboLazy === 'function'){
+      _carregarCuboLazy().then(function(){
+        if(typeof renderedPages !== 'undefined') renderedPages.delete('forn-gpc');
+        renderFornGPCNovo();
+      }).catch(function(){});
+    }
+    return;
+  }
+  const _activeSet = (typeof activePers !== 'undefined' && activePers && activePers.has)
+    ? activePers
+    : new Set(ymsTodos);
+  const mesesAtivos = ymsTodos.filter(function(ym){return _activeSet.has(ym);});
+  const mesesSet = new Set(mesesAtivos.length ? mesesAtivos : ymsTodos);
+  const fornAggBase = _fornAgregarPorPeriodo(mesesSet);
 
   // Lista intragrupo (configurável; usa getGpcSuppliers se existir, senão fallback)
   let nomesGpc;
@@ -5247,27 +4849,8 @@ function renderFornGPCNovo(){
            + '<div class="ph-sep"></div>'
            + '<div class="page-body">';
 
-  // Filtro de meses (modelo CV) — só se cubo disponível
-  if(usarPeriodo){
-    const labelMes = (mesesAtivos.length === ymsTodos.length)
-      ? 'todos os meses de 2026'
-      : mesesAtivos.length+' de '+ymsTodos.length+' meses';
-    html += '<div class="cc" style="padding:12px 14px;margin-bottom:14px;">';
-    html += '<div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;">';
-    html += '<span style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;font-weight:700;">Período:</span>';
-    ymsTodos.forEach(function(ym){
-      const ativo = mesesSet.has(ym);
-      html += '<button class="fgpc-mes-btn" data-ym="'+esc(ym)+'" style="padding:5px 10px;font-size:11.5px;border:1px solid var(--border-strong);border-radius:5px;cursor:pointer;'
-           +   (ativo?'background:var(--accent);color:white;':'background:var(--surface);color:var(--text);')
-           + 'font-weight:600;">'+esc(_ymToLabel(ym))+'</button>';
-    });
-    if(mesesAtivos.length !== ymsTodos.length){
-      html += '<button id="fgpc-meses-clear" style="padding:5px 8px;font-size:11px;border:1px solid var(--border);border-radius:4px;cursor:pointer;background:transparent;color:var(--text-muted);">Limpar</button>';
-    }
-    html += '</div>';
-    html += '<div style="margin-top:8px;font-size:11.5px;color:var(--text-dim);">Acumulado de '+esc(labelMes)+'.</div>';
-    html += '</div>';
-  }
+  // v4.70: slot pra pfb padrão (mesma de Compras × Vendas)
+  html += '<div id="fgpc-pfb-slot"></div>';
 
   // Banner
   html += '<div style="background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:10px 14px;margin-bottom:14px;font-size:12px;color:var(--text-dim);">'
@@ -5279,21 +4862,13 @@ function renderFornGPCNovo(){
   // KPIs
   html += '<div id="kg-fgpc-novo"></div>';
 
-  // Charts: evolução mensal + composição por fornecedor
-  html += '<div class="row2">';
+  // Chart histórico (Composição faturamento removida em v4.70)
   if(vpmYms.length > 0){
     html += '<div class="cc"><div class="cct">Histórico de vendas · agregado intragrupo</div>'
          +   '<div class="ccs">Soma de quantidade vendida de todos os SKUs Cerqueira</div>'
          +   '<div style="height:240px;margin-top:8px;"><canvas id="c-fgpc-hist"></canvas></div>'
          + '</div>';
   }
-  if(fornsGpc.length > 0){
-    html += '<div class="cc"><div class="cct">Composição · faturamento por fornecedor</div>'
-         +   '<div class="ccs">Distribuição entre os parceiros do grupo</div>'
-         +   '<div style="height:240px;margin-top:8px;"><canvas id="c-fgpc-comp"></canvas></div>'
-         + '</div>';
-  }
-  html += '</div>';
 
   // Tabela por fornecedor (rica, com cruzamento financeiro)
   html += '<div class="cc" style="margin-top:14px;"><div class="cct">Detalhamento por fornecedor intragrupo</div>'
@@ -5373,11 +4948,11 @@ function renderFornGPCNovo(){
   html += '</div>'; // page-body
   cont.innerHTML = html;
 
-  // KPIs
+  // KPIs (v4.70: 2026-only)
   document.getElementById('kg-fgpc-novo').innerHTML = kgHtml([
     {l:'Faturamento', v:fK(tot.v_venda), s:fP(pctFat)+' do total da filial'},
     {l:'Margem', v:fP(margGpc), s:'Lucro '+fK(tot.lucro), cls:margGpc<5?'wn':margGpc>15?'ok':''},
-    {l:'Compras 12m', v:fK(tot.v_compra), s:fP(pctCom)+' das compras da filial'},
+    {l:'Compras 2026', v:fK(tot.v_compra), s:fP(pctCom)+' das compras da filial'},
     {l:'A pagar', v:fK(aPagar), s:'Posição em aberto'},
     {l:'Vencido', v:fK(vencido), s:fI(vencCount)+' títulos · max '+fI(maxAtraso)+'d', cls:vencido>100000?'dn':vencido>0?'wn':''},
     {l:'SKUs paralisados', v:fI(tot.skus_paralisados), s:'Parados ou mortos no grupo', cls:tot.skus_paralisados>20?'wn':''},
@@ -5396,37 +4971,16 @@ function renderFornGPCNovo(){
                 y:{ticks:{callback:function(v){return fI(v);}}}}}});
   }
 
-  // Chart composição por fornecedor (doughnut)
-  if(fornsGpc.length > 0){
-    const ord = fornsGpc.slice().sort(function(a,b){return b.v_venda-a.v_venda;});
-    const cores = [_PAL.ac, _PAL.hl, _PAL.ok, _PAL.vi, _PAL.wn, _PAL.dn];
-    mkC('c-fgpc-comp',{type:'doughnut',
-      data:{labels:ord.map(function(f){return (f.nome||'').length>22?(f.nome||'').substring(0,22)+'…':(f.nome||'');}),
-            datasets:[{data:ord.map(function(f){return f.v_venda;}),
-                       backgroundColor:ord.map(function(_, i){return cores[i % cores.length];}),
-                       borderWidth:2, borderColor:'#fff'}]},
-      options:{responsive:true,maintainAspectRatio:false,
-        plugins:{legend:{position:'right',labels:{padding:8,usePointStyle:true,boxWidth:8,font:{size:10}}},
-                 tooltip:{callbacks:{label:function(ctx){var pct=tot.v_venda>0?(ctx.raw/tot.v_venda*100):0;return ctx.label+': '+fK(ctx.raw)+' ('+fP(pct)+')';}}}}}});
-  }
+  // v4.70: gráfico "Composição faturamento por fornecedor" removido
 
-  // Handlers do filtro de meses (mesma var _fornFiltroMeses compartilhada com Fornecedores)
-  document.querySelectorAll('.fgpc-mes-btn').forEach(function(btn){
-    btn.addEventListener('click', function(){
-      const ym = btn.getAttribute('data-ym');
-      const atual = (_fornFiltroMeses && _fornFiltroMeses.length) ? _fornFiltroMeses.slice() : ymsTodos.slice();
-      const i = atual.indexOf(ym);
-      if(i >= 0) atual.splice(i, 1);
-      else atual.push(ym);
-      _fornFiltroMeses = atual.length === 0 ? null : atual;
-      renderFornGPCNovo();
-    });
-  });
-  const btnClearGPC = document.getElementById('fgpc-meses-clear');
-  if(btnClearGPC) btnClearGPC.addEventListener('click', function(){
-    _fornFiltroMeses = null;
-    renderFornGPCNovo();
-  });
+  // v4.70: injeta a pfb padrão (mesma de Compras × Vendas)
+  if(typeof buildFilterBar === 'function'){
+    const slot = document.getElementById('fgpc-pfb-slot');
+    if(slot){
+      slot.innerHTML = '';
+      slot.appendChild(buildFilterBar('forn-gpc'));
+    }
+  }
 }
 
 function renderPage(pg){
@@ -5455,7 +5009,6 @@ function renderPage(pg){
   if(pg==='deptos'){ return E ? renderDeptosNovo() : _renderComprasIndisponivel(pg); }
   if(pg==='alertas'){ return E ? renderAlertasNovo() : _renderComprasIndisponivel(pg); }
   if(pg==='diag-forn'){ return E ? renderDiagFornNovo() : _renderComprasIndisponivel(pg); }
-  if(pg==='vencidos'){ return F ? renderVencidosNovo() : _renderComprasIndisponivel(pg); }
   if(pg==='forn-gpc'){ return E ? renderFornGPCNovo() : _renderComprasIndisponivel(pg); }
 
   // ─── Páginas independentes ───

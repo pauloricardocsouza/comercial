@@ -584,6 +584,8 @@ function renderRecebimentos(){
 // Verba = redução de custo (dedução do CMV); aumenta margem real do SKU
 // ────────────────────────────────────────────────────────────────────
 // Estado do filtro de mês para Verbas (sessão)
+// v4.70: filtro de Verbas migrado pro padrão (activePers do core.js).
+// Mantido só pra compatibilidade caso algum chamador externo set-e a variável.
 let _verbasMesFiltro = null;
 
 function renderVerbas(){
@@ -601,15 +603,22 @@ function renderVerbas(){
   // Coleta meses disponíveis a partir do mensal original
   const mesesDisp = (Vb.mensal || []).map(function(m){ return m.ym; }).sort();
 
-  // Aplica filtro: se _verbasMesFiltro setado e válido, recalcula tudo a partir das aplicações desse mês.
-  // Caso contrário, usa os agregados originais (todos os meses).
-  let resumo, mensal, deptos, secoes, forns, prodTop, conc, aplic;
-  const filtroAtivo = _verbasMesFiltro && mesesDisp.indexOf(_verbasMesFiltro) >= 0;
+  // v4.70: filtro de meses agora usa o padrão global (activePers do core.js)
+  // — o mesmo selecionado em Compras × Vendas e demais páginas. A pfb padrão
+  // só apresenta 2026 (PERS=['2026-01'..'2026-04']), então o filtro implícito
+  // já restringe a 2026.
+  const _ymsAtivos = (typeof activePers !== 'undefined' && activePers && activePers.has)
+    ? mesesDisp.filter(function(ym){return activePers.has(ym);})
+    : mesesDisp.slice();
+  const _setAtivo = new Set(_ymsAtivos);
+  // Filtro ativo = subconjunto de meses (não todos)
+  const filtroAtivo = _ymsAtivos.length > 0 && _ymsAtivos.length < mesesDisp.length;
 
-  if(filtroAtivo){
-    // Recalcula a partir das aplicações filtradas
-    aplic = (Vb.aplicacoes || []).filter(function(a){ return a.ym === _verbasMesFiltro; });
-    const calc = _verbasRecalcular(aplic, _verbasMesFiltro);
+  let resumo, mensal, deptos, secoes, forns, prodTop, conc, aplic;
+  if(_ymsAtivos.length > 0 && _ymsAtivos.length < mesesDisp.length){
+    // Recalcula a partir das aplicações filtradas pelos meses ativos
+    aplic = (Vb.aplicacoes || []).filter(function(a){ return _setAtivo.has(a.ym); });
+    const calc = _verbasRecalcular(aplic, null);
     resumo = calc.resumo;
     mensal = calc.mensal;
     deptos = calc.por_departamento;
@@ -643,14 +652,14 @@ function renderVerbas(){
   html += '<div class="ph-sep"></div>';
   html += '<div class="page-body">';
 
-  // ─── Filtro de mês ───
-  html += _filtroMesHTML('verbas-mes', mesesDisp, _verbasMesFiltro);
+  // ─── Slot pro filtro padrão (injetado abaixo via buildFilterBar) ───
+  html += '<div id="verbas-pfb-slot"></div>';
 
   // ─── Banner de escopo ───
   const periodo = meta.periodo || {};
   let _perTxt2;
   if(filtroAtivo){
-    _perTxt2 = _ymToLabel(_verbasMesFiltro);
+    _perTxt2 = _ymsAtivos.map(_ymToLabel).join(', ');
   } else {
     _perTxt2 = (periodo.inicio && periodo.fim)
       ? esc(periodo.inicio)+' a '+esc(periodo.fim)
@@ -994,11 +1003,14 @@ function renderVerbas(){
 
   _vbRenderAplic();
 
-  // Bind do select de filtro de mês
-  _filtroMesBind('verbas-mes', function(novoMes){
-    _verbasMesFiltro = novoMes;
-    renderVerbas();
-  });
+  // v4.70: injeta a pfb padrão (mesma de Compras × Vendas)
+  if(typeof buildFilterBar === 'function'){
+    const slot = document.getElementById('verbas-pfb-slot');
+    if(slot){
+      slot.innerHTML = '';
+      slot.appendChild(buildFilterBar('verbas'));
+    }
+  }
 }
 
 // Helper compartilhado: gera HTML do select de filtro de mês

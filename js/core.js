@@ -216,7 +216,7 @@ const AUTH_MODE = 'firebase'; // 'mock' | 'firebase'
 // Convenção:
 //   X.x → alteração grande (quebra de compatibilidade, nova feature grande)
 //   x.X → alteração suave (fix, ajuste visual, pequeno refinamento)
-const APP_VERSION = '4.69-comercial';
+const APP_VERSION = '4.70-comercial';
 
 // ================================================================
 // HELPERS DE CHART.JS — compatíveis com Safari/iOS (sem spread ops)
@@ -999,7 +999,6 @@ const PAGINAS_CATALOGO = [
   {id:'estoque',      nome:'Estoque',             grupo:'Compras'},
   {id:'excesso',      nome:'Excesso de estoque',  grupo:'Compras'},
   {id:'financeiro',   nome:'Financeiro',          grupo:'Compras'},
-  {id:'vencidos',     nome:'Vencidos',            grupo:'Compras'},
   {id:'fornecedores', nome:'Fornecedores',        grupo:'Compras'},
   {id:'forn-gpc',     nome:'GPC',                 grupo:'Compras'},
   {id:'abc',          nome:'Curva ABC',           grupo:'Compras'},
@@ -2356,7 +2355,7 @@ function _loadDadosModulares(baseSlug){
   // Vendas: tenta vendas_<base>.json primeiro, com fallback para vendas.json (legado).
   _fetchModular('vendas_'+baseSlug+'.json',       'V',   ['v-','executivo','estoque'], ['vendas.json']);
   _fetchModular('compras_'+baseSlug+'.json',      'C',   ['cv','deptos','fornecedores','executivo','home']);
-  _fetchModular('estoque_'+baseSlug+'.json',      'E',   ['estoque','excesso','vencidos','abc','executivo','home']);
+  _fetchModular('estoque_'+baseSlug+'.json',      'E',   ['estoque','excesso','abc','executivo','home']);
   _fetchModular('devolucoes_'+baseSlug+'.json',   'Dev', ['fornecedores','diag-forn']);
   _fetchModular('financeiro_'+baseSlug+'.json',   'F',   ['financeiro','executivo','home']);
   _fetchModular('recebimentos_'+baseSlug+'.json', 'R',   ['recebimentos','financeiro','executivo']);
@@ -3527,7 +3526,7 @@ function _gerarLogsMock(){
   const agora = Date.now();
   const exemplos = [];
   const tipos = ['page_view','export_xlsx','login_ok','admin_sku_add','admin_user_save','page_view','page_view','export_pdf','filial_change','admin_estoque','login_fail','logout'];
-  const paginas = ['executivo','departamentos','fornecedores','vencidos','excesso','financeiro','forn-gpc','admin'];
+  const paginas = ['executivo','departamentos','fornecedores','excesso','financeiro','forn-gpc','admin'];
   const usrPool = usuarios.length > 0 ? usuarios : [{uid:'admin-001',nome:'Administrador',email:'admin@r2.com.br'}];
 
   for(let i=0; i<28; i++){
@@ -6255,7 +6254,6 @@ window._navOpenProd = function(prodCod, fromPage, fromCtx){
     else if(fromPage === 'fornecedores') label = 'Voltar a Fornecedores';
     else if(fromPage === 'estoque') label = 'Voltar a Estoque';
     else if(fromPage === 'excesso') label = 'Voltar a Excesso de estoque';
-    else if(fromPage === 'vencidos') label = 'Voltar a Vencidos';
     else if(fromPage === 'abc') label = 'Voltar à Curva ABC';
     else if(fromPage === 'alertas') label = 'Voltar a Alertas';
     else if(fromPage === 'forn-gpc') label = 'Voltar a Fornecedores GPC';
