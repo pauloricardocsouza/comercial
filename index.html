@@ -22,6 +22,8 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
 <!-- pako: fallback de descompressão gzip pra browsers sem DecompressionStream nativo (Safari iOS < 16.4) -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"></script>
+<!-- Lucide icons (v4.76 · Cofre design system) -->
+<script src="https://unpkg.com/lucide@0.469.0/dist/umd/lucide.min.js"></script>
 <!-- Firebase SDK (compat - sem build step) -->
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
@@ -60,38 +62,151 @@
 </script>
 <style>
 :root {
-  --bg: #ffffff;
-  --surface: #ffffff;
-  --surface-2: #f5f7fa;
-  --surface-3: #eef1f5;
-  --border: #e4e8ee;
-  --border-strong: #c9d0da;
-  --text: #0a0e16;
-  --text-dim: #4a5262;
-  --text-muted: #6b7280;
-  --accent: #2E476F;
-  --accent-dim: #253C5E;
-  --accent-text: #1E3558;
-  --accent-glow: rgba(46,71,111,0.14);
-  --accent-bg: rgba(46,71,111,0.08);
-  --accent-bg-strong: rgba(46,71,111,0.16);
-  --highlight: #F58634;
-  --highlight-dim: #DC7529;
-  --highlight-text: #B45A1F;
-  --highlight-bg: rgba(245,134,52,0.1);
-  --highlight-bg-strong: rgba(245,134,52,0.18);
-  --danger: #d92d20;
-  --danger-text: #b42318;
-  --danger-bg: rgba(217,45,32,0.07);
-  --success: #109854;
-  --success-text: #087042;
-  --success-bg: rgba(16,152,84,0.08);
-  --warning: #b45309;
-  --warning-bg: rgba(245,158,11,0.12);
-  --violet: #7c3aed;
-  --violet-text: #6d28d9;
-  --violet-bg: rgba(124,58,237,0.1);
-  --topbar-bg: #2E476F;
+  /* ============ GPC NAVY (escala derivada da logo) ============ */
+  --gpc-navy-50:  #EEF2F8;
+  --gpc-navy-100: #D8E0EE;
+  --gpc-navy-200: #B0C0DC;
+  --gpc-navy-300: #7691BC;
+  --gpc-navy-400: #4D6FA0;
+  --gpc-navy-500: #2E476F;
+  --gpc-navy-600: #253C5E;
+  --gpc-navy-700: #1B2D48;
+  --gpc-navy-800: #131F31;
+  --gpc-navy-900: #0B131F;
+
+  /* ============ GPC ORANGE (escala derivada do acento) ============ */
+  --gpc-orange-50:  #FFF2E8;
+  --gpc-orange-100: #FFE0C6;
+  --gpc-orange-200: #FCC18C;
+  --gpc-orange-300: #F9A153;
+  --gpc-orange-400: #F58634;
+  --gpc-orange-500: #DC7529;
+  --gpc-orange-600: #B45A1F;
+  --gpc-orange-700: #8A4318;
+
+  /* ============ Neutros com viés navy ============ */
+  --n-0:   #FFFFFF;  --n-50:  #F7F8FA;  --n-100: #EFF1F5;  --n-200: #E4E8EE;
+  --n-300: #C9D0DA;  --n-400: #9BA3B2;  --n-500: #6B7280;  --n-600: #4A5262;
+  --n-700: #2C3340;  --n-800: #16202E;  --n-900: #0A0E16;
+
+  /* ============ Aliases funcionais (light theme default) ============ */
+  --bg:            var(--n-0);
+  --bg-page:       var(--n-50);
+  --surface:       var(--n-0);
+  --surface-2:     var(--n-50);
+  --surface-3:     var(--n-100);
+  --surface-4:     var(--n-200);
+  --border:        var(--n-200);
+  --border-strong: var(--n-300);
+  --text:          var(--n-900);
+  --text-dim:      var(--n-600);
+  --text-muted:    var(--n-500);
+  --text-faint:    var(--n-400);
+  --accent:        var(--gpc-navy-500);
+  --accent-dim:    var(--gpc-navy-600);
+  --accent-deep:   var(--gpc-navy-600);
+  --accent-text:   var(--gpc-navy-700);
+  --accent-bg:     var(--gpc-navy-50);
+  --accent-bg-2:   var(--gpc-navy-100);
+  --accent-bg-strong: var(--gpc-navy-100);
+  --accent-glow:   rgba(46,71,111,0.14);
+  --highlight:     var(--gpc-orange-400);
+  --highlight-dim: var(--gpc-orange-500);
+  --highlight-deep:var(--gpc-orange-500);
+  --highlight-text:var(--gpc-orange-600);
+  --highlight-bg:  var(--gpc-orange-50);
+  --highlight-bg-2:var(--gpc-orange-100);
+  --highlight-bg-strong: var(--gpc-orange-100);
+  --danger:        #d92d20;
+  --danger-text:   #b42318;
+  --danger-bg:     #FDEBEA;
+  --danger-50:     #FDEBEA;  --danger-500: #D92D20;  --danger-700: #B42318;
+  --success:       #109854;
+  --success-text:  #087042;
+  --success-bg:    #E8F6EE;
+  --success-50:    #E8F6EE;  --success-500: #109854; --success-700: #087042;
+  --warning:       #b45309;
+  --warning-bg:    #FFF6E3;
+  --warning-50:    #FFF6E3;  --warning-500: #B45309; --warning-700: #844105;
+  --violet:        #7c3aed;
+  --violet-text:   #6d28d9;
+  --violet-bg:     #F1EBFD;
+  --violet-50:     #F1EBFD;  --violet-500: #7C3AED;  --violet-700: #6D28D9;
+  --info-50:       #EAF1FD;  --info-500:   #2563EB;  --info-700:   #1D4ED8;
+  --topbar-bg:     var(--gpc-navy-500);
+
+  /* ============ Tipografia ============ */
+  --font-display:  'Archivo', system-ui, sans-serif;
+  --font-mono:     'JetBrains Mono', ui-monospace, monospace;
+
+  /* ============ Layout ============ */
+  --sidebar-w:     240px;
+  --topbar-h:      48px;
+
+  /* ============ Spacing ============ */
+  --sp-1: 4px;   --sp-2: 8px;   --sp-3: 12px;  --sp-4: 16px;
+  --sp-5: 20px;  --sp-6: 24px;  --sp-7: 32px;  --sp-8: 48px;
+
+  /* ============ Radii ============ */
+  --r-sm: 6px;  --r-md: 8px;  --r-lg: 12px;  --r-xl: 16px;  --r-full: 9999px;
+
+  /* ============ Shadows ============ */
+  --sh-xs: 0 1px 2px rgba(10,14,22,0.04);
+  --sh-sm: 0 1px 3px rgba(10,14,22,0.06), 0 1px 2px rgba(10,14,22,0.04);
+  --sh-md: 0 4px 12px rgba(10,14,22,0.06);
+  --sh-lg: 0 8px 24px rgba(10,14,22,0.08);
+
+  /* ============ Densidade — default confortável ============ */
+  --row-h:     36px;
+  --row-pad-y: 9px;
+  --row-pad-x: 12px;
+  --card-pad:  18px;
+  --kpi-pad:   18px;
+}
+
+/* ============ Tema escuro ============ */
+[data-theme="dark"] {
+  --bg:            var(--gpc-navy-900);
+  --bg-page:       #07101A;
+  --surface:       var(--gpc-navy-800);
+  --surface-2:     #1A2638;
+  --surface-3:     var(--gpc-navy-700);
+  --surface-4:     var(--gpc-navy-600);
+  --border:        #233247;
+  --border-strong: var(--gpc-navy-600);
+  --text:          #EEF2F8;
+  --text-dim:      #B0C0DC;
+  --text-muted:    #7691BC;
+  --text-faint:    #4D6FA0;
+  --accent:        var(--gpc-orange-400);
+  --accent-deep:   var(--gpc-orange-500);
+  --accent-text:   var(--gpc-orange-200);
+  --accent-bg:     rgba(245,134,52,0.10);
+  --accent-bg-2:   rgba(245,134,52,0.18);
+  --accent-bg-strong: rgba(245,134,52,0.20);
+  --accent-glow:   rgba(245,134,52,0.22);
+  --highlight:     var(--gpc-orange-400);
+  --highlight-text:var(--gpc-orange-200);
+  --highlight-bg:  rgba(245,134,52,0.12);
+  --success-50:    rgba(16,152,84,0.12);
+  --warning-50:    rgba(180,83,9,0.16);
+  --danger-50:     rgba(217,45,32,0.14);
+  --info-50:       rgba(37,99,235,0.14);
+  --violet-50:     rgba(124,58,237,0.14);
+  --danger-bg:     rgba(217,45,32,0.14);
+  --success-bg:    rgba(16,152,84,0.12);
+  --warning-bg:    rgba(180,83,9,0.16);
+  --violet-bg:     rgba(124,58,237,0.14);
+  --topbar-bg:     var(--gpc-navy-800);
+}
+
+/* ============ Densidade compacta ============ */
+[data-density="compact"] {
+  --row-h:     28px;
+  --row-pad-y: 5px;
+  --row-pad-x: 9px;
+  --card-pad:  12px;
+  --kpi-pad:   12px;
 }
 * { box-sizing: border-box; margin: 0; padding: 0; }
 html, body {
@@ -1463,6 +1578,539 @@ textarea.proc-inp{resize:vertical;min-height:44px}
 .proc-hist-item:last-child{border-bottom:none}
 .proc-hist-l{color:#111827}
 .proc-hist-r{color:#6b7280}
+
+/* ════════════════════════════════════════════════════════════════════
+   COFRE DESIGN SYSTEM · v4.76 (Fase 1 — shell + sidebar + topbar slim)
+   ════════════════════════════════════════════════════════════════════ */
+
+/* Layout: sidebar fixa + conteúdo offsetado por margin-left */
+body.cofre-shell {
+  background: var(--bg-page);
+  min-height: 100vh;
+}
+body.cofre-shell > header.topbar,
+body.cofre-shell > .app-body {
+  margin-left: var(--sidebar-w);
+}
+/* App body antigo era grid (sidebar+main); Cofre derruba o grid */
+body.cofre-shell .app-body {
+  display: block !important;
+  grid-template-columns: none !important;
+}
+body.cofre-shell .main-content { width: 100%; }
+[data-theme="dark"] body.cofre-shell { background: var(--bg-page); }
+
+/* SIDEBAR */
+.cofre-sidebar {
+  position: fixed; left: 0; top: 0; bottom: 0; width: var(--sidebar-w);
+  background: var(--surface); border-right: 1px solid var(--border);
+  display: flex; flex-direction: column; z-index: 50;
+  transition: transform .25s ease;
+}
+.cofre-brand {
+  padding: 18px 18px 14px; border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; gap: 10px;
+}
+.cofre-brand .brand-logo { height: 34px; width: auto; }
+.cofre-brand .brand-text {
+  display: flex; flex-direction: column; line-height: 1.05;
+}
+.cofre-brand .brand-text .name {
+  font-weight: 800; font-size: 13px; letter-spacing: -0.01em; color: var(--text);
+}
+.cofre-brand .brand-text .sub {
+  font-family: var(--font-mono); font-size: 9px; color: var(--text-muted);
+  margin-top: 3px; text-transform: uppercase; letter-spacing: 0.14em;
+}
+[data-theme="dark"] .cofre-brand .brand-logo { filter: brightness(0) invert(1); }
+
+.cofre-base {
+  padding: 10px 18px 14px; border-bottom: 1px solid var(--border);
+}
+.cofre-base-pill {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 4px 9px; border-radius: 999px;
+  background: var(--accent-bg); color: var(--accent-text);
+  font-family: var(--font-mono); font-size: 10px; font-weight: 700;
+  letter-spacing: 0.08em;
+}
+.cofre-base-pill::before {
+  content: ""; width: 5px; height: 5px; border-radius: 50%; background: currentColor;
+}
+
+.cofre-nav { flex: 1; overflow-y: auto; padding: 10px 8px; }
+.cofre-nav-group { margin-bottom: 14px; }
+.cofre-nav-label {
+  padding: 4px 12px 6px;
+  font-family: var(--font-mono); font-size: 9px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.14em;
+  color: var(--text-faint);
+}
+.cofre-nav-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 7px 10px 7px 12px; border-radius: 6px;
+  font-size: 13px; font-weight: 500; color: var(--text-dim);
+  cursor: pointer; transition: all .15s; margin-bottom: 1px;
+  border: none; background: none; font-family: inherit; width: 100%;
+  text-align: left; position: relative;
+}
+.cofre-nav-item:hover { background: var(--surface-2); color: var(--text); }
+.cofre-nav-item.active {
+  background: var(--accent-bg); color: var(--accent-text); font-weight: 600;
+}
+.cofre-nav-item.active::before {
+  content: ""; position: absolute; left: 0; top: 6px; bottom: 6px;
+  width: 3px; background: var(--highlight); border-radius: 2px;
+}
+.cofre-nav-item .ico { width: 16px; height: 16px; display: grid; place-items: center; opacity: .75; flex-shrink: 0; }
+.cofre-nav-item .ico svg { width: 16px; height: 16px; }
+.cofre-nav-item.active .ico { opacity: 1; }
+.cofre-nav-item .cnt {
+  margin-left: auto; font-family: var(--font-mono); font-size: 9px;
+  padding: 1px 5px; border-radius: 3px;
+  background: var(--surface-3); color: var(--text-muted); font-weight: 700;
+}
+.cofre-nav-item.active .cnt {
+  background: var(--highlight-bg); color: var(--highlight-text);
+}
+
+.cofre-r2 {
+  border-top: 1px solid var(--border); padding: 12px 18px;
+  display: flex; align-items: center; gap: 8px;
+}
+.cofre-r2-lbl {
+  font-family: var(--font-mono); font-size: 9px; font-weight: 700;
+  color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.1em;
+}
+.cofre-r2 img { height: 18px; opacity: 0.7; }
+[data-theme="dark"] .cofre-r2 img { filter: brightness(0) invert(1); opacity: 0.5; }
+
+/* MAIN column */
+.cofre-main {
+  grid-column: 2; min-width: 0;
+  display: flex; flex-direction: column; min-height: 100vh;
+}
+body.cofre-shell .topbar {
+  /* Reset topbar antiga quando shell Cofre ativo */
+  background: var(--surface); color: var(--text); padding: 0;
+  border-bottom: 1px solid var(--border); height: var(--topbar-h);
+  position: sticky; top: 0; z-index: 40;
+}
+.cofre-topbar {
+  height: 100%; display: flex; align-items: center;
+  justify-content: space-between; padding: 0 24px;
+}
+.cofre-bc {
+  display: flex; align-items: center; gap: 8px;
+  font-family: var(--font-mono); font-size: 11px; color: var(--text-muted);
+  font-weight: 500;
+}
+.cofre-bc .sep { color: var(--text-faint); }
+.cofre-bc .cur { color: var(--text); font-weight: 700; }
+.cofre-tb-right { display: flex; align-items: center; gap: 10px; }
+.cofre-icon-btn {
+  width: 30px; height: 30px; display: grid; place-items: center;
+  border: none; background: none; border-radius: 6px;
+  cursor: pointer; color: var(--text-muted); transition: all .15s;
+}
+.cofre-icon-btn:hover { background: var(--surface-2); color: var(--text); }
+.cofre-icon-btn svg { width: 15px; height: 15px; }
+.cofre-avatar {
+  width: 30px; height: 30px; border-radius: 50%;
+  background: linear-gradient(135deg, var(--gpc-navy-500), var(--gpc-orange-500));
+  color: white; display: grid; place-items: center;
+  font-size: 11px; font-weight: 700; cursor: pointer;
+}
+
+/* Mobile drawer */
+@media (max-width: 900px) {
+  body.cofre-shell { grid-template-columns: 1fr; }
+  .cofre-sidebar { transform: translateX(-100%); box-shadow: var(--sh-lg); }
+  .cofre-sidebar.open { transform: translateX(0); }
+  .cofre-topbar { padding: 0 14px 0 56px; }
+}
+
+/* Esconder a sidebar antiga (accordion) quando Cofre ativo. A topbar antiga
+   é reaproveitada: _cofreCriarShell() troca o conteúdo dela pelo .cofre-topbar */
+body.cofre-shell .app-body > aside.sidebar { display: none; }
+body.cofre-shell #restoreBtn { display: none !important; }
+/* Linha laranja do topo da topbar antiga não combina com slim Cofre */
+body.cofre-shell header.topbar { border-bottom-color: var(--border); border-bottom-width: 1px; }
+
+/* ════════════════════════════════════════════════════════════════════
+   FASE 2 · Cofre components — KPI cards minimal, tabelas editoriais,
+   cards, botões, tags. Retarget de classes legadas (.kc, .kg, .cc, .t)
+   sob body.cofre-shell para preservar markup atual.
+   ════════════════════════════════════════════════════════════════════ */
+
+/* KPI cards — minimal, sem glow radial, borda lateral 3px navy */
+body.cofre-shell .kc {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--r-md);
+  padding: var(--kpi-pad);
+  box-shadow: var(--sh-xs);
+}
+body.cofre-shell .kc::after { display: none; } /* mata o glow radial antigo */
+body.cofre-shell .kc.up { border-left-color: var(--success-500); }
+body.cofre-shell .kc.dn { border-left-color: var(--danger-500); }
+body.cofre-shell .kc.hl { border-left-color: var(--gpc-orange-400); }
+body.cofre-shell .kc.vio { border-left-color: var(--violet-500); }
+body.cofre-shell .kc .kl {
+  font-family: var(--font-mono); font-size: 10px; font-weight: 700;
+  color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.1em;
+}
+body.cofre-shell .kc .kv {
+  font-size: 22px; font-weight: 800; letter-spacing: -0.02em;
+  margin-top: 6px; line-height: 1.05;
+  font-variant-numeric: tabular-nums; color: var(--text);
+}
+body.cofre-shell .kc .ks {
+  font-family: var(--font-mono); font-size: 10px;
+  color: var(--text-muted); margin-top: 4px;
+}
+[data-density="compact"] body.cofre-shell .kc .kv,
+body.cofre-shell[data-density="compact"] .kc .kv { font-size: 18px; }
+
+/* Cards (containers de gráfico/tabela) */
+body.cofre-shell .cc {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  padding: var(--card-pad);
+  box-shadow: var(--sh-xs);
+  margin-bottom: 14px;
+}
+body.cofre-shell .cc .cct {
+  font-weight: 700; font-size: 13px; color: var(--text);
+  letter-spacing: -0.005em; line-height: 1.3;
+}
+body.cofre-shell .cc .ccs {
+  font-family: var(--font-mono); font-size: 11px;
+  color: var(--text-muted); margin-top: 4px; margin-bottom: 10px;
+  letter-spacing: 0;
+}
+body.cofre-shell .cc .cch {
+  display: flex; justify-content: space-between; align-items: flex-start;
+  margin-bottom: 10px; flex-wrap: wrap; gap: 10px;
+}
+
+/* Tabelas editoriais — hairlines, header navy, hover sutil */
+body.cofre-shell table.t {
+  width: 100%; border-collapse: separate; border-spacing: 0;
+  font-variant-numeric: tabular-nums; font-size: 12px;
+}
+body.cofre-shell table.t th {
+  background: var(--accent-bg);
+  padding: var(--row-pad-y) var(--row-pad-x);
+  font-family: var(--font-mono); font-size: 10px; font-weight: 700;
+  color: var(--accent-text); text-transform: uppercase; letter-spacing: 0.06em;
+  border-bottom: 1.5px solid var(--accent);
+  text-align: right; white-space: nowrap;
+  position: sticky; top: 0; z-index: 2;
+}
+body.cofre-shell table.t th.L { text-align: left; }
+body.cofre-shell table.t td {
+  padding: var(--row-pad-y) var(--row-pad-x);
+  border-bottom: 1px solid var(--border);
+  color: var(--text); font-size: 12px;
+  text-align: right; white-space: nowrap;
+}
+body.cofre-shell table.t td.L { text-align: left; }
+body.cofre-shell table.t tbody tr:hover td { background: var(--accent-bg); cursor: pointer; }
+body.cofre-shell table.t tbody tr:last-child td { border-bottom: none; }
+
+/* Botões (ebtn legacy → estilo Cofre minimal) */
+body.cofre-shell .ebtn {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 7px 12px; border-radius: 6px;
+  border: 1px solid var(--border); background: var(--surface);
+  font-family: var(--font-mono); font-size: 10px; font-weight: 700;
+  color: var(--text-dim); letter-spacing: 0.06em; text-transform: uppercase;
+  cursor: pointer; transition: all .15s;
+}
+body.cofre-shell .ebtn:hover {
+  background: var(--highlight); color: white; border-color: var(--highlight);
+}
+body.cofre-shell .ebtn svg { width: 13px; height: 13px; }
+body.cofre-shell .ebtn.xlsx:hover { background: var(--success-500); border-color: var(--success-500); }
+body.cofre-shell .ebtn.pdf:hover  { background: var(--danger-500); border-color: var(--danger-500); }
+
+/* Tags / Badges (kg-tag e .tag legados) */
+body.cofre-shell .kg-tag,
+body.cofre-shell .tag {
+  display: inline-block; padding: 2px 6px; border-radius: 4px;
+  font-family: var(--font-mono); font-size: 9.5px; font-weight: 700;
+  letter-spacing: 0.04em; text-transform: uppercase; white-space: nowrap;
+  background: var(--surface-3); color: var(--text-muted);
+}
+body.cofre-shell .kg-tag.ok,  body.cofre-shell .tag.grn { background: var(--success-50); color: var(--success-700); }
+body.cofre-shell .kg-tag.wn,  body.cofre-shell .tag.ori { background: var(--warning-50); color: var(--warning-700); }
+body.cofre-shell .kg-tag.dn,  body.cofre-shell .tag.dnd { background: var(--danger-50);  color: var(--danger-700); }
+body.cofre-shell .kg-tag.hl  { background: var(--gpc-orange-50); color: var(--gpc-orange-600); }
+body.cofre-shell .kg-tag.vio, body.cofre-shell .tag.vio { background: var(--violet-50);  color: var(--violet-700); }
+body.cofre-shell .kg-tag.acc, body.cofre-shell .tag.acc { background: var(--accent-bg);  color: var(--accent-text); }
+
+/* Period filter (.pfb-per buttons) — segmented control Cofre */
+body.cofre-shell .pfb {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--r-md); padding: 8px 12px; margin-bottom: 12px;
+}
+body.cofre-shell .pfb-label {
+  font-family: var(--font-mono); font-size: 10px; color: var(--text-muted);
+  text-transform: uppercase; letter-spacing: 0.08em; font-weight: 700;
+}
+body.cofre-shell .pfb-per {
+  padding: 5px 10px; border: 1px solid var(--border-strong);
+  background: var(--surface); color: var(--text-muted);
+  font-family: var(--font-mono); font-size: 10px; font-weight: 700;
+  border-radius: 5px; cursor: pointer; transition: all .15s;
+}
+body.cofre-shell .pfb-per:hover { color: var(--text); }
+body.cofre-shell .pfb-per.on,
+body.cofre-shell .pfb-per.active {
+  background: var(--accent); color: white; border-color: var(--accent);
+}
+body.cofre-shell .pfb-apply {
+  padding: 6px 14px; border: none; background: var(--highlight); color: white;
+  font-family: var(--font-mono); font-size: 10px; font-weight: 700;
+  letter-spacing: 0.06em; text-transform: uppercase;
+  border-radius: 6px; cursor: pointer;
+}
+body.cofre-shell .pfb-apply:hover { background: var(--highlight-deep); }
+body.cofre-shell .pfb-dept {
+  padding: 5px 10px; border: 1px solid var(--border-strong);
+  background: var(--surface); color: var(--text); border-radius: 5px;
+  font-family: inherit; font-size: 12px;
+}
+
+/* Page header — kicker laranja, h2 bold */
+body.cofre-shell .ph {
+  padding: 4px 0 12px;
+}
+body.cofre-shell .pk {
+  font-family: var(--font-mono); font-size: 10px; color: var(--highlight-text);
+  letter-spacing: 0.18em; text-transform: uppercase;
+  margin-bottom: 6px; font-weight: 700;
+}
+body.cofre-shell .ph h2 {
+  font-size: 22px; font-weight: 800; letter-spacing: -0.02em;
+  line-height: 1.15; color: var(--text); margin: 0;
+}
+body.cofre-shell .ph h2 em {
+  color: var(--highlight); font-style: italic; font-weight: 800;
+}
+body.cofre-shell .ph-sep {
+  height: 1px; background: var(--border); margin: 0 0 14px;
+}
+body.cofre-shell .page-body { padding: 0 4px 24px; }
+
+/* tscroll — remove gradiente sombra que conflita com dark */
+body.cofre-shell .tscroll {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  overflow: auto;
+}
+body.cofre-shell .tscroll table.t th:first-child { border-top-left-radius: var(--r-md); }
+body.cofre-shell .tscroll table.t th:last-child  { border-top-right-radius: var(--r-md); }
+
+/* Dark mode: ajustes contraste hover */
+[data-theme="dark"] body.cofre-shell table.t tbody tr:hover td { background: var(--accent-bg-2); }
+[data-theme="dark"] body.cofre-shell .kc.up { border-left-color: var(--success-500); }
+[data-theme="dark"] body.cofre-shell .ebtn { background: var(--surface-2); color: var(--text-dim); border-color: var(--border-strong); }
+[data-theme="dark"] body.cofre-shell .pfb-per { background: var(--surface-2); border-color: var(--border-strong); }
+[data-theme="dark"] body.cofre-shell .pfb-per.on { background: var(--gpc-orange-400); color: var(--gpc-navy-900); border-color: var(--gpc-orange-400); }
+
+/* ════════════════════════════════════════════════════════════════════
+   FASE 3 · Hero pages (Diag. Produto/Fornecedor) + breadcrumb da pilha
+   ════════════════════════════════════════════════════════════════════ */
+
+/* Hero refinado: gradient navy→orange-bg, vinheta laranja maior, título 26px */
+body.cofre-shell .raiox-hero {
+  background: linear-gradient(135deg, var(--surface) 0%, var(--accent-bg) 60%, var(--highlight-bg) 130%);
+  border: 1px solid var(--border);
+  border-radius: var(--r-xl);
+  padding: 24px 28px;
+  margin-bottom: 18px;
+  box-shadow: var(--sh-sm);
+}
+body.cofre-shell .raiox-hero::after {
+  top: -50px; right: -50px; width: 250px; height: 250px;
+  background: radial-gradient(circle, rgba(245,134,52,0.14), transparent 70%);
+}
+body.cofre-shell .raiox-hero .cod {
+  font-family: var(--font-mono); font-size: 11px; font-weight: 700;
+  color: var(--highlight-text); letter-spacing: 0.16em;
+  text-transform: uppercase; margin-bottom: 10px;
+}
+body.cofre-shell .raiox-hero h2 {
+  font-size: 26px; font-weight: 800; letter-spacing: -0.02em;
+  line-height: 1.15; color: var(--text);
+}
+body.cofre-shell .raiox-hero .meta {
+  margin-top: 14px; display: flex; gap: 22px; flex-wrap: wrap; font-size: 12px;
+}
+body.cofre-shell .raiox-hero .meta-pair .k {
+  font-family: var(--font-mono); font-size: 10px; color: var(--text-muted);
+  text-transform: uppercase; letter-spacing: 0.1em; margin-right: 6px;
+}
+body.cofre-shell .raiox-hero .meta-pair .v { font-weight: 600; color: var(--text); }
+
+/* Search hero (Diag. Produto / Diag. Fornecedor — antes do raio-X carregar) */
+body.cofre-shell .srch-hero {
+  background: linear-gradient(135deg, var(--gpc-navy-600) 0%, var(--gpc-navy-700) 100%);
+  border: 1px solid var(--gpc-navy-700);
+  border-radius: var(--r-xl); padding: 28px 28px 22px;
+  margin-bottom: 18px;
+  position: relative; overflow: hidden;
+}
+body.cofre-shell .srch-hero::after {
+  content: ""; position: absolute; top: -60px; right: -60px;
+  width: 280px; height: 280px;
+  background: radial-gradient(circle, rgba(245,134,52,0.18), transparent 70%);
+  pointer-events: none;
+}
+body.cofre-shell .srch-hero input {
+  background: rgba(255,255,255,0.95); border: 2px solid rgba(245,134,52,0.6);
+  border-radius: 10px; padding: 12px 16px;
+  font-family: var(--font-display); font-size: 14px;
+  color: var(--text); width: 100%;
+}
+body.cofre-shell .srch-hero input:focus {
+  outline: none; border-color: var(--highlight);
+  box-shadow: 0 0 0 4px rgba(245,134,52,0.25);
+}
+
+/* Breadcrumb da pilha de navegação (nav stack) */
+body.cofre-shell .cofre-bc .stack-crumb {
+  padding: 3px 9px; border-radius: 4px;
+  background: var(--accent-bg); color: var(--accent-text);
+  font-family: var(--font-mono); font-size: 10.5px; font-weight: 700;
+  cursor: pointer; border: none; transition: all .15s;
+}
+body.cofre-shell .cofre-bc .stack-crumb:hover {
+  background: var(--highlight-bg); color: var(--highlight-text);
+}
+
+/* Botão "Voltar" flutuante (nav-back-fab) — Cofre style */
+body.cofre-shell .nav-back-fab {
+  background: var(--accent); color: white;
+  font-family: var(--font-mono); font-size: 11px; font-weight: 700;
+  letter-spacing: 0.06em; text-transform: uppercase;
+  border-radius: var(--r-full); padding: 10px 16px;
+  box-shadow: var(--sh-lg); border: none;
+}
+body.cofre-shell .nav-back-fab:hover { background: var(--accent-deep); }
+[data-theme="dark"] body.cofre-shell .nav-back-fab { background: var(--highlight); color: var(--gpc-navy-900); }
+[data-theme="dark"] body.cofre-shell .nav-back-fab:hover { background: var(--highlight-deep); }
+
+/* Dark mode: hero invertido (navy mais escuro) */
+[data-theme="dark"] body.cofre-shell .raiox-hero {
+  background: linear-gradient(135deg, var(--surface) 0%, var(--surface-3) 100%);
+  border-color: var(--border);
+}
+[data-theme="dark"] body.cofre-shell .raiox-hero .cod { color: var(--gpc-orange-300); }
+[data-theme="dark"] body.cofre-shell .srch-hero {
+  background: linear-gradient(135deg, var(--gpc-navy-800) 0%, var(--gpc-navy-900) 100%);
+  border-color: var(--gpc-navy-700);
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   FASE 5 · Login enhancement (proposta Painel · split-screen vibe)
+   Overlay #loginOverlay já existe; enhance via CSS sem mexer no JS.
+   ════════════════════════════════════════════════════════════════════ */
+#loginOverlay {
+  background:
+    radial-gradient(circle at 80% 20%, rgba(245,134,52,0.18), transparent 50%),
+    radial-gradient(circle at 20% 80%, rgba(245,134,52,0.10), transparent 50%),
+    linear-gradient(135deg, var(--gpc-navy-700) 0%, var(--gpc-navy-800) 70%, var(--gpc-orange-700) 200%) !important;
+}
+#loginOverlay::before {
+  content: ""; position: absolute; inset: 0; opacity: 0.05;
+  background-image:
+    linear-gradient(rgba(255,255,255,0.5) 0.5px, transparent 0.5px),
+    linear-gradient(90deg, rgba(255,255,255,0.5) 0.5px, transparent 0.5px);
+  background-size: 48px 48px;
+  pointer-events: none;
+}
+/* Card central */
+#loginOverlay > div {
+  position: relative;
+  border-radius: var(--r-xl) !important;
+  box-shadow: 0 24px 64px rgba(0,0,0,0.4), 0 0 0 1px rgba(255,255,255,0.05) !important;
+  padding: 44px !important;
+}
+/* Login button — gradient navy → orange */
+#loginOverlay #loginBtnEntrar,
+#loginOverlay #loginBtnTrocar {
+  background: linear-gradient(135deg, var(--gpc-navy-500), var(--gpc-orange-500)) !important;
+  box-shadow: 0 4px 14px rgba(245,134,52,0.3);
+  transition: transform .1s, box-shadow .15s;
+  letter-spacing: 0.04em;
+}
+#loginOverlay #loginBtnEntrar:hover,
+#loginOverlay #loginBtnTrocar:hover {
+  box-shadow: 0 6px 20px rgba(245,134,52,0.42);
+}
+#loginOverlay #loginBtnEntrar:active,
+#loginOverlay #loginBtnTrocar:active { transform: translateY(1px); }
+
+/* Inputs com focus state laranja */
+#loginOverlay input:focus {
+  outline: none !important;
+  border-color: var(--gpc-orange-400) !important;
+  box-shadow: 0 0 0 3px rgba(245,134,52,0.18);
+}
+
+/* Mobile: padding menor */
+@media (max-width: 640px) {
+  #loginOverlay > div { padding: 28px !important; }
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   FASE 5 · QA mobile / a11y
+   ════════════════════════════════════════════════════════════════════ */
+
+/* Mobile: sidebar Cofre vira drawer com overlay escuro */
+@media (max-width: 900px) {
+  body.cofre-shell > header.topbar,
+  body.cofre-shell > .app-body { margin-left: 0; }
+  body.cofre-shell .cofre-topbar { padding-left: 56px; }
+}
+
+/* Focus visível em todos os botões/links (a11y AA) */
+body.cofre-shell .cofre-nav-item:focus-visible,
+body.cofre-shell .cofre-icon-btn:focus-visible,
+body.cofre-shell .ebtn:focus-visible,
+body.cofre-shell .pfb-per:focus-visible,
+body.cofre-shell .pfb-apply:focus-visible {
+  outline: 2px solid var(--highlight);
+  outline-offset: 2px;
+}
+
+/* Reduzir motion para usuários sensíveis */
+@media (prefers-reduced-motion: reduce) {
+  body.cofre-shell *,
+  body.cofre-shell *::before,
+  body.cofre-shell *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+  }
+}
+
+/* Print mode: esconde sidebar e topbar pra economizar tinta */
+@media print {
+  body.cofre-shell .cofre-sidebar,
+  body.cofre-shell .topbar,
+  body.cofre-shell .nav-back-fab { display: none !important; }
+  body.cofre-shell > header.topbar,
+  body.cofre-shell > .app-body { margin-left: 0 !important; }
+}
+
+/* Quando shell Cofre não ativo (rollback), restaura grid antigo (não faz nada) */
+
 </style>
 </head>
 <body>
@@ -1895,10 +2543,10 @@ textarea.proc-inp{resize:vertical;min-height:44px}
      JS principal · dividido em 5 arquivos pela auditoria v4.6
      Ordem importa: core declara as globais; render-* dependem de core.
      ════════════════════════════════════════════════════════════════════════════ -->
-<script src="js/core.js?v=4.75"></script>
-<script src="js/render-compras.js?v=4.75"></script>
-<script src="js/render-vendas.js?v=4.75"></script>
-<script src="js/render-outros.js?v=4.75"></script>
-<script src="js/admin.js?v=4.75"></script>
+<script src="js/core.js?v=4.76"></script>
+<script src="js/render-compras.js?v=4.76"></script>
+<script src="js/render-vendas.js?v=4.76"></script>
+<script src="js/render-outros.js?v=4.76"></script>
+<script src="js/admin.js?v=4.76"></script>
 </body>
 </html>

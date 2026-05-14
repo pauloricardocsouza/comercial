@@ -216,7 +216,7 @@ const AUTH_MODE = 'firebase'; // 'mock' | 'firebase'
 // Convenção:
 //   X.x → alteração grande (quebra de compatibilidade, nova feature grande)
 //   x.X → alteração suave (fix, ajuste visual, pequeno refinamento)
-const APP_VERSION = '4.75-comercial';
+const APP_VERSION = '4.76-cofre';
 
 // ================================================================
 // HELPERS DE CHART.JS — compatíveis com Safari/iOS (sem spread ops)
@@ -3050,6 +3050,74 @@ Chart.defaults.font.family="'Archivo',sans-serif";
 Chart.defaults.font.size=11;
 Chart.defaults.color='#6b7280';
 Chart.defaults.borderColor='#e4e8ee';
+
+// v4.76 Cofre fase 4: paleta restrita e adaptativa por tema.
+// chartColors() retorna o conjunto atual de cores baseado em body[data-theme].
+// Após troca de tema, _cofreReplotCharts() força re-render de todos os charts
+// pra que grid/ticks/cores reflitam o novo modo.
+var _COFRE_PALETTE_LIGHT = {
+  primary:   '#2E476F',   secondary: '#F58634',
+  neutral:   '#9BA3B2',   success:   '#109854',
+  danger:    '#D92D20',   violet:    '#7C3AED',
+  warning:   '#B45309',
+  grid:      'rgba(46,71,111,0.08)',
+  text:      '#4A5262',   textMuted: '#6B7280',
+  surface:   '#FFFFFF'
+};
+var _COFRE_PALETTE_DARK = {
+  primary:   '#F58634',   secondary: '#7691BC',
+  neutral:   '#4D6FA0',   success:   '#5ED49C',
+  danger:    '#FF8B85',   violet:    '#A78BFA',
+  warning:   '#F9A153',
+  grid:      'rgba(255,255,255,0.06)',
+  text:      '#B0C0DC',   textMuted: '#7691BC',
+  surface:   '#131F31'
+};
+function chartColors(){
+  return (document.body.getAttribute('data-theme') === 'dark')
+    ? _COFRE_PALETTE_DARK : _COFRE_PALETTE_LIGHT;
+}
+window.chartColors = chartColors;
+
+// Aplica defaults do Chart.js baseado no tema atual
+function _cofreAplicarChartDefaults(){
+  var p = chartColors();
+  Chart.defaults.color       = p.textMuted;
+  Chart.defaults.borderColor = p.grid;
+  if(Chart.defaults.scale){
+    Chart.defaults.scale.grid   = Chart.defaults.scale.grid   || {};
+    Chart.defaults.scale.ticks  = Chart.defaults.scale.ticks  || {};
+    Chart.defaults.scale.grid.color = p.grid;
+    Chart.defaults.scale.ticks.color = p.textMuted;
+  }
+  // Plugin annotation: cor padrão
+  if(Chart.defaults.plugins && Chart.defaults.plugins.annotation){
+    Chart.defaults.plugins.annotation.color = p.textMuted;
+  }
+}
+_cofreAplicarChartDefaults();
+
+// Re-render todos os charts (chamado após troca de tema)
+function _cofreReplotCharts(){
+  _cofreAplicarChartDefaults();
+  try {
+    Object.keys(CH).forEach(function(id){
+      var ch = CH[id];
+      if(!ch || !ch.config) return;
+      // Atualiza cor de grid/ticks nos scales existentes
+      var p = chartColors();
+      if(ch.options && ch.options.scales){
+        Object.keys(ch.options.scales).forEach(function(sk){
+          var s = ch.options.scales[sk];
+          if(s.grid)  s.grid.color  = p.grid;
+          if(s.ticks) s.ticks.color = p.textMuted;
+        });
+      }
+      ch.update('none');
+    });
+  } catch(e){ console.warn('[cofre] replot charts:', e.message); }
+}
+window._cofreReplotCharts = _cofreReplotCharts;
 
 const CH={};
 function mkC(id,cfg){
@@ -6630,3 +6698,312 @@ function _podeMarcarNfs(){
   const perfil = sess.perfil;
   return perfil === 'admin' || perfil === 'gestor';
 }
+
+// ════════════════════════════════════════════════════════════════════
+// COFRE DESIGN SYSTEM · v4.76 Fase 1
+// Shell novo injetado via JS sobre o HTML existente. Mantém todos os
+// .sb-link[data-p="..."] originais funcionando — a nova sidebar dispara
+// clique programático no botão legado, então renderPage, perfis,
+// breadcrumb e tudo mais continuam funcionando.
+// ════════════════════════════════════════════════════════════════════
+
+// Catálogo de navegação (ícone Lucide + nome + grupo). Ordem espelha o menu
+// histórico do sistema.
+var _COFRE_NAV = [
+  { label: 'Compras', items: [
+    { id: 'executivo',    icon: 'layout-dashboard', name: 'Visão Executiva' },
+    { id: 'cv',           icon: 'bar-chart-3',      name: 'Compras × Vendas' },
+    { id: 'deptos',       icon: 'layers',           name: 'Departamentos' },
+    { id: 'estoque',      icon: 'package',          name: 'Estoque' },
+    { id: 'excesso',      icon: 'triangle-alert',   name: 'Excesso de Estoque' },
+    { id: 'financeiro',   icon: 'wallet',           name: 'Financeiro' },
+    { id: 'verbas',       icon: 'badge-percent',    name: 'Verbas' },
+    { id: 'fornecedores', icon: 'truck',            name: 'Fornecedores' },
+    { id: 'forn-gpc',     icon: 'building-2',       name: 'GPC' },
+    { id: 'abc',          icon: 'bar-chart',        name: 'Curva ABC' },
+    { id: 'alertas',      icon: 'bell',             name: 'Alertas' },
+  ]},
+  { label: 'Vendas', items: [
+    { id: 'v-visao-grupo',  icon: 'layout-dashboard', name: 'Visão Consolidada' },
+    { id: 'v-evolucao',     icon: 'trending-up',      name: 'Evolução Mensal' },
+    { id: 'v-itens',        icon: 'layers',           name: 'Itens & Deptos' },
+    { id: 'v-vendas-diarias',icon: 'calendar',        name: 'Vendas Diárias' },
+    { id: 'v-dias-cp',      icon: 'calendar-range',   name: 'Dias C & P' },
+    { id: 'v-metas',        icon: 'target',           name: 'Metas' },
+    { id: 'recebimentos',   icon: 'triangle-alert',   name: 'Inadimplência' },
+    { id: 'v-benchmarking', icon: 'users',            name: 'RCA' },
+    { id: 'v-ano2026',      icon: 'calendar-clock',   name: 'Análise 2026' },
+  ]},
+  { label: 'Análise', items: [
+    { id: 'cubo',        icon: 'box',         name: 'Análise Dinâmica' },
+    { id: 'diagnostico', icon: 'search',      name: 'Diag. Produto' },
+    { id: 'diag-forn',   icon: 'search',      name: 'Diag. Fornecedor' },
+    { id: 'nf-fechamento', icon: 'file-x',    name: 'NF Fechamento' },
+  ]},
+  { label: 'Sistema', items: [
+    { id: 'proc',        icon: 'upload',      name: 'Processamento' },
+    { id: 'historico',   icon: 'history',     name: 'Histórico' },
+    { id: 'ajuda',       icon: 'file-text',   name: 'Ajuda' },
+    { id: 'admin',       icon: 'shield',      name: 'Administração' },
+  ]},
+];
+
+function _cofreRenderSidebar(activeId){
+  var nav = document.getElementById('cofre-nav');
+  if(!nav) return;
+  var html = '';
+  for(var i=0;i<_COFRE_NAV.length;i++){
+    var g = _COFRE_NAV[i];
+    html += '<div class="cofre-nav-group">';
+    html += '<div class="cofre-nav-label">'+g.label+'</div>';
+    for(var j=0;j<g.items.length;j++){
+      var it = g.items[j];
+      // Esconde se o usuário não tem permissão (consulta o botão legado)
+      var legado = document.querySelector('.sb-link[data-p="'+it.id+'"]');
+      if(legado && legado.style.display === 'none') continue;
+      var active = (it.id === activeId) ? ' active' : '';
+      html += '<button class="cofre-nav-item'+active+'" data-p="'+it.id+'" type="button">';
+      html += '<span class="ico" data-lucide="'+it.icon+'"></span>';
+      html += '<span>'+it.name+'</span>';
+      html += '</button>';
+    }
+    html += '</div>';
+  }
+  nav.innerHTML = html;
+  // Ícones Lucide
+  if(window.lucide && window.lucide.createIcons){ window.lucide.createIcons(); }
+  // Bind clique: aciona o botão legado por trás (preserva todo o routing)
+  var items = nav.querySelectorAll('.cofre-nav-item[data-p]');
+  for(var k=0;k<items.length;k++){
+    items[k].addEventListener('click', function(){
+      var pid = this.getAttribute('data-p');
+      var lg = document.querySelector('.sb-link[data-p="'+pid+'"]');
+      if(lg){ lg.click(); }
+      _cofreRenderSidebar(pid);
+      _cofreUpdateBreadcrumb(pid);
+      // Fecha drawer mobile
+      var sb = document.getElementById('sidebar-cofre');
+      if(sb && sb.classList.contains('open')) sb.classList.remove('open');
+    });
+  }
+}
+
+function _cofreUpdateBreadcrumb(activeId){
+  var bc = document.getElementById('cofre-bc');
+  if(!bc) return;
+  // Resolve grupo+nome a partir do _COFRE_NAV
+  function _resolve(id){
+    for(var i=0;i<_COFRE_NAV.length;i++){
+      for(var j=0;j<_COFRE_NAV[i].items.length;j++){
+        if(_COFRE_NAV[i].items[j].id === id){
+          return { grupo: _COFRE_NAV[i].label, nome: _COFRE_NAV[i].items[j].name };
+        }
+      }
+    }
+    // Páginas dinâmicas (diag-forn etc.) podem não estar no menu — fallback
+    if(id === 'diagnostico') return { grupo: 'Análise', nome: 'Diag. Produto' };
+    if(id === 'diag-forn')   return { grupo: 'Análise', nome: 'Diag. Fornecedor' };
+    return null;
+  }
+  var cur = _resolve(activeId) || { grupo: '', nome: 'Comercial GPC' };
+  var html = '';
+  // Pilha de navegação: cada item vira um crumb clicável que volta naquela etapa
+  var stack = (window._navStack && window._navStack.length) ? window._navStack : [];
+  if(stack.length){
+    for(var k=0;k<stack.length;k++){
+      var entry = stack[k];
+      var src = _resolve(entry.sourcePage);
+      var lbl = (src ? src.nome : entry.sourcePage) || '';
+      html += '<button class="stack-crumb" type="button" data-stack-idx="'+k+'">'+lbl+'</button>';
+      html += '<span class="sep">›</span>';
+    }
+  } else if(cur.grupo){
+    html += '<span>'+cur.grupo+'</span><span class="sep">›</span>';
+  }
+  html += '<span class="cur">'+cur.nome+'</span>';
+  bc.innerHTML = html;
+  // Bind: clicar no crumb da pilha volta até aquele nível
+  var crumbs = bc.querySelectorAll('.stack-crumb[data-stack-idx]');
+  for(var c=0;c<crumbs.length;c++){
+    crumbs[c].addEventListener('click', function(){
+      var idx = parseInt(this.getAttribute('data-stack-idx'), 10);
+      if(!window._navStack) return;
+      // Pop até voltar pro nível clicado
+      var passos = window._navStack.length - idx;
+      for(var p=0;p<passos;p++){
+        if(typeof window._navBack === 'function') window._navBack();
+      }
+    });
+  }
+}
+
+function _cofreUpdateBaseBadge(){
+  var el = document.getElementById('cofre-base-badge');
+  if(!el) return;
+  var nome = 'GPC';
+  try {
+    if(typeof _filialAtual !== 'undefined' && _filialAtual && _filialAtual.nome){
+      nome = _filialAtual.nome.toUpperCase();
+    } else if(typeof _basesDisponiveis !== 'undefined' && _basesDisponiveis && _basesDisponiveis.length){
+      nome = 'GPC CONSOLIDADO';
+    }
+  } catch(e){}
+  el.textContent = nome;
+}
+window._cofreUpdateBaseBadge = _cofreUpdateBaseBadge;
+
+// Theme toggle (claro/escuro)
+function _cofreApplyTheme(t){
+  document.body.setAttribute('data-theme', t || 'light');
+  try { localStorage.setItem('gpc-theme', t); } catch(e){}
+  // v4.76 fase 4: re-aplicar paleta dos gráficos
+  if(typeof _cofreReplotCharts === 'function') _cofreReplotCharts();
+}
+function _cofreInitTheme(){
+  var saved;
+  try { saved = localStorage.getItem('gpc-theme'); } catch(e){}
+  _cofreApplyTheme(saved || 'light');
+  var btn = document.getElementById('theme-toggle');
+  if(btn) btn.addEventListener('click', function(){
+    var cur = document.body.getAttribute('data-theme');
+    _cofreApplyTheme(cur === 'dark' ? 'light' : 'dark');
+  });
+}
+
+// Density toggle (compact/comfortable)
+function _cofreApplyDensity(d){
+  document.body.setAttribute('data-density', d || 'comfortable');
+  try { localStorage.setItem('gpc-density', d); } catch(e){}
+}
+function _cofreInitDensity(){
+  var saved;
+  try { saved = localStorage.getItem('gpc-density'); } catch(e){}
+  _cofreApplyDensity(saved || 'comfortable');
+  var btn = document.getElementById('density-toggle');
+  if(btn) btn.addEventListener('click', function(){
+    var cur = document.body.getAttribute('data-density');
+    _cofreApplyDensity(cur === 'compact' ? 'comfortable' : 'compact');
+  });
+}
+
+// Avatar (iniciais do usuário)
+function _cofreUpdateAvatar(){
+  var el = document.getElementById('user-avatar');
+  if(!el) return;
+  var sess = (typeof _getSessao === 'function') ? _getSessao() : null;
+  if(!sess){ el.textContent = 'U'; return; }
+  var src = sess.nome || sess.email || 'U';
+  var parts = String(src).trim().split(/[\s@.]+/);
+  var ini = (parts[0] ? parts[0].charAt(0) : '') + (parts[1] ? parts[1].charAt(0) : '');
+  el.textContent = (ini || 'U').toUpperCase().substring(0,2);
+  el.title = sess.nome || sess.email || '';
+}
+
+// Mobile drawer toggle
+function _cofreInitMobile(){
+  var btn = document.getElementById('mobBtn');
+  var sb = document.getElementById('sidebar-cofre');
+  if(!btn || !sb) return;
+  btn.style.display = '';
+  btn.addEventListener('click', function(){ sb.classList.toggle('open'); });
+}
+
+// Cria os elementos do shell Cofre via JS (mais seguro que mexer no HTML).
+function _cofreCriarShell(){
+  if(document.getElementById('sidebar-cofre')) return; // idempotente
+  // Brand image existente no topo: tenta puxar o src do .brand-logo legado
+  var legadoImg = document.querySelector('header.topbar .brand-logo');
+  var brandSrc = legadoImg ? legadoImg.getAttribute('src') : '';
+  // Sidebar
+  var aside = document.createElement('aside');
+  aside.id = 'sidebar-cofre';
+  aside.className = 'cofre-sidebar';
+  aside.innerHTML = ''
+    + '<div class="cofre-brand">'
+    +   (brandSrc ? '<img class="brand-logo" src="'+brandSrc+'" alt="GPC" onerror="this.style.display=\'none\'">' : '')
+    +   '<div class="brand-text">'
+    +     '<span class="name">Comercial GPC</span>'
+    +     '<span class="sub">R2 · v4.76</span>'
+    +   '</div>'
+    + '</div>'
+    + '<div class="cofre-base"><span class="cofre-base-pill" id="cofre-base-badge">CARREGANDO…</span></div>'
+    + '<nav class="cofre-nav" id="cofre-nav"></nav>'
+    + '<div class="cofre-r2">'
+    +   '<span class="cofre-r2-lbl">desenvolvido por</span>'
+    +   '<span style="font-family:var(--font-mono);font-size:11px;font-weight:700;color:var(--text-dim);">R2</span>'
+    + '</div>';
+  document.body.insertBefore(aside, document.body.firstChild);
+
+  // Topbar slim: cria container e move ícones úteis do header legado
+  // (mantém os IDs btn-xlsx/btn-pdf, fil-sum, snapshot-info pra preservar listeners)
+  var topbar = document.querySelector('header.topbar');
+  if(topbar){
+    // Salva referências de elementos com ID que precisam continuar acessíveis
+    var btnXlsx = document.getElementById('btn-xlsx');
+    var btnPdf  = document.getElementById('btn-pdf');
+    var filSum  = document.getElementById('fil-sum');
+    var snapInfo = document.getElementById('snapshot-info');
+    // Limpa conteúdo da topbar e monta o slim
+    topbar.innerHTML = '';
+    var ct = document.createElement('div');
+    ct.className = 'cofre-topbar';
+    ct.innerHTML = ''
+      + '<div class="cofre-bc" id="cofre-bc"><span class="cur">Comercial GPC</span></div>'
+      + '<div class="cofre-tb-right">'
+      +   '<button class="cofre-icon-btn" id="theme-toggle" title="Alternar tema"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg></button>'
+      +   '<button class="cofre-icon-btn" id="density-toggle" title="Densidade"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="4" rx="1"/><rect x="3" y="11" width="18" height="4" rx="1"/><rect x="3" y="18" width="18" height="4" rx="1"/></svg></button>'
+      +   '<div class="cofre-avatar" id="user-avatar">U</div>'
+      + '</div>';
+    topbar.appendChild(ct);
+    // Reanexar elementos preservados se existirem
+    if(btnXlsx) ct.querySelector('.cofre-tb-right').insertBefore(btnXlsx, ct.querySelector('#theme-toggle'));
+    if(btnPdf)  ct.querySelector('.cofre-tb-right').insertBefore(btnPdf,  ct.querySelector('#theme-toggle'));
+    if(filSum)  ct.querySelector('.cofre-tb-right').insertBefore(filSum,  ct.querySelector('#theme-toggle'));
+    if(snapInfo) ct.querySelector('.cofre-tb-right').insertBefore(snapInfo, ct.querySelector('#theme-toggle'));
+    // Trocar visual dos export buttons pro estilo cofre-icon-btn (mantém id e listener)
+    if(btnXlsx){ btnXlsx.className = 'cofre-icon-btn'; btnXlsx.innerHTML = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>'; btnXlsx.title = 'Exportar XLSX'; }
+    if(btnPdf){  btnPdf.className  = 'cofre-icon-btn'; btnPdf.innerHTML  = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>'; btnPdf.title  = 'Exportar PDF'; }
+  }
+}
+
+// Boot do shell Cofre. Aciona após DOM pronto e perfis aplicados.
+function _cofreBoot(){
+  _cofreCriarShell();
+  document.body.classList.add('cofre-shell');
+  _cofreInitTheme();
+  _cofreInitDensity();
+  // Aguarda permissões antes de montar sidebar
+  setTimeout(function(){
+    var ativa = document.querySelector('.sb-link.active');
+    var pid = ativa ? ativa.getAttribute('data-p') : 'executivo';
+    _cofreRenderSidebar(pid);
+    _cofreUpdateBreadcrumb(pid);
+    _cofreUpdateBaseBadge();
+    _cofreUpdateAvatar();
+    _cofreInitMobile();
+  }, 100);
+  // Atualiza badge da base e avatar quando filial muda
+  var origRender = window._renderSelectorFilial;
+  // Listener leve: a cada clique em link legado da sidebar, atualiza breadcrumb
+  document.addEventListener('click', function(e){
+    var b = e.target && e.target.closest && e.target.closest('.sb-link[data-p]');
+    if(b){
+      var pid = b.getAttribute('data-p');
+      setTimeout(function(){
+        _cofreRenderSidebar(pid);
+        _cofreUpdateBreadcrumb(pid);
+        _cofreUpdateBaseBadge();
+        _cofreUpdateAvatar();
+      }, 10);
+    }
+  }, true);
+}
+
+// Dispara após o boot do sistema (espera _initSistema rodar)
+if(document.readyState === 'loading'){
+  document.addEventListener('DOMContentLoaded', function(){ setTimeout(_cofreBoot, 200); });
+} else {
+  setTimeout(_cofreBoot, 200);
+}
+window._cofreBoot = _cofreBoot;
+window._cofreRenderSidebar = _cofreRenderSidebar;
