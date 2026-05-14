@@ -216,7 +216,7 @@ const AUTH_MODE = 'firebase'; // 'mock' | 'firebase'
 // Convenção:
 //   X.x → alteração grande (quebra de compatibilidade, nova feature grande)
 //   x.X → alteração suave (fix, ajuste visual, pequeno refinamento)
-const APP_VERSION = '4.76-cofre-fix13';
+const APP_VERSION = '4.76-cofre-fix14';
 
 // ================================================================
 // HELPERS DE CHART.JS — compatíveis com Safari/iOS (sem spread ops)
@@ -6899,20 +6899,6 @@ function _cofreInitDensity(){
   });
 }
 
-// v4.76 fix11: imprimir / exportar página inteira em PDF (sem topbar/sidebar)
-// O usuário aciona "Salvar como PDF" no diálogo de impressão. CSS @media print
-// (no index.html) oculta sidebar/topbar/scrollbars e expande o conteúdo.
-function _cofreInitPrint(){
-  var btn = document.getElementById('print-page');
-  if(!btn) return;
-  btn.addEventListener('click', function(){
-    document.body.classList.add('printing-page');
-    try { window.print(); } finally {
-      setTimeout(function(){ document.body.classList.remove('printing-page'); }, 800);
-    }
-  });
-}
-
 // Avatar (iniciais do usuário). Esconde se já há um userWidget legado.
 function _cofreUpdateAvatar(){
   var el = document.getElementById('user-avatar');
@@ -7037,19 +7023,18 @@ function _cofreCriarShell(){
       +   '<div class="cofre-bc" id="cofre-bc"><span class="cur">Comercial GPC</span></div>'
       + '</div>'
       + '<div class="cofre-tb-right">'
-      +   '<button class="cofre-icon-btn" id="print-page" title="Exportar página em PDF (imprimir)"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg></button>'
       +   '<button class="cofre-icon-btn" id="theme-toggle" title="Alternar tema"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg></button>'
       +   '<button class="cofre-icon-btn" id="density-toggle" title="Densidade"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="4" rx="1"/><rect x="3" y="11" width="18" height="4" rx="1"/><rect x="3" y="18" width="18" height="4" rx="1"/></svg></button>'
       +   '<div class="cofre-avatar" id="user-avatar">U</div>'
       + '</div>';
     topbar.appendChild(ct);
     // Reanexar elementos preservados se existirem
-    if(btnXlsx) ct.querySelector('.cofre-tb-right').insertBefore(btnXlsx, ct.querySelector('#theme-toggle'));
+    // v4.76 fix14: btn-xlsx removido do topbar (apenas PDF fica disponivel)
+    if(btnXlsx) btnXlsx.remove();
     if(btnPdf)  ct.querySelector('.cofre-tb-right').insertBefore(btnPdf,  ct.querySelector('#theme-toggle'));
     if(filSum)  ct.querySelector('.cofre-tb-right').insertBefore(filSum,  ct.querySelector('#theme-toggle'));
     if(snapInfo) ct.querySelector('.cofre-tb-right').insertBefore(snapInfo, ct.querySelector('#theme-toggle'));
-    // Trocar visual dos export buttons pro estilo cofre-icon-btn (mantém id e listener)
-    if(btnXlsx){ btnXlsx.className = 'cofre-icon-btn'; btnXlsx.innerHTML = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>'; btnXlsx.title = 'Exportar XLSX'; }
+    // Trocar visual do botão PDF pro estilo cofre-icon-btn (mantém id e listener)
     if(btnPdf){  btnPdf.className  = 'cofre-icon-btn'; btnPdf.innerHTML  = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>'; btnPdf.title  = 'Exportar PDF'; }
   }
 }
@@ -7069,7 +7054,6 @@ function _cofreBoot(){
   document.body.classList.add('cofre-shell');
   _cofreInitTheme();
   _cofreInitDensity();
-  _cofreInitPrint();
   _cofreWatchUserWidget();
   _cofreLimparInlineGrid();
   _cofreWatchInlineGrid();
