@@ -2113,12 +2113,20 @@ body.cofre-shell .pfb-apply:focus-visible {
    FIXES VISUAIS · pós feedback inicial v4.76
    ════════════════════════════════════════════════════════════════════ */
 
-/* FIX: KPI grid não shrinkava — texto forçava cards a expandir além do 1fr */
+/* FIX: KPI grid não shrinkava — inline style `grid-template-columns:repeat(N,1fr)`
+   nos render-*.js vencia meu CSS. Uso !important pra forçar minmax(0,1fr). */
 body.cofre-shell .kg {
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
 }
-body.cofre-shell .kg.c3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-body.cofre-shell .kg.c5 { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+body.cofre-shell .kg.c3 { grid-template-columns: repeat(3, minmax(0, 1fr)) !important; }
+body.cofre-shell .kg.c5 { grid-template-columns: repeat(5, minmax(0, 1fr)) !important; }
+/* kg com 6 colunas via style inline (várias páginas) */
+body.cofre-shell [id="kg-est-novo"],
+body.cofre-shell [id="kg-exc-novo"],
+body.cofre-shell [id="kg-fin-novo"],
+body.cofre-shell [id="kg-rec"] {
+  grid-template-columns: repeat(6, minmax(0, 1fr)) !important;
+}
 body.cofre-shell .kg > * { min-width: 0; }
 body.cofre-shell .kc .kv {
   font-variant-numeric: tabular-nums;

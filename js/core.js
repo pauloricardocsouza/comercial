@@ -6886,17 +6886,35 @@ function _cofreInitDensity(){
   });
 }
 
-// Avatar (iniciais do usuário)
+// Avatar (iniciais do usuário). Esconde se já há um userWidget legado.
 function _cofreUpdateAvatar(){
   var el = document.getElementById('user-avatar');
   if(!el) return;
   var sess = (typeof _getSessao === 'function') ? _getSessao() : null;
   if(!sess){ el.textContent = 'U'; return; }
+  // Se o userWidget legado já existe ou vai aparecer, esconde nosso avatar
+  // (o legado tem dropdown com Alterar senha + Sair que queremos preservar)
+  if(document.getElementById('userWidget')){
+    el.style.display = 'none';
+    return;
+  }
   var src = sess.nome || sess.email || 'U';
   var parts = String(src).trim().split(/[\s@.]+/);
   var ini = (parts[0] ? parts[0].charAt(0) : '') + (parts[1] ? parts[1].charAt(0) : '');
   el.textContent = (ini || 'U').toUpperCase().substring(0,2);
   el.title = sess.nome || sess.email || '';
+}
+
+// Observa #userWidget aparecendo: quando o legado injeta, esconde o avatar Cofre
+function _cofreWatchUserWidget(){
+  var tb = document.querySelector('header.topbar');
+  if(!tb || !window.MutationObserver) return;
+  var obs = new MutationObserver(function(){
+    var legacy = document.getElementById('userWidget');
+    var cofreAv = document.getElementById('user-avatar');
+    if(legacy && cofreAv) cofreAv.style.display = 'none';
+  });
+  obs.observe(tb, { childList: true, subtree: true });
 }
 
 // Mobile drawer toggle
@@ -6972,6 +6990,7 @@ function _cofreBoot(){
   document.body.classList.add('cofre-shell');
   _cofreInitTheme();
   _cofreInitDensity();
+  _cofreWatchUserWidget();
   // Aguarda permissões antes de montar sidebar
   setTimeout(function(){
     var ativa = document.querySelector('.sb-link.active');
