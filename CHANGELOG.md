@@ -4,7 +4,67 @@ Lista das melhorias do sistema de BI da R2 Soluções para o Grupo Pinto Cerquei
 
 ---
 
-## v4.76-cofre-fase1 · 14/mai/2026 · branch `feat/cofre-v4.76`
+## v4.76-cofre · 14/mai/2026
+
+**Cofre Design System — completo (fases 1–5)**
+
+Evolução visual completa baseada na proposta A (Cofre 🏛️) + tela de login da proposta B (Painel). Magnitude: evolução média preservando 100% da estrutura de dados, routing e comportamentos atuais.
+
+### Fase 1 — Tokens + Shell + Sidebar + Toggles
+- Escalas `--gpc-navy-50..900`, `--gpc-orange-50..700`, `--n-0..900`, semânticos 50/500/700
+- Aliases legacy mantidos para compat
+- `[data-theme="dark"]` e `[data-density="compact"]` (persistidos em localStorage)
+- Lucide via CDN (`unpkg.com/lucide@0.469.0`)
+- Shell injetado via JS: sidebar fixa 240px + topbar slim 48px + breadcrumb + base badge + R2 footer
+- Routing legado preservado: nova sidebar dispara `.sb-link[data-p].click()` programático
+
+### Fase 2 — Componentes
+- KPI cards `.kc` com borda lateral 3px (navy/success/danger/orange/violet), sem glow radial
+- Tabelas `.t` editoriais com header navy claro mono + hover accent-bg
+- Cards `.cc` com radius + sombra
+- Botões `.ebtn` mono uppercase com hover preenche cor semântica (XLSX verde, PDF vermelho)
+- Tags `.kg-tag/.tag` em escalas 50/700
+- Period filter `.pfb` como segmented control
+- Page headers `.ph/.pk` com kicker laranja
+
+### Fase 3 — Hero pages + breadcrumb da pilha
+- `.raiox-hero` (Diag. Produto/Fornecedor) com gradient navy→orange-bg, vinheta 250px
+- `.srch-hero` com gradient navy escuro + input laranja
+- `_cofreUpdateBreadcrumb` agora lê `window._navStack` e renderiza pilha clicável
+- `.nav-back-fab` em pill mono uppercase
+
+### Fase 4 — Chart.js paleta adaptativa
+- `chartColors()` retorna paleta light ou dark conforme `body[data-theme]`
+- `_cofreReplotCharts()` itera `CH{}` e atualiza grid/ticks color após troca de tema
+- Theme toggle dispara replot automático
+- Paleta restrita 3 cores principais + semânticos
+
+### Fase 5 — Login + QA mobile + a11y
+- `#loginOverlay` com gradient navy→navy escuro + radial laranja + grid texture
+- Botão Entrar com gradient navy→laranja + glow
+- Mobile: sidebar vira drawer
+- Focus visible (outline 2px laranja) em todos os interativos
+- `prefers-reduced-motion` respeitado
+- Print mode esconde sidebar/topbar/FAB
+
+### Rollback de emergência
+`document.body.classList.remove('cofre-shell')` no console derruba o shell novo. Tokens e CSS legacy continuam funcionando.
+
+### Não-negociáveis preservados
+- ES5 puro nos JS críticos (`var`, sem template literals nas adições do Cofre)
+- Cache-bust por `?v=4.76`
+- `fDt` (DD-MM-AAAA) em todas as datas
+- Filtro de Supervisores Ignorados em todas as páginas
+- Drill-down stack + safe-area-inset mobile
+- Export PDF/XLSX por quadro
+- `manifest.gerado_em` controlando cache-bust dos JSONs
+- Firestore rules intactas (v4.68)
+- `tabular-nums` em colunas numéricas
+- Sem em-dashes
+
+---
+
+## v4.76-cofre-fase1 (interno) · 14/mai/2026 · branch `feat/cofre-v4.76`
 
 **Cofre Design System — Fase 1: shell + tokens + sidebar + toggles**
 
