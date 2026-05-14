@@ -216,7 +216,7 @@ const AUTH_MODE = 'firebase'; // 'mock' | 'firebase'
 // Convenção:
 //   X.x → alteração grande (quebra de compatibilidade, nova feature grande)
 //   x.X → alteração suave (fix, ajuste visual, pequeno refinamento)
-const APP_VERSION = '4.76-cofre-fix6';
+const APP_VERSION = '4.76-cofre-fix7';
 
 // ================================================================
 // HELPERS DE CHART.JS — compatíveis com Safari/iOS (sem spread ops)
@@ -6858,6 +6858,11 @@ function _cofreApplyTheme(t){
   try { localStorage.setItem('gpc-theme', t); } catch(e){}
   // v4.76 fase 4: re-aplicar paleta dos gráficos
   if(typeof _cofreReplotCharts === 'function') _cofreReplotCharts();
+  // v4.76 fix7: troca o logo entre versão colorida (light) e negativa (dark)
+  var img = document.getElementById('cofre-brand-img');
+  if(img){
+    img.src = (t === 'dark') ? 'assets/gpc-white.png' : 'assets/gpc-color.png';
+  }
 }
 function _cofreInitTheme(){
   var saved;
@@ -6929,11 +6934,12 @@ function _cofreInitMobile(){
 // Cria os elementos do shell Cofre via JS (mais seguro que mexer no HTML).
 function _cofreCriarShell(){
   if(document.getElementById('sidebar-cofre')) return; // idempotente
-  // Brand: prefere o SVG colorido oficial em assets/gpc-color.svg.
-  // Se não existir (404), o navegador dispara onerror e cai no base64 legado.
+  // Brand: PNG oficial do Grupo Pinto Cerqueira em assets/gpc-color.png.
+  // Em dark mode, o JS troca pelo gpc-white.png (versão negativa).
+  // Fallback: base64 legado do header se 404 nos PNGs.
   var legadoImg = document.querySelector('header.topbar .brand-logo');
   var fallbackSrc = legadoImg ? legadoImg.getAttribute('src') : '';
-  var brandHtml = '<img class="brand-logo" src="assets/gpc-color.svg" alt="GPC · Grupo Pinto Cerqueira"'
+  var brandHtml = '<img id="cofre-brand-img" class="brand-logo" src="assets/gpc-color.png" alt="GPC · Grupo Pinto Cerqueira"'
     + (fallbackSrc ? ' onerror="this.onerror=null;this.src=\''+fallbackSrc.replace(/'/g,'&#39;')+'\';"' : ' onerror="this.style.display=\'none\';"')
     + '>';
   // Sidebar
@@ -6988,74 +6994,14 @@ function _cofreCriarShell(){
   }
 }
 
-// v4.76 fix5: força grid responsivo nos .kg/.row2/.row2eq via JS+!important.
-// Em vez de fixar N colunas (que falha quando viewport real difere do esperado,
-// ex: DevTools aberta consumindo espaço), uso auto-fill com minmax — o navegador
-// decide quantas colunas cabem naturalmente.
-function _cofreAjustarGrid(){
-  // Largura mínima desejada por card de KPI (em px). Auto-fill encaixa o máximo.
-  // 200px garante 5 cols em viewport ~1200, 4 em ~1000, 3 em ~800, 2 em ~600.
-  var KPI_MIN = 200;
-  var kgs = document.querySelectorAll('.kg');
-  for(var i=0;i<kgs.length;i++){
-    var kg = kgs[i];
-    // minmax(min(100%, MINpx), 1fr) — trick que permite single-col quando viewport
-    // é menor que MIN. Garante que cards nunca extrapolam o container.
-    kg.style.setProperty(
-      'grid-template-columns',
-      'repeat(auto-fill, minmax(min(100%, '+KPI_MIN+'px), 1fr))',
-      'important'
-    );
-    kg.style.setProperty('display', 'grid', 'important');
-    kg.style.setProperty('gap', '10px', 'important');
-    var children = kg.children;
-    for(var j=0;j<children.length;j++){
-      children[j].style.setProperty('min-width', '0', 'important');
-    }
-  }
-  // row2/row2eq: charts em duas colunas, mas mesmo trick pra single-col em mobile
-  var ROW_MIN = 320;
-  var rows = document.querySelectorAll('.row2, .row2eq');
-  for(var k=0;k<rows.length;k++){
-    var r = rows[k];
-    r.style.setProperty(
-      'grid-template-columns',
-      'repeat(auto-fit, minmax(min(100%, '+ROW_MIN+'px), 1fr))',
-      'important'
-    );
-    r.style.setProperty('display', 'grid', 'important');
-    var rc = r.children;
-    for(var m=0;m<rc.length;m++){
-      rc[m].style.setProperty('min-width', '0', 'important');
-    }
-  }
-}
-// Alias antigo
-function _cofreLimparInlineGrid(){ _cofreAjustarGrid(); }
-// Re-aplica sempre que o DOM mudar (páginas re-renderizadas substituem inline styles)
-function _cofreWatchInlineGrid(){
-  if(!window.MutationObserver) return;
-  var mc = document.querySelector('.main-content');
-  if(!mc) return;
-  var debounce = null;
-  var obs = new MutationObserver(function(mutations){
-    var temNovo = false;
-    for(var i=0;i<mutations.length;i++){
-      if(mutations[i].addedNodes && mutations[i].addedNodes.length){ temNovo = true; break; }
-    }
-    if(temNovo){
-      clearTimeout(debounce);
-      debounce = setTimeout(_cofreAjustarGrid, 30);
-    }
-  });
-  obs.observe(mc, { childList: true, subtree: true });
-  // Re-ajustar em resize (mobile, devtools open/close)
-  var resizeDebounce = null;
-  window.addEventListener('resize', function(){
-    clearTimeout(resizeDebounce);
-    resizeDebounce = setTimeout(_cofreAjustarGrid, 100);
-  });
-}
+// v4.76 fix7: revertido — o sistema original (antes do Cofre) renderizava
+// os grids corretamente sem ajuda. Os fixes agressivos com minmax/auto-fill
+// quebravam o layout que estava funcionando. Mantemos só um no-op pra
+// preservar referências externas.
+function _cofreAjustarGrid(){ /* no-op: deixa o CSS original do .kg fazer seu trabalho */ }
+function _cofreLimparInlineGrid(){ /* no-op */ }
+// v4.76 fix7: no-op — fixes de grid removidos, deixar CSS original funcionar
+function _cofreWatchInlineGrid(){ /* no-op */ }
 
 // Boot do shell Cofre. Aciona após DOM pronto e perfis aplicados.
 function _cofreBoot(){
