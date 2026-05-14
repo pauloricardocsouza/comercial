@@ -504,11 +504,24 @@ function renderVVisaoGrupo(){
       + '</tr>';
   }).join('');
 
-  // ─── Tabela 2: jan-mar 26 vs jan-mar 25 ───
+  // ─── Tabela 2: jan-mar do ano atual vs jan-mar do ano anterior ───
+  // v4.75: extrai o ano dinamicamente. Mês fim = último mês fechado do ano atual
+  // (se nada disponível, usa março como default).
+  const _anoNow = new Date().getFullYear();
+  const _anoPrev = _anoNow - 1;
+  const _ultYmAno = (V && V.meta && V.meta.ultimo_mes && V.meta.ultimo_mes.ym && V.meta.ultimo_mes.ym.indexOf(_anoNow+'-')===0)
+    ? V.meta.ultimo_mes.ym : (_anoNow+'-03');
+  const _mesFimComp = (V && V.meta && V.meta.ultimo_mes && V.meta.ultimo_mes.aberto)
+    ? ((parseInt(_ultYmAno.substring(5,7),10)-1) || 12)
+    : parseInt(_ultYmAno.substring(5,7),10);
+  const _ymFimAtual = _anoNow + '-' + String(_mesFimComp).padStart(2,'0');
+  const _ymFimPrev  = _anoPrev + '-' + String(_mesFimComp).padStart(2,'0');
+  const _ymIniAtual = _anoNow + '-01';
+  const _ymIniPrev  = _anoPrev + '-01';
   const linhasT2 = [];
   ['ATP-V', 'ATP-A'].forEach(function(loja){
-    const m25 = _vendasMensalPor(loja, 'v-visao-grupo').filter(function(r){return r.ym >= '2025-01' && r.ym <= '2025-03';});
-    const m26 = _vendasMensalPor(loja, 'v-visao-grupo').filter(function(r){return r.ym >= '2026-01' && r.ym <= '2026-03';});
+    const m25 = _vendasMensalPor(loja, 'v-visao-grupo').filter(function(r){return r.ym >= _ymIniPrev && r.ym <= _ymFimPrev;});
+    const m26 = _vendasMensalPor(loja, 'v-visao-grupo').filter(function(r){return r.ym >= _ymIniAtual && r.ym <= _ymFimAtual;});
     const f25 = m25.reduce(function(s,r){return s+r.fat_liq;}, 0);
     const f26 = m26.reduce(function(s,r){return s+r.fat_liq;}, 0);
     const dif = f26 - f25;
@@ -1709,8 +1722,21 @@ function makeSortable(idOrEl){
 // ================================================================
 // FILTRO REATIVO — label e totais por período + departamento
 // ================================================================
-const MF={'2026-01':'Janeiro','2026-02':'Fevereiro','2026-03':'Março','2026-04':'Abril'};
-const MS={'2026-01':'Jan','2026-02':'Fev','2026-03':'Mar','2026-04':'Abr'};
+// v4.75: substitui mapas hardcoded por funções dinâmicas
+function _mfLabel(ym){
+  if(!ym) return '';
+  const m = parseInt(ym.substring(5,7),10);
+  return ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'][m-1] || ym;
+}
+function _msLabel(ym){
+  if(!ym) return '';
+  const m = parseInt(ym.substring(5,7),10);
+  return (typeof _MES_LBL_PT !== 'undefined' && _MES_LBL_PT[m-1]) || ym.substring(5,7);
+}
+// Proxies pra compatibilidade com código legado que iterar MF/MS por chave.
+// Sempre retornam o label dinâmico — funcionam pra qualquer ym.
+const MF = new Proxy({}, {get:function(_, key){return _mfLabel(key);}});
+const MS = new Proxy({}, {get:function(_, key){return _msLabel(key);}});
 
 
 // ================================================================
@@ -2167,12 +2193,26 @@ function renderExecutivo(){
   }
 
   if(agendaArr.length){
+    // v4.75: cores agora relativas à data de hoje (não hardcoded 2026-05/06)
+    const _hojeYm = (function(){
+      const d = new Date();
+      return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');
+    })();
+    function _proxYm(ym, n){
+      const a = parseInt(ym.substring(0,4),10);
+      let m = parseInt(ym.substring(5,7),10) + n;
+      let y = a;
+      while(m > 12){ m -= 12; y += 1; }
+      while(m < 1){ m += 12; y -= 1; }
+      return y+'-'+String(m).padStart(2,'0');
+    }
+    const _ymProxMes = _proxYm(_hojeYm, 1);
     mkC('c-exec-agenda', {type:'bar', data:{labels:agendaArr.map(function(a){return _ymToLabel(a.ym);}),
       datasets:[{label:'A pagar', data:agendaArr.map(function(a){return a.valor;}),
                  backgroundColor:agendaArr.map(function(a){
-                   // Vencidos passados em vermelho, recente em laranja, futuros em azul
-                   if(/^VENCIDO/.test(a.ym) || (a.ym && a.ym < '2026-05')) return _PAL.dn+'AA';
-                   if(a.ym && a.ym < '2026-06') return _PAL.hl+'AA';
+                   // Vencidos passados em vermelho, mês corrente em laranja, futuros em azul
+                   if(/^VENCIDO/.test(a.ym) || (a.ym && a.ym < _hojeYm)) return _PAL.dn+'AA';
+                   if(a.ym && a.ym < _ymProxMes) return _PAL.hl+'AA';
                    return _PAL.ac+'AA';
                  }),
                  borderRadius:5}]},
@@ -2544,8 +2584,10 @@ function renderVBenchmarking(){
   // Período padrão: jan-mar 2026 (ou todos os meses 2026 se não houver mar)
   let mesesDestino;
   if(window._rcaMesesAtivos === null){
-    mesesDestino = ymsAll.filter(function(y){return y >= '2026-01' && y <= '2026-03';});
-    if(mesesDestino.length === 0) mesesDestino = ymsAll.filter(function(y){return y.indexOf('2026') === 0;});
+    // v4.75: usa o ano corrente dos dados (não 2026 hardcoded)
+    const _anoNow = new Date().getFullYear();
+    const _pref = _anoNow + '-';
+    mesesDestino = ymsAll.filter(function(y){return y.indexOf(_pref) === 0;}).slice(0, 3);
     if(mesesDestino.length === 0) mesesDestino = ymsAll.slice(-3);
   } else {
     mesesDestino = window._rcaMesesAtivos.slice();

@@ -4,6 +4,67 @@ Lista das melhorias do sistema de BI da R2 Soluções para o Grupo Pinto Cerquei
 
 ---
 
+## v4.75-comercial · 14/mai/2026
+
+**Sistema preparado para atualizações diárias — auditoria sênior + correções**
+
+### Diagnóstico (resumo)
+
+Auditei o sistema procurando o que iria quebrar com processamentos diários (cumulativos ou substitutivos). Achados principais:
+
+1. **Cache HTTP estava preso à versão do código.** Os JSONs (vendas, compras, estoque, financeiro, etc.) eram cache-busted com `?v=APP_VERSION`. Sem novo deploy de código, o navegador serviria o JSON antigo do cache HTTP indefinidamente — atualizar dados diariamente sem release de código **não funcionava**.
+2. **PERS/PLBL hardcoded em `2026-01..04`.** O filtro de período global do sistema (botões Jan/Fev/Mar/Abr) era literal. Mai/26 e em diante simplesmente não apareceriam.
+3. **Comparativos jan-mar/jan-abr hardcoded** em renderVConsolidada e renderVPorLoja com `'2026-01'..'2026-04'` literais.
+4. **Mapas MF/MS** em render-vendas com apenas 4 chaves fixas.
+5. **Cores da Agenda de Vencimentos** usavam `< '2026-05'` e `< '2026-06'` literais — não rolam pra meses novos.
+6. **ABC_STATE.pers** hardcoded com 4 meses fixos.
+
+### Correções aplicadas
+
+#### Cache-bust dinâmico (FIX 1 — alta prioridade)
+- Novo helper `_dataBust()` retorna `manifest.gerado_em` (limpo) para o cache-bust dos JSONs de dados.
+- Aplicado em `_fetchGz`, `_fetchJsonComGz` e no fallback `.json`. JS continua versionado por `APP_VERSION` (essa coupling é desejada).
+- `manifest.json` agora sempre fresco (`cache:'no-store'` + `?t=<timestamp>`). É a fonte da verdade sobre quais JSONs estão atualizados.
+- **Efeito:** rode o ETL → atualize `manifest.json` (com `gerado_em` novo) → todos os clientes pegam os JSONs novos automaticamente sem deploy de código.
+
+#### Períodos dinâmicos (FIXES 2 e 3)
+- `PERS` e `PLBL` agora são mutáveis e inicializam dinamicamente para `[Jan→mês atual]/<ano corrente>`.
+- Função `_reconciliarPersComV()` reescreve PERS/PLBL **in-place** após `V.meta` carregar, usando `V.meta.ultimo_mes` para marcar o mês aberto com `*`.
+- `activePers` é reconciliado também (todos os meses do ano ativos por padrão).
+- `buildFilterBar()` gera os botões dinamicamente a partir de PERS/PLBL — suporta qualquer N de meses.
+- Banner "Mês ainda aberto (parcial)" aparece automaticamente quando há mês com `*`.
+
+#### Hardcodes residuais (FIX 4)
+- `MF`/`MS` substituídos por `Proxy` que computa o label dinamicamente para qualquer YM.
+- Comparativo jan-mar (Visão Consolidada) agora usa `new Date().getFullYear()` e respeita `V.meta.ultimo_mes` para escolher o fim do trimestre.
+- RCA (renderVBenchmarking) deriva os primeiros 3 meses do ano corrente em vez de `'2026-01'..'2026-03'`.
+- Cores da Agenda de Vencimentos comparam contra o mês corrente (`new Date()`) em vez de datas literais.
+- `ABC_STATE.pers` deriva de `PERS` (dinâmico).
+- Freshness no header agora usa `fDt()` (DD-MM-AAAA, padrão do sistema).
+
+#### Dívida técnica documentada (NÃO corrigida nesta release)
+
+Hardcodes em **`renderVVisaoGrupo`** e **`renderVPorLoja`** (jm2024/jm2025/jm2026 como nomes literais de variáveis + filtros `'2024'..'2026'`) — funcionam até dez/2026, quebram em 2027. Refactor não-trivial: requer revisar copy de KPIs, headers de tabela e legendas dos charts. **Backlog para v5.x.**
+
+### Comportamento sob atualizações ETL diárias (validado)
+
+| Tipo de dado | Modo | Comportamento |
+|---|---|---|
+| `compras_<base>.json` | Cumulativo | OK — agrega meses novos a C.mensal |
+| `vendas_<base>.json` | Cumulativo | OK — V.mensal acumula, `_reconciliarPersComV` adapta filtro |
+| `estoque_<base>.json.gz` | Snapshot | OK — substitui E completo, `_aplicarHiddenFilterE` reaplica |
+| `financeiro_<base>.json` | Snapshot | OK — substitui F completo |
+| `recebimentos_<base>.json` | Snapshot | OK |
+| `cubo_<base>.json.gz` | Cumulativo | OK — só carregado em Análise Dinâmica/Fornecedores |
+| `manifest.json` | Snapshot | **Indispensável** — atualizar a cada ETL pra cache-bust funcionar |
+| `metas_seed.json` | Versionado (seed_version) | OK — loader faz merge per-YM preservando edição manual |
+
+### Recomendação operacional
+
+Após cada rodada de ETL diária, basta atualizar **`manifest.json`** com `gerado_em` apontando para o timestamp novo, junto com os JSONs alterados. O sistema detecta sozinho e dispara fetch fresco para todos os clientes.
+
+---
+
 ## v4.74-comercial · 13/mai/2026
 
 **Auditoria do admin + supervisores ignorados em TODAS as páginas + correções**

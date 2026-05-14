@@ -216,7 +216,7 @@ const AUTH_MODE = 'firebase'; // 'mock' | 'firebase'
 // Convenção:
 //   X.x → alteração grande (quebra de compatibilidade, nova feature grande)
 //   x.X → alteração suave (fix, ajuste visual, pequeno refinamento)
-const APP_VERSION = '4.74-comercial';
+const APP_VERSION = '4.75-comercial';
 
 // ================================================================
 // HELPERS DE CHART.JS — compatíveis com Safari/iOS (sem spread ops)
@@ -1478,7 +1478,10 @@ let _manifestLoading = null;
 function _carregarManifest(){
   if(_MANIFEST) return Promise.resolve(_MANIFEST);
   if(_manifestLoading) return _manifestLoading;
-  _manifestLoading = fetch('manifest.json', {cache:'default'})
+  // v4.75: manifest sempre fresco — sem cache HTTP. É leve (~3 KB).
+  // Esse é o único arquivo que NÃO pode ser cacheado, pois é a fonte da verdade
+  // sobre quais JSONs estão atualizados.
+  _manifestLoading = fetch('manifest.json?t=' + Date.now(), {cache:'no-store'})
     .then(function(r){ return r.ok ? r.json() : null; })
     .then(function(j){
       _MANIFEST = j || {arquivos:{}, _ausente:true};
@@ -1504,6 +1507,16 @@ function _temArquivo(nome){
  *
  * Uso: _fetchJsonComGz('vendas_cp.json').then(j => ...)
  */
+// v4.75: cache-bust dos JSONs de DADOS usa manifest.gerado_em — atualiza
+// sozinho quando o ETL roda. Evita JSON velho no navegador entre processamentos
+// sem precisar bumpar APP_VERSION. Cai pro APP_VERSION se manifest sem timestamp.
+function _dataBust(){
+  if(_MANIFEST && _MANIFEST.gerado_em){
+    return String(_MANIFEST.gerado_em).replace(/[^0-9A-Za-z]/g, '');
+  }
+  return (typeof APP_VERSION !== 'undefined' ? APP_VERSION : 'na');
+}
+
 function _fetchJsonComGz(url){
   return _carregarManifest().then(function(){
     const info = _temArquivo(url);
@@ -1515,7 +1528,7 @@ function _fetchJsonComGz(url){
     if(info.gz) return _fetchGz(url);
     // Só .json puro disponível: fetch direto (com cache-bust)
     if(info.json) {
-      const bust = (url.indexOf('?') >= 0 ? '&' : '?') + 'v=' + (typeof APP_VERSION !== 'undefined' ? APP_VERSION : 'na');
+      const bust = (url.indexOf('?') >= 0 ? '&' : '?') + 'v=' + _dataBust();
       return fetch(url + bust, {cache:'default'}).then(function(r){
         return r.ok ? r.json() : null;
       });
@@ -1525,9 +1538,9 @@ function _fetchJsonComGz(url){
 }
 
 function _fetchGz(url){
-  // Cache-bust com APP_VERSION pra evitar JSON antigo no navegador
+  // Cache-bust com manifest.gerado_em (atualiza quando ETL roda)
   const sep = url.indexOf('?') >= 0 ? '&' : '?';
-  const bust = sep + 'v=' + (typeof APP_VERSION !== 'undefined' ? APP_VERSION : 'na');
+  const bust = sep + 'v=' + _dataBust();
   return fetch(url + '.gz' + bust, {cache:'default'})
     .then(function(r){
       if(!r.ok) throw new Error('gz não disponível');
@@ -1552,7 +1565,7 @@ function _fetchGz(url){
     })
     .catch(function(){
       // Fallback final: .json puro (também com cache-bust)
-      const bustJ = sep + 'v=' + (typeof APP_VERSION !== 'undefined' ? APP_VERSION : 'na');
+      const bustJ = sep + 'v=' + _dataBust();
       return fetch(url + bustJ, {cache:'default'}).then(function(r){
         return r.ok ? r.json() : null;
       });
@@ -2345,6 +2358,10 @@ function _loadDadosModulares(baseSlug){
         }
         // Validar schema (não-bloqueante; apenas reporta no console)
         _schemaValidar(varName, j);
+        // v4.75: quando V carregar, reconcilia PERS/PLBL com o ano atual e os ym disponíveis
+        if(varName === 'V' && typeof _reconciliarPersComV === 'function'){
+          try { _reconciliarPersComV(); } catch(e){ console.warn('[reconciliarPers] erro:', e); }
+        }
         // Aplica filtro de SKUs ocultos em E.produtos baseado na base ativa
         if(varName === 'E' && typeof _aplicarHiddenFilterE === 'function'){
           _aplicarHiddenFilterE();
@@ -2961,8 +2978,73 @@ const cobClsText=c=>c>100?'val-neg':c>80?'':'val-pos';
 const comLiq=(com,dvf)=>(com||0)-(dvf||0);
 
 const _PAL={ac:'#2E476F',hl:'#F58634',ok:'#109854',dn:'#d92d20',vi:'#7c3aed',wn:'#b45309'};
-const PERS=['2026-01','2026-02','2026-03','2026-04'];
-const PLBL=['Jan/26','Fev/26','Mar/26','Abr/26'];
+
+// v4.75: PERS/PLBL agora são dinâmicos. Inicializam com o ano corrente (jan→mês atual)
+// como fallback; após V carregar, _reconciliarPersComV() reescreve usando os meses
+// que efetivamente existem em V.mensal/V.meta.ultimo_mes (no ano atual).
+// Como ainda usamos `let` em vez de `const`, o resto do código pode iterar PERS
+// e ele vai refletir o estado atual sem precisar re-inicializar referências.
+const _MES_LBL_PT = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+function _persDoAnoCorrente(){
+  const hoje = new Date();
+  const ano = hoje.getFullYear();
+  const mesAtual = hoje.getMonth() + 1; // 1..12
+  const pers = [], plbl = [];
+  for(let m = 1; m <= mesAtual; m++){
+    const mm = String(m).padStart(2,'0');
+    pers.push(ano + '-' + mm);
+    plbl.push(_MES_LBL_PT[m-1] + '/' + String(ano).substring(2));
+  }
+  return {pers: pers, plbl: plbl};
+}
+let PERS, PLBL;
+(function(){
+  const ini = _persDoAnoCorrente();
+  PERS = ini.pers;
+  PLBL = ini.plbl;
+})();
+
+// v4.75: chamado após V.meta carregar; reescreve PERS/PLBL usando o ano corrente
+// e marca o último mês como parcial quando V.meta.ultimo_mes.aberto = true.
+// Mantém PERS como o MESMO array (push/splice) pra não invalidar referências.
+let _persReconciliado = false;
+function _reconciliarPersComV(){
+  if(!V || !V.meta) return;
+  const hoje = new Date();
+  const anoAtual = hoje.getFullYear();
+  // Coleta os ym do ano atual em V.mensal
+  const yms = new Set();
+  (V.mensal || []).forEach(function(r){
+    if(r.ym && r.ym.indexOf(anoAtual+'-') === 0) yms.add(r.ym);
+  });
+  // Se V.meta.ultimo_mes.ym pertence ao ano atual, inclui ele (mesmo que aberto)
+  if(V.meta.ultimo_mes && V.meta.ultimo_mes.ym && V.meta.ultimo_mes.ym.indexOf(anoAtual+'-') === 0){
+    yms.add(V.meta.ultimo_mes.ym);
+  }
+  if(!yms.size) return;
+  const novos = Array.from(yms).sort();
+  const ultAberto = V.meta.ultimo_mes && V.meta.ultimo_mes.aberto;
+  const ultYm = V.meta.ultimo_mes && V.meta.ultimo_mes.ym;
+  // Reescreve PERS in-place
+  PERS.length = 0;
+  PLBL.length = 0;
+  novos.forEach(function(ym){
+    const m = parseInt(ym.substring(5,7), 10);
+    const yy = ym.substring(2,4);
+    let lbl = _MES_LBL_PT[m-1] + '/' + yy;
+    if(ultAberto && ym === ultYm) lbl += '*'; // marca o aberto/parcial
+    PERS.push(ym);
+    PLBL.push(lbl);
+  });
+  // Reconcilia activePers: por padrão todos os meses do ano atual entram ativos.
+  // (Antes ficava preso em 2026-01..04 mesmo quando V trazia meses novos.)
+  if(typeof activePers !== 'undefined' && activePers instanceof Set){
+    activePers.clear();
+    novos.forEach(function(v){ activePers.add(v); });
+  }
+  _persReconciliado = true;
+}
+window._reconciliarPersComV = _reconciliarPersComV;
 
 Chart.defaults.font.family="'Archivo',sans-serif";
 Chart.defaults.font.size=11;
@@ -3754,7 +3836,7 @@ async function renderAdmAuditoria(){
 const ABC_STATE = {
   tipo: 'item',              // 'item' | 'fornecedor'
   fornBase: 'nf',            // 'nf' = entrada.fo | 'cad' = produto.f
-  pers: new Set(['2026-01','2026-02','2026-03','2026-04']),
+  pers: new Set(PERS), // v4.75: deriva do PERS dinâmico (ano corrente)
   dept: null,
   secao: null,
   categoria: null,
@@ -5172,19 +5254,24 @@ function buildFilterBar(pageId){
     +   deptosList.map(d=>`<option value="${d}">${d}</option>`).join('')
     + '</select>'
   );
+  // v4.75: botões de período gerados dinamicamente a partir de PERS/PLBL
+  // (que são reconciliados com V.meta após cada carga). Suporta n meses.
+  const _btnsPeriodo = PERS.map(function(ym, i){
+    const lbl = PLBL[i] || ym;
+    const ativo = activePers && activePers.has(ym) ? ' on' : '';
+    return '<button class="pfb-per'+ativo+'" data-per="'+ym+'" data-pg="'+pageId+'">'+lbl+'</button>';
+  }).join('');
+  const _temParcial = (PLBL || []).some(function(l){ return /\*/.test(l); });
   bar.innerHTML=`
     <div class="pfb-inner">
       <div class="pfb-label">Período</div>
       <div class="pfb-periods">
-        <button class="pfb-per on" data-per="2026-01" data-pg="${pageId}">Jan/26</button>
-        <button class="pfb-per on" data-per="2026-02" data-pg="${pageId}">Fev/26</button>
-        <button class="pfb-per on" data-per="2026-03" data-pg="${pageId}">Mar/26</button>
-        <button class="pfb-per on" data-per="2026-04" data-pg="${pageId}">Abr/26*</button>
+        ${_btnsPeriodo}
       </div>
       ${_deptoBlock}
       <button class="pfb-apply">Aplicar</button>
     </div>
-    <div style="font-family:'JetBrains Mono',monospace;font-size:9px;color:var(--text-muted);margin-top:4px;padding:0 2px;">* Parcial até 20/04</div>
+    ${_temParcial ? '<div style="font-family:\'JetBrains Mono\',monospace;font-size:9px;color:var(--text-muted);margin-top:4px;padding:0 2px;">* Mês ainda aberto (parcial)</div>' : ''}
   `;
 
   // Sync estado global → botões
@@ -5942,11 +6029,8 @@ function _atualizarSnapshotHeader(){
     else if(typeof V !== 'undefined' && V && V.meta && V.meta.geradoEm) dataRef = String(V.meta.geradoEm).substring(0,10);
   } catch(e){ return; }
   if(!dataRef) return;
-  // Formata YYYY-MM-DD → DD/MM/YYYY
-  let txt = dataRef;
-  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(dataRef);
-  if(m) txt = m[3]+'/'+m[2]+'/'+m[1];
-  el.textContent = '📅 ' + txt;
+  // v4.75: usa fDt (DD-MM-AAAA) — padrão do sistema
+  el.textContent = '📅 ' + (typeof fDt === 'function' ? fDt(dataRef) : dataRef);
   el.style.display = '';
 }
 window._atualizarSnapshotHeader = _atualizarSnapshotHeader;
