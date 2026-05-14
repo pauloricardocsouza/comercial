@@ -6,8 +6,8 @@
 <meta name="robots" content="noindex, nofollow">
 <title>Comercial GPC · R2 Soluções</title>
 <!-- v4.76 fix7: favicon GPC (navy + GPC branco + arco laranja) -->
-<link rel="icon" type="image/svg+xml" href="assets/favicon.svg?v=4.76.7">
-<link rel="apple-touch-icon" href="assets/favicon.svg?v=4.76.7">
+<link rel="icon" type="image/svg+xml" href="assets/favicon.svg?v=4.76.8">
+<link rel="apple-touch-icon" href="assets/favicon.svg?v=4.76.8">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <!-- DNS prefetch para Firebase: encurta o handshake de auth/firestore -->
@@ -2126,6 +2126,85 @@ body.cofre-shell .kc .kv { font-variant-numeric: tabular-nums; }
 body.cofre-shell { overflow-x: hidden; }
 body.cofre-shell .app-body { overflow-x: hidden; }
 
+/* ════════════════════════════════════════════════════════════════════
+   FIX8 · Seletor de VISÃO no topbar + sidebar colapsável
+   ════════════════════════════════════════════════════════════════════ */
+
+/* Brand-anchor no topbar Cofre: container leve, sem estilos do .brand antigo */
+body.cofre-shell #cofre-brand-anchor {
+  background: transparent !important;
+  border: none !important;
+  padding: 0 !important;
+  display: flex; align-items: center; gap: 12px;
+}
+body.cofre-shell #cofre-brand-anchor img,
+body.cofre-shell #cofre-brand-anchor .brand-text,
+body.cofre-shell #cofre-brand-anchor .brand-logo { display: none; }
+
+/* Seletor de VISÃO (filial) re-estilizado pro tema claro do Cofre */
+body.cofre-shell #filialSeletor {
+  border-left: 1px solid var(--border) !important;
+  margin-left: 12px !important;
+  padding-left: 14px !important;
+  color: var(--text);
+}
+body.cofre-shell #filialSeletor > span {
+  color: var(--text-muted) !important;
+}
+body.cofre-shell #filialBtn {
+  background: var(--surface) !important;
+  color: var(--text) !important;
+  border: 1px solid var(--border-strong) !important;
+  border-radius: 6px !important;
+  padding: 5px 10px !important;
+  font-weight: 700 !important;
+  transition: all .15s;
+}
+body.cofre-shell #filialBtn:hover {
+  background: var(--accent-bg) !important;
+  color: var(--accent-text) !important;
+  border-color: var(--accent) !important;
+}
+body.cofre-shell #filialDropdown {
+  background: var(--surface) !important;
+  color: var(--text) !important;
+  border: 1px solid var(--border) !important;
+  box-shadow: var(--sh-lg) !important;
+}
+body.cofre-shell #filialDropdown .fil-tree-row { color: var(--text); }
+body.cofre-shell #filialDropdown .fil-tree-row:hover { background: var(--accent-bg); }
+[data-theme="dark"] body.cofre-shell #filialBtn {
+  background: var(--surface-2) !important;
+  color: var(--text) !important;
+}
+[data-theme="dark"] body.cofre-shell #filialDropdown {
+  background: var(--surface-2) !important;
+  color: var(--text) !important;
+}
+
+/* Botão hamburger / collapse no topbar */
+body.cofre-shell #sidebar-toggle {
+  flex-shrink: 0;
+}
+
+/* ───── Sidebar COLAPSADA (desktop) ─────
+   Ao clicar no hamburger em desktop, body recebe .cofre-sidebar-collapsed.
+   Esconde a sidebar Cofre e remove o offset do .main-content / .topbar. */
+body.cofre-shell.cofre-sidebar-collapsed .cofre-sidebar {
+  transform: translateX(-100%);
+  visibility: hidden;
+}
+body.cofre-shell.cofre-sidebar-collapsed > header.topbar { margin-left: 0; }
+body.cofre-shell.cofre-sidebar-collapsed .main-content {
+  margin-left: 0 !important;
+}
+/* Animação suave */
+body.cofre-shell .cofre-sidebar { transition: transform .25s ease, visibility 0s linear .25s; }
+body.cofre-shell .cofre-sidebar { visibility: visible; }
+body.cofre-shell.cofre-sidebar-collapsed .cofre-sidebar { transition: transform .25s ease, visibility 0s linear 0s; }
+body.cofre-shell > header.topbar { transition: margin-left .25s ease; }
+body.cofre-shell .main-content { transition: margin-left .25s ease; }
+
 /* FIX: #userWidget (badge de usuário legado) injetado no topbar herdava
    color:white e border-left branco — invisível sobre fundo claro do Cofre */
 body.cofre-shell #userWidget {
@@ -2640,10 +2719,10 @@ body.cofre-shell .pfb-sep {
      JS principal · dividido em 5 arquivos pela auditoria v4.6
      Ordem importa: core declara as globais; render-* dependem de core.
      ════════════════════════════════════════════════════════════════════════════ -->
-<script src="js/core.js?v=4.76.7"></script>
-<script src="js/render-compras.js?v=4.76.7"></script>
-<script src="js/render-vendas.js?v=4.76.7"></script>
-<script src="js/render-outros.js?v=4.76.7"></script>
-<script src="js/admin.js?v=4.76.7"></script>
+<script src="js/core.js?v=4.76.8"></script>
+<script src="js/render-compras.js?v=4.76.8"></script>
+<script src="js/render-vendas.js?v=4.76.8"></script>
+<script src="js/render-outros.js?v=4.76.8"></script>
+<script src="js/admin.js?v=4.76.8"></script>
 </body>
 </html>

@@ -216,7 +216,7 @@ const AUTH_MODE = 'firebase'; // 'mock' | 'firebase'
 // Convenção:
 //   X.x → alteração grande (quebra de compatibilidade, nova feature grande)
 //   x.X → alteração suave (fix, ajuste visual, pequeno refinamento)
-const APP_VERSION = '4.76-cofre-fix7';
+const APP_VERSION = '4.76-cofre-fix8';
 
 // ================================================================
 // HELPERS DE CHART.JS — compatíveis com Safari/iOS (sem spread ops)
@@ -6931,6 +6931,31 @@ function _cofreInitMobile(){
   btn.addEventListener('click', function(){ sb.classList.toggle('open'); });
 }
 
+// Sidebar collapse toggle (desktop) — esconde a sidebar e remove offset.
+// Persiste em localStorage. No mobile, o mesmo botão age como drawer.
+function _cofreInitSidebarToggle(){
+  var btn = document.getElementById('sidebar-toggle');
+  if(!btn) return;
+  // Restaurar estado salvo
+  try {
+    if(localStorage.getItem('cofre-sidebar-collapsed') === '1'){
+      document.body.classList.add('cofre-sidebar-collapsed');
+    }
+  } catch(e){}
+  btn.addEventListener('click', function(){
+    var vw = window.innerWidth || 1200;
+    var sb = document.getElementById('sidebar-cofre');
+    if(vw < 900 && sb){
+      // Mobile: abre/fecha drawer
+      sb.classList.toggle('open');
+      return;
+    }
+    // Desktop: colapsa/expande
+    var col = document.body.classList.toggle('cofre-sidebar-collapsed');
+    try { localStorage.setItem('cofre-sidebar-collapsed', col ? '1' : '0'); } catch(e){}
+  });
+}
+
 // Cria os elementos do shell Cofre via JS (mais seguro que mexer no HTML).
 function _cofreCriarShell(){
   if(document.getElementById('sidebar-cofre')) return; // idempotente
@@ -6976,7 +7001,13 @@ function _cofreCriarShell(){
     var ct = document.createElement('div');
     ct.className = 'cofre-topbar';
     ct.innerHTML = ''
-      + '<div class="cofre-bc" id="cofre-bc"><span class="cur">Comercial GPC</span></div>'
+      // brand vazia: ancora pro _renderSeletorFilial encontrar (seletor de VISÃO)
+      + '<div class="brand" id="cofre-brand-anchor" style="display:flex;align-items:center;gap:8px;">'
+      +   '<button class="cofre-icon-btn" id="sidebar-toggle" title="Recolher menu" style="margin-right:4px;">'
+      +     '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>'
+      +   '</button>'
+      +   '<div class="cofre-bc" id="cofre-bc"><span class="cur">Comercial GPC</span></div>'
+      + '</div>'
       + '<div class="cofre-tb-right">'
       +   '<button class="cofre-icon-btn" id="theme-toggle" title="Alternar tema"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg></button>'
       +   '<button class="cofre-icon-btn" id="density-toggle" title="Densidade"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="4" rx="1"/><rect x="3" y="11" width="18" height="4" rx="1"/><rect x="3" y="18" width="18" height="4" rx="1"/></svg></button>'
@@ -7021,6 +7052,7 @@ function _cofreBoot(){
     _cofreUpdateBaseBadge();
     _cofreUpdateAvatar();
     _cofreInitMobile();
+    _cofreInitSidebarToggle();
   }, 100);
   // Atualiza badge da base e avatar quando filial muda
   var origRender = window._renderSelectorFilial;
