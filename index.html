@@ -6,8 +6,8 @@
 <meta name="robots" content="noindex, nofollow">
 <title>Comercial GPC · R2 Soluções</title>
 <!-- v4.76 fix7: favicon GPC (navy + GPC branco + arco laranja) -->
-<link rel="icon" type="image/svg+xml" href="assets/favicon.svg?v=4.76.10">
-<link rel="apple-touch-icon" href="assets/favicon.svg?v=4.76.10">
+<link rel="icon" type="image/svg+xml" href="assets/favicon.svg?v=4.76.11">
+<link rel="apple-touch-icon" href="assets/favicon.svg?v=4.76.11">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <!-- DNS prefetch para Firebase: encurta o handshake de auth/firestore -->
@@ -1723,7 +1723,7 @@ body.cofre-shell .topbar {
 .cofre-icon-btn svg { width: 15px; height: 15px; }
 .cofre-avatar {
   width: 30px; height: 30px; border-radius: 50%;
-  background: linear-gradient(135deg, var(--gpc-navy-500), var(--gpc-orange-500));
+  background: var(--gpc-navy-500);
   color: white; display: grid; place-items: center;
   font-size: 11px; font-weight: 700; cursor: pointer;
 }
@@ -2127,11 +2127,11 @@ body.cofre-shell .kc .kv { font-variant-numeric: tabular-nums; }
 body.cofre-shell { overflow-x: hidden; }
 body.cofre-shell .app-body { overflow-x: hidden; }
 
-/* v4.76 fix9: respiro lateral + reduzir top excessivo */
+/* v4.76 fix11: respiro lateral + topo reduzido (era alto demais) */
 body.cofre-shell .main-content { padding: 0 !important; }
-body.cofre-shell .page-body { padding: 8px 28px 36px !important; }
-body.cofre-shell .ph { padding: 14px 28px 6px !important; }
-body.cofre-shell .ph-sep { margin: 0 28px 14px !important; }
+body.cofre-shell .page-body { padding: 0 28px 36px !important; }
+body.cofre-shell .ph { padding: 6px 28px 4px !important; }
+body.cofre-shell .ph-sep { margin: 0 28px 10px !important; }
 /* Scrollbar mais discreta, evita os cards encostarem no track */
 body.cofre-shell .main-content::-webkit-scrollbar { width: 10px; }
 body.cofre-shell .main-content::-webkit-scrollbar-track { background: transparent; }
@@ -2230,7 +2230,7 @@ body.cofre-shell #userWidget {
 body.cofre-shell #userWidget #userMenuBtn { color: var(--text) !important; }
 body.cofre-shell #userWidget #userMenuBtn:hover { background: var(--surface-2) !important; }
 body.cofre-shell #userWidget #userMenuBtn > div:first-child {
-  background: linear-gradient(135deg, var(--gpc-navy-500), var(--gpc-orange-500)) !important;
+  background: var(--gpc-navy-500) !important;
   color: white !important;
 }
 body.cofre-shell #userWidget #userMenuBtn > div:nth-child(2) > div:first-child { color: var(--text) !important; }
@@ -2255,9 +2255,7 @@ body.cofre-shell .cofre-tb-right .ebtn {
   background: transparent;
 }
 
-/* FIX: page header (h2 + ph-sep) precisa de espaço no topo dentro de .main-content */
-body.cofre-shell .ph { padding: 22px 0 6px; }
-body.cofre-shell .ph-sep { margin-bottom: 18px; }
+/* v4.76 fix11: topo do header compacto — espaço enxuto antes do título */
 
 /* FIX: brand-text pode quebrar feio em sidebar 240px */
 /* v4.76 fix9: brand mais compacto — logo GPC menor + tag "INTELIGÊNCIA COMERCIAL" + versão discreta */
@@ -2293,6 +2291,44 @@ body.cofre-shell .cofre-brand .brand-text { display: none; }
 
 /* v4.76 fix10: 'Desenvolvido por R2' removido do sidebar a pedido do usuário */
 body.cofre-shell .cofre-r2 { display: none !important; }
+
+/* v4.76 fix11: badge ATP do sidebar removida a pedido do usuário (info já está no seletor de VISÃO) */
+body.cofre-shell .cofre-base { display: none !important; }
+
+/* v4.76 fix11: ícones do topbar — agrupar à direita junto ao usuário.
+   .cofre-tb-right já está em flex; reduzimos o gap interno e encostamos o userWidget. */
+body.cofre-shell .cofre-tb-right { gap: 6px !important; }
+body.cofre-shell #userWidget {
+  margin-left: 4px !important;
+  padding-left: 10px !important;
+  border-left: 1px solid var(--border) !important;
+}
+/* Empurra todo o grupo de ações pro canto direito mesmo se o topbar tem snapshot-info ao meio */
+body.cofre-shell .cofre-tb-right { margin-left: auto; }
+
+/* v4.76 fix11: @media print — exportar página em PDF sem topbar e sidebar.
+   Acionado por #print-page (chama window.print). O usuário escolhe "Salvar como PDF". */
+@media print {
+  body.cofre-shell .cofre-sidebar,
+  body.cofre-shell > header.topbar,
+  body.cofre-shell .topbar,
+  #restoreBtn, #toastStack, #userMenuDropdown,
+  .last-update, .export-btns { display: none !important; }
+  body.cofre-shell { display: block !important; }
+  body.cofre-shell .cofre-main { display: block !important; grid-column: 1 !important; }
+  body.cofre-shell .main-content,
+  body.cofre-shell .app-body,
+  body.cofre-shell .page-body {
+    margin: 0 !important; padding: 0 !important;
+    overflow: visible !important; height: auto !important;
+    width: 100% !important;
+  }
+  body.cofre-shell { background: white !important; color: #111 !important; }
+  body.cofre-shell .kc, body.cofre-shell .cc, body.cofre-shell .t {
+    box-shadow: none !important; break-inside: avoid;
+  }
+  @page { margin: 14mm 12mm; }
+}
 
 /* FIX: pfb (period filter) — quando renderizado dentro de page-body, era loose */
 body.cofre-shell .pfb {
@@ -2740,10 +2776,10 @@ body.cofre-shell .pfb-sep {
      JS principal · dividido em 5 arquivos pela auditoria v4.6
      Ordem importa: core declara as globais; render-* dependem de core.
      ════════════════════════════════════════════════════════════════════════════ -->
-<script src="js/core.js?v=4.76.10"></script>
-<script src="js/render-compras.js?v=4.76.10"></script>
-<script src="js/render-vendas.js?v=4.76.10"></script>
-<script src="js/render-outros.js?v=4.76.10"></script>
-<script src="js/admin.js?v=4.76.10"></script>
+<script src="js/core.js?v=4.76.11"></script>
+<script src="js/render-compras.js?v=4.76.11"></script>
+<script src="js/render-vendas.js?v=4.76.11"></script>
+<script src="js/render-outros.js?v=4.76.11"></script>
+<script src="js/admin.js?v=4.76.11"></script>
 </body>
 </html>
