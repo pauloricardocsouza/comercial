@@ -216,7 +216,7 @@ const AUTH_MODE = 'firebase'; // 'mock' | 'firebase'
 // Convenção:
 //   X.x → alteração grande (quebra de compatibilidade, nova feature grande)
 //   x.X → alteração suave (fix, ajuste visual, pequeno refinamento)
-const APP_VERSION = '4.76-cofre-fix3';
+const APP_VERSION = '4.76-cofre-fix4';
 
 // ================================================================
 // HELPERS DE CHART.JS — compatíveis com Safari/iOS (sem spread ops)
@@ -6984,30 +6984,76 @@ function _cofreCriarShell(){
   }
 }
 
-// v4.76 fix3: limpa inline grid-template-columns dos .kg/.row2/.row2eq
-// Inline style ganhava de CSS sem !important antes. Garantia.
-function _cofreLimparInlineGrid(){
-  var seletores = ['.kg', '.row2', '.row2eq'];
-  seletores.forEach(function(sel){
-    var els = document.querySelectorAll(sel);
-    for(var i=0;i<els.length;i++){
-      els[i].style.removeProperty('grid-template-columns');
+// v4.76 fix3+: força grid-template-columns sob shell Cofre.
+// Detecta quantos cards o kg tem ou herda da classe (.c3, .c5) e reescreve
+// com minmax(0, 1fr) — assim os cards encolhem em vez de extrapolar.
+function _cofreAjustarGrid(){
+  // KGs com IDs específicos têm contagem conhecida
+  var fixos = {
+    'kg-est-novo': 6, 'kg-exc-novo': 6, 'kg-fin-novo': 6, 'kg-rec': 6,
+    'kg-est': 3, 'kg-forn': 3
+  };
+  var kgs = document.querySelectorAll('.kg');
+  for(var i=0;i<kgs.length;i++){
+    var kg = kgs[i];
+    var n;
+    if(fixos[kg.id]) n = fixos[kg.id];
+    else if(kg.classList.contains('c3')) n = 3;
+    else if(kg.classList.contains('c5')) n = 5;
+    else n = 4;
+    // Em mobile (<900px) força 2 colunas, em viewport <600px força 1
+    var vw = window.innerWidth || 1200;
+    if(vw < 600) n = 1;
+    else if(vw < 900) n = 2;
+    else if(vw < 1200 && n > 3) n = 3;
+    kg.style.setProperty('grid-template-columns', 'repeat('+n+', minmax(0, 1fr))', 'important');
+    kg.style.setProperty('display', 'grid', 'important');
+    kg.style.setProperty('gap', '10px', 'important');
+    // min-width:0 nos filhos pra deixar shrinkar de fato
+    var children = kg.children;
+    for(var j=0;j<children.length;j++){
+      children[j].style.setProperty('min-width', '0', 'important');
     }
-  });
+  }
+  // row2 e row2eq sempre 2 colunas (já é o esperado), mas força minmax
+  var rows = document.querySelectorAll('.row2, .row2eq');
+  for(var k=0;k<rows.length;k++){
+    var r = rows[k];
+    var ncols = r.classList.contains('row2eq') ? 2 : 2;
+    var vw2 = window.innerWidth || 1200;
+    if(vw2 < 900) ncols = 1;
+    r.style.setProperty('grid-template-columns', 'repeat('+ncols+', minmax(0, 1fr))', 'important');
+    var rc = r.children;
+    for(var m=0;m<rc.length;m++){
+      rc[m].style.setProperty('min-width', '0', 'important');
+    }
+  }
 }
+// Alias antigo
+function _cofreLimparInlineGrid(){ _cofreAjustarGrid(); }
 // Re-aplica sempre que o DOM mudar (páginas re-renderizadas substituem inline styles)
 function _cofreWatchInlineGrid(){
   if(!window.MutationObserver) return;
   var mc = document.querySelector('.main-content');
   if(!mc) return;
+  var debounce = null;
   var obs = new MutationObserver(function(mutations){
     var temNovo = false;
     for(var i=0;i<mutations.length;i++){
       if(mutations[i].addedNodes && mutations[i].addedNodes.length){ temNovo = true; break; }
     }
-    if(temNovo) _cofreLimparInlineGrid();
+    if(temNovo){
+      clearTimeout(debounce);
+      debounce = setTimeout(_cofreAjustarGrid, 30);
+    }
   });
   obs.observe(mc, { childList: true, subtree: true });
+  // Re-ajustar em resize (mobile, devtools open/close)
+  var resizeDebounce = null;
+  window.addEventListener('resize', function(){
+    clearTimeout(resizeDebounce);
+    resizeDebounce = setTimeout(_cofreAjustarGrid, 100);
+  });
 }
 
 // Boot do shell Cofre. Aciona após DOM pronto e perfis aplicados.
