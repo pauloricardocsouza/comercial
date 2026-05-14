@@ -6,8 +6,8 @@
 <meta name="robots" content="noindex, nofollow">
 <title>Comercial GPC · R2 Soluções</title>
 <!-- v4.76 fix7: favicon GPC (navy + GPC branco + arco laranja) -->
-<link rel="icon" type="image/svg+xml" href="assets/favicon.svg?v=4.76.12">
-<link rel="apple-touch-icon" href="assets/favicon.svg?v=4.76.12">
+<link rel="icon" type="image/svg+xml" href="assets/favicon.svg?v=4.76.13">
+<link rel="apple-touch-icon" href="assets/favicon.svg?v=4.76.13">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <!-- DNS prefetch para Firebase: encurta o handshake de auth/firestore -->
@@ -2127,11 +2127,16 @@ body.cofre-shell .kc .kv { font-variant-numeric: tabular-nums; }
 body.cofre-shell { overflow-x: hidden; }
 body.cofre-shell .app-body { overflow-x: hidden; }
 
-/* v4.76 fix11: respiro lateral + topo reduzido (era alto demais) */
+/* v4.76 fix13: topbar Cofre é sticky (já ocupa altura no fluxo), então o
+   margin-top:54px legado de .app-body (reserva da topbar fixed antiga) gera
+   um vão duplicado abaixo da topbar. Zera no Cofre. */
+body.cofre-shell .app-body { margin-top: 0 !important; }
+
+/* v4.76 fix13: respiro lateral 28px + topo um pouco maior (32px) */
 body.cofre-shell .main-content { padding: 0 !important; }
 body.cofre-shell .page-body { padding: 0 28px 36px !important; }
-body.cofre-shell .ph { padding: 6px 28px 4px !important; }
-body.cofre-shell .ph-sep { margin: 0 28px 10px !important; }
+body.cofre-shell .ph { padding: 32px 28px 6px !important; }
+body.cofre-shell .ph-sep { margin: 0 28px 14px !important; }
 /* Scrollbar mais discreta, evita os cards encostarem no track */
 body.cofre-shell .main-content::-webkit-scrollbar { width: 10px; }
 body.cofre-shell .main-content::-webkit-scrollbar-track { background: transparent; }
@@ -2783,10 +2788,10 @@ body.cofre-shell .pfb-sep {
      JS principal · dividido em 5 arquivos pela auditoria v4.6
      Ordem importa: core declara as globais; render-* dependem de core.
      ════════════════════════════════════════════════════════════════════════════ -->
-<script src="js/core.js?v=4.76.12"></script>
-<script src="js/render-compras.js?v=4.76.12"></script>
-<script src="js/render-vendas.js?v=4.76.12"></script>
-<script src="js/render-outros.js?v=4.76.12"></script>
-<script src="js/admin.js?v=4.76.12"></script>
+<script src="js/core.js?v=4.76.13"></script>
+<script src="js/render-compras.js?v=4.76.13"></script>
+<script src="js/render-vendas.js?v=4.76.13"></script>
+<script src="js/render-outros.js?v=4.76.13"></script>
+<script src="js/admin.js?v=4.76.13"></script>
 </body>
 </html>
