@@ -216,7 +216,7 @@ const AUTH_MODE = 'firebase'; // 'mock' | 'firebase'
 // Convenção:
 //   X.x → alteração grande (quebra de compatibilidade, nova feature grande)
 //   x.X → alteração suave (fix, ajuste visual, pequeno refinamento)
-const APP_VERSION = '4.76-cofre-fix11';
+const APP_VERSION = '4.76-cofre-fix12';
 
 // ================================================================
 // HELPERS DE CHART.JS — compatíveis com Safari/iOS (sem spread ops)
@@ -7008,7 +7008,11 @@ function _cofreCriarShell(){
     +     '<span class="brand-ver">v.' + verExibida + '</span>'
     +   '</div>'
     + '</div>'
-    + '<nav class="cofre-nav" id="cofre-nav"></nav>';
+    + '<nav class="cofre-nav" id="cofre-nav"></nav>'
+    + '<div class="cofre-r2">'
+    +   '<span class="cofre-r2-lbl">Desenvolvido por</span>'
+    +   '<img id="cofre-r2-img" src="assets/r2-color.png" alt="R2 Soluções Empresariais">'
+    + '</div>';
   document.body.insertBefore(aside, document.body.firstChild);
 
   // Topbar slim: cria container e move ícones úteis do header legado
