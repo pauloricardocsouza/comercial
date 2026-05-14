@@ -1737,6 +1737,192 @@ body.cofre-shell #restoreBtn { display: none !important; }
 /* Linha laranja do topo da topbar antiga não combina com slim Cofre */
 body.cofre-shell header.topbar { border-bottom-color: var(--border); border-bottom-width: 1px; }
 
+/* ════════════════════════════════════════════════════════════════════
+   FASE 2 · Cofre components — KPI cards minimal, tabelas editoriais,
+   cards, botões, tags. Retarget de classes legadas (.kc, .kg, .cc, .t)
+   sob body.cofre-shell para preservar markup atual.
+   ════════════════════════════════════════════════════════════════════ */
+
+/* KPI cards — minimal, sem glow radial, borda lateral 3px navy */
+body.cofre-shell .kc {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--r-md);
+  padding: var(--kpi-pad);
+  box-shadow: var(--sh-xs);
+}
+body.cofre-shell .kc::after { display: none; } /* mata o glow radial antigo */
+body.cofre-shell .kc.up { border-left-color: var(--success-500); }
+body.cofre-shell .kc.dn { border-left-color: var(--danger-500); }
+body.cofre-shell .kc.hl { border-left-color: var(--gpc-orange-400); }
+body.cofre-shell .kc.vio { border-left-color: var(--violet-500); }
+body.cofre-shell .kc .kl {
+  font-family: var(--font-mono); font-size: 10px; font-weight: 700;
+  color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.1em;
+}
+body.cofre-shell .kc .kv {
+  font-size: 22px; font-weight: 800; letter-spacing: -0.02em;
+  margin-top: 6px; line-height: 1.05;
+  font-variant-numeric: tabular-nums; color: var(--text);
+}
+body.cofre-shell .kc .ks {
+  font-family: var(--font-mono); font-size: 10px;
+  color: var(--text-muted); margin-top: 4px;
+}
+[data-density="compact"] body.cofre-shell .kc .kv,
+body.cofre-shell[data-density="compact"] .kc .kv { font-size: 18px; }
+
+/* Cards (containers de gráfico/tabela) */
+body.cofre-shell .cc {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  padding: var(--card-pad);
+  box-shadow: var(--sh-xs);
+  margin-bottom: 14px;
+}
+body.cofre-shell .cc .cct {
+  font-weight: 700; font-size: 13px; color: var(--text);
+  letter-spacing: -0.005em; line-height: 1.3;
+}
+body.cofre-shell .cc .ccs {
+  font-family: var(--font-mono); font-size: 11px;
+  color: var(--text-muted); margin-top: 4px; margin-bottom: 10px;
+  letter-spacing: 0;
+}
+body.cofre-shell .cc .cch {
+  display: flex; justify-content: space-between; align-items: flex-start;
+  margin-bottom: 10px; flex-wrap: wrap; gap: 10px;
+}
+
+/* Tabelas editoriais — hairlines, header navy, hover sutil */
+body.cofre-shell table.t {
+  width: 100%; border-collapse: separate; border-spacing: 0;
+  font-variant-numeric: tabular-nums; font-size: 12px;
+}
+body.cofre-shell table.t th {
+  background: var(--accent-bg);
+  padding: var(--row-pad-y) var(--row-pad-x);
+  font-family: var(--font-mono); font-size: 10px; font-weight: 700;
+  color: var(--accent-text); text-transform: uppercase; letter-spacing: 0.06em;
+  border-bottom: 1.5px solid var(--accent);
+  text-align: right; white-space: nowrap;
+  position: sticky; top: 0; z-index: 2;
+}
+body.cofre-shell table.t th.L { text-align: left; }
+body.cofre-shell table.t td {
+  padding: var(--row-pad-y) var(--row-pad-x);
+  border-bottom: 1px solid var(--border);
+  color: var(--text); font-size: 12px;
+  text-align: right; white-space: nowrap;
+}
+body.cofre-shell table.t td.L { text-align: left; }
+body.cofre-shell table.t tbody tr:hover td { background: var(--accent-bg); cursor: pointer; }
+body.cofre-shell table.t tbody tr:last-child td { border-bottom: none; }
+
+/* Botões (ebtn legacy → estilo Cofre minimal) */
+body.cofre-shell .ebtn {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 7px 12px; border-radius: 6px;
+  border: 1px solid var(--border); background: var(--surface);
+  font-family: var(--font-mono); font-size: 10px; font-weight: 700;
+  color: var(--text-dim); letter-spacing: 0.06em; text-transform: uppercase;
+  cursor: pointer; transition: all .15s;
+}
+body.cofre-shell .ebtn:hover {
+  background: var(--highlight); color: white; border-color: var(--highlight);
+}
+body.cofre-shell .ebtn svg { width: 13px; height: 13px; }
+body.cofre-shell .ebtn.xlsx:hover { background: var(--success-500); border-color: var(--success-500); }
+body.cofre-shell .ebtn.pdf:hover  { background: var(--danger-500); border-color: var(--danger-500); }
+
+/* Tags / Badges (kg-tag e .tag legados) */
+body.cofre-shell .kg-tag,
+body.cofre-shell .tag {
+  display: inline-block; padding: 2px 6px; border-radius: 4px;
+  font-family: var(--font-mono); font-size: 9.5px; font-weight: 700;
+  letter-spacing: 0.04em; text-transform: uppercase; white-space: nowrap;
+  background: var(--surface-3); color: var(--text-muted);
+}
+body.cofre-shell .kg-tag.ok,  body.cofre-shell .tag.grn { background: var(--success-50); color: var(--success-700); }
+body.cofre-shell .kg-tag.wn,  body.cofre-shell .tag.ori { background: var(--warning-50); color: var(--warning-700); }
+body.cofre-shell .kg-tag.dn,  body.cofre-shell .tag.dnd { background: var(--danger-50);  color: var(--danger-700); }
+body.cofre-shell .kg-tag.hl  { background: var(--gpc-orange-50); color: var(--gpc-orange-600); }
+body.cofre-shell .kg-tag.vio, body.cofre-shell .tag.vio { background: var(--violet-50);  color: var(--violet-700); }
+body.cofre-shell .kg-tag.acc, body.cofre-shell .tag.acc { background: var(--accent-bg);  color: var(--accent-text); }
+
+/* Period filter (.pfb-per buttons) — segmented control Cofre */
+body.cofre-shell .pfb {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--r-md); padding: 8px 12px; margin-bottom: 12px;
+}
+body.cofre-shell .pfb-label {
+  font-family: var(--font-mono); font-size: 10px; color: var(--text-muted);
+  text-transform: uppercase; letter-spacing: 0.08em; font-weight: 700;
+}
+body.cofre-shell .pfb-per {
+  padding: 5px 10px; border: 1px solid var(--border-strong);
+  background: var(--surface); color: var(--text-muted);
+  font-family: var(--font-mono); font-size: 10px; font-weight: 700;
+  border-radius: 5px; cursor: pointer; transition: all .15s;
+}
+body.cofre-shell .pfb-per:hover { color: var(--text); }
+body.cofre-shell .pfb-per.on,
+body.cofre-shell .pfb-per.active {
+  background: var(--accent); color: white; border-color: var(--accent);
+}
+body.cofre-shell .pfb-apply {
+  padding: 6px 14px; border: none; background: var(--highlight); color: white;
+  font-family: var(--font-mono); font-size: 10px; font-weight: 700;
+  letter-spacing: 0.06em; text-transform: uppercase;
+  border-radius: 6px; cursor: pointer;
+}
+body.cofre-shell .pfb-apply:hover { background: var(--highlight-deep); }
+body.cofre-shell .pfb-dept {
+  padding: 5px 10px; border: 1px solid var(--border-strong);
+  background: var(--surface); color: var(--text); border-radius: 5px;
+  font-family: inherit; font-size: 12px;
+}
+
+/* Page header — kicker laranja, h2 bold */
+body.cofre-shell .ph {
+  padding: 4px 0 12px;
+}
+body.cofre-shell .pk {
+  font-family: var(--font-mono); font-size: 10px; color: var(--highlight-text);
+  letter-spacing: 0.18em; text-transform: uppercase;
+  margin-bottom: 6px; font-weight: 700;
+}
+body.cofre-shell .ph h2 {
+  font-size: 22px; font-weight: 800; letter-spacing: -0.02em;
+  line-height: 1.15; color: var(--text); margin: 0;
+}
+body.cofre-shell .ph h2 em {
+  color: var(--highlight); font-style: italic; font-weight: 800;
+}
+body.cofre-shell .ph-sep {
+  height: 1px; background: var(--border); margin: 0 0 14px;
+}
+body.cofre-shell .page-body { padding: 0 4px 24px; }
+
+/* tscroll — remove gradiente sombra que conflita com dark */
+body.cofre-shell .tscroll {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  overflow: auto;
+}
+body.cofre-shell .tscroll table.t th:first-child { border-top-left-radius: var(--r-md); }
+body.cofre-shell .tscroll table.t th:last-child  { border-top-right-radius: var(--r-md); }
+
+/* Dark mode: ajustes contraste hover */
+[data-theme="dark"] body.cofre-shell table.t tbody tr:hover td { background: var(--accent-bg-2); }
+[data-theme="dark"] body.cofre-shell .kc.up { border-left-color: var(--success-500); }
+[data-theme="dark"] body.cofre-shell .ebtn { background: var(--surface-2); color: var(--text-dim); border-color: var(--border-strong); }
+[data-theme="dark"] body.cofre-shell .pfb-per { background: var(--surface-2); border-color: var(--border-strong); }
+[data-theme="dark"] body.cofre-shell .pfb-per.on { background: var(--gpc-orange-400); color: var(--gpc-navy-900); border-color: var(--gpc-orange-400); }
+
 /* Quando shell Cofre não ativo (rollback), restaura grid antigo (não faz nada) */
 
 </style>
