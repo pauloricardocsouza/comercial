@@ -3051,6 +3051,74 @@ Chart.defaults.font.size=11;
 Chart.defaults.color='#6b7280';
 Chart.defaults.borderColor='#e4e8ee';
 
+// v4.76 Cofre fase 4: paleta restrita e adaptativa por tema.
+// chartColors() retorna o conjunto atual de cores baseado em body[data-theme].
+// Após troca de tema, _cofreReplotCharts() força re-render de todos os charts
+// pra que grid/ticks/cores reflitam o novo modo.
+var _COFRE_PALETTE_LIGHT = {
+  primary:   '#2E476F',   secondary: '#F58634',
+  neutral:   '#9BA3B2',   success:   '#109854',
+  danger:    '#D92D20',   violet:    '#7C3AED',
+  warning:   '#B45309',
+  grid:      'rgba(46,71,111,0.08)',
+  text:      '#4A5262',   textMuted: '#6B7280',
+  surface:   '#FFFFFF'
+};
+var _COFRE_PALETTE_DARK = {
+  primary:   '#F58634',   secondary: '#7691BC',
+  neutral:   '#4D6FA0',   success:   '#5ED49C',
+  danger:    '#FF8B85',   violet:    '#A78BFA',
+  warning:   '#F9A153',
+  grid:      'rgba(255,255,255,0.06)',
+  text:      '#B0C0DC',   textMuted: '#7691BC',
+  surface:   '#131F31'
+};
+function chartColors(){
+  return (document.body.getAttribute('data-theme') === 'dark')
+    ? _COFRE_PALETTE_DARK : _COFRE_PALETTE_LIGHT;
+}
+window.chartColors = chartColors;
+
+// Aplica defaults do Chart.js baseado no tema atual
+function _cofreAplicarChartDefaults(){
+  var p = chartColors();
+  Chart.defaults.color       = p.textMuted;
+  Chart.defaults.borderColor = p.grid;
+  if(Chart.defaults.scale){
+    Chart.defaults.scale.grid   = Chart.defaults.scale.grid   || {};
+    Chart.defaults.scale.ticks  = Chart.defaults.scale.ticks  || {};
+    Chart.defaults.scale.grid.color = p.grid;
+    Chart.defaults.scale.ticks.color = p.textMuted;
+  }
+  // Plugin annotation: cor padrão
+  if(Chart.defaults.plugins && Chart.defaults.plugins.annotation){
+    Chart.defaults.plugins.annotation.color = p.textMuted;
+  }
+}
+_cofreAplicarChartDefaults();
+
+// Re-render todos os charts (chamado após troca de tema)
+function _cofreReplotCharts(){
+  _cofreAplicarChartDefaults();
+  try {
+    Object.keys(CH).forEach(function(id){
+      var ch = CH[id];
+      if(!ch || !ch.config) return;
+      // Atualiza cor de grid/ticks nos scales existentes
+      var p = chartColors();
+      if(ch.options && ch.options.scales){
+        Object.keys(ch.options.scales).forEach(function(sk){
+          var s = ch.options.scales[sk];
+          if(s.grid)  s.grid.color  = p.grid;
+          if(s.ticks) s.ticks.color = p.textMuted;
+        });
+      }
+      ch.update('none');
+    });
+  } catch(e){ console.warn('[cofre] replot charts:', e.message); }
+}
+window._cofreReplotCharts = _cofreReplotCharts;
+
 const CH={};
 function mkC(id,cfg){
   const ctx=document.getElementById(id);
@@ -6788,6 +6856,8 @@ window._cofreUpdateBaseBadge = _cofreUpdateBaseBadge;
 function _cofreApplyTheme(t){
   document.body.setAttribute('data-theme', t || 'light');
   try { localStorage.setItem('gpc-theme', t); } catch(e){}
+  // v4.76 fase 4: re-aplicar paleta dos gráficos
+  if(typeof _cofreReplotCharts === 'function') _cofreReplotCharts();
 }
 function _cofreInitTheme(){
   var saved;
