@@ -216,7 +216,7 @@ const AUTH_MODE = 'firebase'; // 'mock' | 'firebase'
 // Convenção:
 //   X.x → alteração grande (quebra de compatibilidade, nova feature grande)
 //   x.X → alteração suave (fix, ajuste visual, pequeno refinamento)
-const APP_VERSION = '4.76-cofre-fix8';
+const APP_VERSION = '4.76-cofre-fix9';
 
 // ================================================================
 // HELPERS DE CHART.JS — compatíveis com Safari/iOS (sem spread ops)
@@ -6858,10 +6858,15 @@ function _cofreApplyTheme(t){
   try { localStorage.setItem('gpc-theme', t); } catch(e){}
   // v4.76 fase 4: re-aplicar paleta dos gráficos
   if(typeof _cofreReplotCharts === 'function') _cofreReplotCharts();
-  // v4.76 fix7: troca o logo entre versão colorida (light) e negativa (dark)
+  // v4.76 fix7: troca o logo GPC entre versão colorida (light) e negativa (dark)
   var img = document.getElementById('cofre-brand-img');
   if(img){
     img.src = (t === 'dark') ? 'assets/gpc-white.png' : 'assets/gpc-color.png';
+  }
+  // v4.76 fix9: mesma troca pro R2 (azul → branco)
+  var r2img = document.getElementById('cofre-r2-img');
+  if(r2img){
+    r2img.src = (t === 'dark') ? 'assets/r2-white.png' : 'assets/r2-color.png';
   }
 }
 function _cofreInitTheme(){
@@ -6971,19 +6976,22 @@ function _cofreCriarShell(){
   var aside = document.createElement('aside');
   aside.id = 'sidebar-cofre';
   aside.className = 'cofre-sidebar';
+  // Versão discreta exibida abaixo da marca
+  var verExibida = (typeof APP_VERSION !== 'undefined' ? APP_VERSION : 'v?')
+    .replace(/-cofre.*$/, '').replace(/-comercial$/, '');
   aside.innerHTML = ''
     + '<div class="cofre-brand">'
     +   brandHtml
-    +   '<div class="brand-text">'
-    +     '<span class="name">Comercial GPC</span>'
-    +     '<span class="sub">R2 · v4.76</span>'
+    +   '<div class="brand-meta">'
+    +     '<span class="brand-tag">INTELIGÊNCIA COMERCIAL</span>'
+    +     '<span class="brand-ver">v' + verExibida + '</span>'
     +   '</div>'
     + '</div>'
     + '<div class="cofre-base"><span class="cofre-base-pill" id="cofre-base-badge">CARREGANDO…</span></div>'
     + '<nav class="cofre-nav" id="cofre-nav"></nav>'
     + '<div class="cofre-r2">'
     +   '<span class="cofre-r2-lbl">desenvolvido por</span>'
-    +   '<span style="font-family:var(--font-mono);font-size:11px;font-weight:700;color:var(--text-dim);">R2</span>'
+    +   '<img id="cofre-r2-img" src="assets/r2-color.png" alt="R2 Soluções Empresariais" class="cofre-r2-img" onerror="this.style.display=\'none\';">'
     + '</div>';
   document.body.insertBefore(aside, document.body.firstChild);
 

@@ -6,8 +6,8 @@
 <meta name="robots" content="noindex, nofollow">
 <title>Comercial GPC · R2 Soluções</title>
 <!-- v4.76 fix7: favicon GPC (navy + GPC branco + arco laranja) -->
-<link rel="icon" type="image/svg+xml" href="assets/favicon.svg?v=4.76.8">
-<link rel="apple-touch-icon" href="assets/favicon.svg?v=4.76.8">
+<link rel="icon" type="image/svg+xml" href="assets/favicon.svg?v=4.76.9">
+<link rel="apple-touch-icon" href="assets/favicon.svg?v=4.76.9">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <!-- DNS prefetch para Firebase: encurta o handshake de auth/firestore -->
@@ -2126,6 +2126,20 @@ body.cofre-shell .kc .kv { font-variant-numeric: tabular-nums; }
 body.cofre-shell { overflow-x: hidden; }
 body.cofre-shell .app-body { overflow-x: hidden; }
 
+/* v4.76 fix9: respiro lateral + reduzir top excessivo */
+body.cofre-shell .main-content { padding: 0 !important; }
+body.cofre-shell .page-body { padding: 8px 28px 36px !important; }
+body.cofre-shell .ph { padding: 14px 28px 6px !important; }
+body.cofre-shell .ph-sep { margin: 0 28px 14px !important; }
+/* Scrollbar mais discreta, evita os cards encostarem no track */
+body.cofre-shell .main-content::-webkit-scrollbar { width: 10px; }
+body.cofre-shell .main-content::-webkit-scrollbar-track { background: transparent; }
+body.cofre-shell .main-content::-webkit-scrollbar-thumb {
+  background: var(--border-strong); border-radius: 5px;
+  border: 2px solid var(--bg-page);
+}
+body.cofre-shell .main-content::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+
 /* ════════════════════════════════════════════════════════════════════
    FIX8 · Seletor de VISÃO no topbar + sidebar colapsável
    ════════════════════════════════════════════════════════════════════ */
@@ -2245,32 +2259,51 @@ body.cofre-shell .ph { padding: 22px 0 6px; }
 body.cofre-shell .ph-sep { margin-bottom: 18px; }
 
 /* FIX: brand-text pode quebrar feio em sidebar 240px */
-/* v4.76 fix6: brand vertical — logo grande no topo, texto pequeno embaixo */
+/* v4.76 fix9: brand mais compacto — logo GPC menor + tag "INTELIGÊNCIA COMERCIAL" + versão discreta */
 body.cofre-shell .cofre-brand {
   flex-direction: column;
-  align-items: flex-start;
-  gap: 8px;
-  padding: 16px 18px 14px;
+  align-items: center;
+  gap: 10px;
+  padding: 18px 16px 14px;
+  text-align: center;
 }
 body.cofre-shell .cofre-brand .brand-logo {
-  height: auto; width: 100%; max-width: 160px;
-  display: block;
+  height: auto; width: 100%; max-width: 116px;
+  display: block; margin: 0 auto;
 }
-body.cofre-shell .cofre-brand .brand-text {
-  min-width: 0; width: 100%;
-  display: flex; flex-direction: row; justify-content: space-between;
-  align-items: baseline; gap: 8px;
+body.cofre-shell .cofre-brand .brand-meta {
+  display: flex; flex-direction: column; align-items: center; gap: 3px;
+  width: 100%;
 }
-body.cofre-shell .cofre-brand .brand-text .name {
-  font-size: 11px; line-height: 1.1;
-  font-family: var(--font-mono); font-weight: 700;
-  text-transform: uppercase; letter-spacing: 0.1em;
-  color: var(--text-muted);
+body.cofre-shell .cofre-brand .brand-tag {
+  font-family: var(--font-mono); font-size: 9px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.16em;
+  color: var(--accent-text); line-height: 1.2;
 }
-body.cofre-shell .cofre-brand .brand-text .sub {
-  font-family: var(--font-mono); font-size: 9.5px; font-weight: 700;
+body.cofre-shell .cofre-brand .brand-ver {
+  font-family: var(--font-mono); font-size: 8.5px; font-weight: 500;
+  color: var(--text-faint); letter-spacing: 0.08em;
+  margin-top: 1px;
+}
+[data-theme="dark"] body.cofre-shell .cofre-brand .brand-tag { color: var(--gpc-orange-300); }
+
+/* Esconde brand-text legado se ainda existir em algum render */
+body.cofre-shell .cofre-brand .brand-text { display: none; }
+
+/* R2 logo no footer da sidebar */
+body.cofre-shell .cofre-r2 {
+  padding: 14px 16px;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+body.cofre-shell .cofre-r2-lbl {
+  font-family: var(--font-mono); font-size: 8.5px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.14em;
   color: var(--text-faint);
-  text-transform: uppercase; letter-spacing: 0.1em;
+}
+body.cofre-shell .cofre-r2-img {
+  width: 100%; max-width: 110px; height: auto; display: block;
 }
 
 /* FIX: pfb (period filter) — quando renderizado dentro de page-body, era loose */
@@ -2719,10 +2752,10 @@ body.cofre-shell .pfb-sep {
      JS principal · dividido em 5 arquivos pela auditoria v4.6
      Ordem importa: core declara as globais; render-* dependem de core.
      ════════════════════════════════════════════════════════════════════════════ -->
-<script src="js/core.js?v=4.76.8"></script>
-<script src="js/render-compras.js?v=4.76.8"></script>
-<script src="js/render-vendas.js?v=4.76.8"></script>
-<script src="js/render-outros.js?v=4.76.8"></script>
-<script src="js/admin.js?v=4.76.8"></script>
+<script src="js/core.js?v=4.76.9"></script>
+<script src="js/render-compras.js?v=4.76.9"></script>
+<script src="js/render-vendas.js?v=4.76.9"></script>
+<script src="js/render-outros.js?v=4.76.9"></script>
+<script src="js/admin.js?v=4.76.9"></script>
 </body>
 </html>
