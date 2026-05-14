@@ -216,7 +216,7 @@ const AUTH_MODE = 'firebase'; // 'mock' | 'firebase'
 // Convenção:
 //   X.x → alteração grande (quebra de compatibilidade, nova feature grande)
 //   x.X → alteração suave (fix, ajuste visual, pequeno refinamento)
-const APP_VERSION = '4.76-cofre-fix9';
+const APP_VERSION = '4.76-cofre-fix10';
 
 // ================================================================
 // HELPERS DE CHART.JS — compatíveis com Safari/iOS (sem spread ops)
@@ -1295,7 +1295,7 @@ function _renderTelaLogin(precisaTrocarSenha){
       ${AUTH_MODE === 'mock' ? '<div style="text-align:center;margin-top:16px;padding:8px;background:#fee;color:#c33;border-radius:5px;font-size:10px;font-family:monospace;">⚠ MODO MOCK · dados de teste em localStorage</div>' : ''}
       <div style="text-align:center;margin-top:20px;font-size:10px;color:#999;font-family:'JetBrains Mono',monospace;letter-spacing:.1em;text-transform:uppercase;border-top:1px solid #eee;padding-top:14px;">
         Desenvolvido por R2 Soluções Empresariais
-        <div style="font-size:9px;color:#bbb;margin-top:4px;letter-spacing:.15em;">v${APP_VERSION}</div>
+        <div style="font-size:9px;color:#bbb;margin-top:4px;letter-spacing:.15em;">v.${(String(APP_VERSION).match(/(\d+\.\d+)/)||[null,APP_VERSION])[1]}</div>
       </div>
     </div>
   `;
@@ -2832,7 +2832,10 @@ window._abrirNovidades = _abrirNovidades;
 
 async function _initSistema(){
   const tagVer = document.getElementById('app-version-tag');
-  if(tagVer) tagVer.textContent = 'v'+APP_VERSION;
+  if(tagVer){
+    var _verM = String(APP_VERSION).match(/(\d+\.\d+)/);
+    tagVer.textContent = 'v.' + (_verM ? _verM[1] : APP_VERSION);
+  }
   // Plugar link Novidades do rodapé (abre modal com CHANGELOG)
   const linkNov = document.getElementById('link-novidades');
   if(linkNov){
@@ -6976,23 +6979,23 @@ function _cofreCriarShell(){
   var aside = document.createElement('aside');
   aside.id = 'sidebar-cofre';
   aside.className = 'cofre-sidebar';
-  // Versão discreta exibida abaixo da marca
-  var verExibida = (typeof APP_VERSION !== 'undefined' ? APP_VERSION : 'v?')
-    .replace(/-cofre.*$/, '').replace(/-comercial$/, '');
+  // v4.76 fix10: versão exibida só com numeração (ex: "v.4.76").
+  // Extrai o primeiro N.NN encontrado no APP_VERSION.
+  var verExibida = (function(){
+    if(typeof APP_VERSION === 'undefined') return '?';
+    var m = String(APP_VERSION).match(/(\d+\.\d+)/);
+    return m ? m[1] : APP_VERSION;
+  })();
   aside.innerHTML = ''
     + '<div class="cofre-brand">'
     +   brandHtml
     +   '<div class="brand-meta">'
     +     '<span class="brand-tag">INTELIGÊNCIA COMERCIAL</span>'
-    +     '<span class="brand-ver">v' + verExibida + '</span>'
+    +     '<span class="brand-ver">v.' + verExibida + '</span>'
     +   '</div>'
     + '</div>'
     + '<div class="cofre-base"><span class="cofre-base-pill" id="cofre-base-badge">CARREGANDO…</span></div>'
-    + '<nav class="cofre-nav" id="cofre-nav"></nav>'
-    + '<div class="cofre-r2">'
-    +   '<span class="cofre-r2-lbl">desenvolvido por</span>'
-    +   '<img id="cofre-r2-img" src="assets/r2-color.png" alt="R2 Soluções Empresariais" class="cofre-r2-img" onerror="this.style.display=\'none\';">'
-    + '</div>';
+    + '<nav class="cofre-nav" id="cofre-nav"></nav>';
   document.body.insertBefore(aside, document.body.firstChild);
 
   // Topbar slim: cria container e move ícones úteis do header legado
