@@ -216,7 +216,7 @@ const AUTH_MODE = 'firebase'; // 'mock' | 'firebase'
 // Convenção:
 //   X.x → alteração grande (quebra de compatibilidade, nova feature grande)
 //   x.X → alteração suave (fix, ajuste visual, pequeno refinamento)
-const APP_VERSION = '4.76-cofre';
+const APP_VERSION = '4.76-cofre-fix3';
 
 // ================================================================
 // HELPERS DE CHART.JS — compatíveis com Safari/iOS (sem spread ops)
@@ -6984,6 +6984,32 @@ function _cofreCriarShell(){
   }
 }
 
+// v4.76 fix3: limpa inline grid-template-columns dos .kg/.row2/.row2eq
+// Inline style ganhava de CSS sem !important antes. Garantia.
+function _cofreLimparInlineGrid(){
+  var seletores = ['.kg', '.row2', '.row2eq'];
+  seletores.forEach(function(sel){
+    var els = document.querySelectorAll(sel);
+    for(var i=0;i<els.length;i++){
+      els[i].style.removeProperty('grid-template-columns');
+    }
+  });
+}
+// Re-aplica sempre que o DOM mudar (páginas re-renderizadas substituem inline styles)
+function _cofreWatchInlineGrid(){
+  if(!window.MutationObserver) return;
+  var mc = document.querySelector('.main-content');
+  if(!mc) return;
+  var obs = new MutationObserver(function(mutations){
+    var temNovo = false;
+    for(var i=0;i<mutations.length;i++){
+      if(mutations[i].addedNodes && mutations[i].addedNodes.length){ temNovo = true; break; }
+    }
+    if(temNovo) _cofreLimparInlineGrid();
+  });
+  obs.observe(mc, { childList: true, subtree: true });
+}
+
 // Boot do shell Cofre. Aciona após DOM pronto e perfis aplicados.
 function _cofreBoot(){
   _cofreCriarShell();
@@ -6991,6 +7017,8 @@ function _cofreBoot(){
   _cofreInitTheme();
   _cofreInitDensity();
   _cofreWatchUserWidget();
+  _cofreLimparInlineGrid();
+  _cofreWatchInlineGrid();
   // Aguarda permissões antes de montar sidebar
   setTimeout(function(){
     var ativa = document.querySelector('.sb-link.active');
