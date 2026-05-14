@@ -216,7 +216,7 @@ const AUTH_MODE = 'firebase'; // 'mock' | 'firebase'
 // Convenção:
 //   X.x → alteração grande (quebra de compatibilidade, nova feature grande)
 //   x.X → alteração suave (fix, ajuste visual, pequeno refinamento)
-const APP_VERSION = '4.76-cofre-fix14';
+const APP_VERSION = '4.76-cofre-fix15';
 
 // ================================================================
 // HELPERS DE CHART.JS — compatíveis com Safari/iOS (sem spread ops)
@@ -6944,23 +6944,64 @@ function _cofreInitMobile(){
 function _cofreInitSidebarToggle(){
   var btn = document.getElementById('sidebar-toggle');
   if(!btn) return;
-  // Restaurar estado salvo
+  // Restaurar estado salvo (somente desktop)
   try {
-    if(localStorage.getItem('cofre-sidebar-collapsed') === '1'){
+    if(localStorage.getItem('cofre-sidebar-collapsed') === '1' && (window.innerWidth||1200) >= 900){
       document.body.classList.add('cofre-sidebar-collapsed');
     }
   } catch(e){}
-  btn.addEventListener('click', function(){
-    var vw = window.innerWidth || 1200;
+
+  function isMobile(){ return (window.innerWidth || 1200) < 900; }
+  // v4.76 fix15: helpers de drawer com backdrop + body scroll lock
+  function openDrawer(){
     var sb = document.getElementById('sidebar-cofre');
-    if(vw < 900 && sb){
-      // Mobile: abre/fecha drawer
-      sb.classList.toggle('open');
+    if(!sb) return;
+    sb.classList.add('open');
+    document.body.classList.add('cofre-drawer-open');
+  }
+  function closeDrawer(){
+    var sb = document.getElementById('sidebar-cofre');
+    if(sb) sb.classList.remove('open');
+    document.body.classList.remove('cofre-drawer-open');
+  }
+  window._cofreCloseDrawer = closeDrawer;
+
+  btn.addEventListener('click', function(){
+    var sb = document.getElementById('sidebar-cofre');
+    if(isMobile() && sb){
+      if(sb.classList.contains('open')) closeDrawer(); else openDrawer();
       return;
     }
-    // Desktop: colapsa/expande
     var col = document.body.classList.toggle('cofre-sidebar-collapsed');
     try { localStorage.setItem('cofre-sidebar-collapsed', col ? '1' : '0'); } catch(e){}
+  });
+
+  // Tap no backdrop fecha (mobile)
+  document.addEventListener('click', function(ev){
+    if(!isMobile()) return;
+    if(!document.body.classList.contains('cofre-drawer-open')) return;
+    var sb = document.getElementById('sidebar-cofre');
+    if(!sb || sb.contains(ev.target)) return;
+    if(ev.target.closest && (ev.target.closest('#sidebar-toggle') || ev.target.closest('#filialDropdown') || ev.target.closest('#userMenuDropdown'))) return;
+    closeDrawer();
+  }, true);
+
+  // ESC fecha drawer
+  document.addEventListener('keydown', function(ev){
+    if(ev.key === 'Escape' && document.body.classList.contains('cofre-drawer-open')) closeDrawer();
+  });
+
+  // Clicar num item do menu fecha drawer (mobile)
+  var nav = document.getElementById('cofre-nav');
+  if(nav){
+    nav.addEventListener('click', function(ev){
+      if(isMobile() && ev.target.closest && ev.target.closest('.cofre-nav-item')) closeDrawer();
+    });
+  }
+
+  // Resize pra desktop fecha drawer
+  window.addEventListener('resize', function(){
+    if(!isMobile()) closeDrawer();
   });
 }
 
