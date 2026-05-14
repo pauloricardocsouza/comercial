@@ -2017,6 +2017,98 @@ body.cofre-shell .nav-back-fab:hover { background: var(--accent-deep); }
   border-color: var(--gpc-navy-700);
 }
 
+/* ════════════════════════════════════════════════════════════════════
+   FASE 5 · Login enhancement (proposta Painel · split-screen vibe)
+   Overlay #loginOverlay já existe; enhance via CSS sem mexer no JS.
+   ════════════════════════════════════════════════════════════════════ */
+#loginOverlay {
+  background:
+    radial-gradient(circle at 80% 20%, rgba(245,134,52,0.18), transparent 50%),
+    radial-gradient(circle at 20% 80%, rgba(245,134,52,0.10), transparent 50%),
+    linear-gradient(135deg, var(--gpc-navy-700) 0%, var(--gpc-navy-800) 70%, var(--gpc-orange-700) 200%) !important;
+}
+#loginOverlay::before {
+  content: ""; position: absolute; inset: 0; opacity: 0.05;
+  background-image:
+    linear-gradient(rgba(255,255,255,0.5) 0.5px, transparent 0.5px),
+    linear-gradient(90deg, rgba(255,255,255,0.5) 0.5px, transparent 0.5px);
+  background-size: 48px 48px;
+  pointer-events: none;
+}
+/* Card central */
+#loginOverlay > div {
+  position: relative;
+  border-radius: var(--r-xl) !important;
+  box-shadow: 0 24px 64px rgba(0,0,0,0.4), 0 0 0 1px rgba(255,255,255,0.05) !important;
+  padding: 44px !important;
+}
+/* Login button — gradient navy → orange */
+#loginOverlay #loginBtnEntrar,
+#loginOverlay #loginBtnTrocar {
+  background: linear-gradient(135deg, var(--gpc-navy-500), var(--gpc-orange-500)) !important;
+  box-shadow: 0 4px 14px rgba(245,134,52,0.3);
+  transition: transform .1s, box-shadow .15s;
+  letter-spacing: 0.04em;
+}
+#loginOverlay #loginBtnEntrar:hover,
+#loginOverlay #loginBtnTrocar:hover {
+  box-shadow: 0 6px 20px rgba(245,134,52,0.42);
+}
+#loginOverlay #loginBtnEntrar:active,
+#loginOverlay #loginBtnTrocar:active { transform: translateY(1px); }
+
+/* Inputs com focus state laranja */
+#loginOverlay input:focus {
+  outline: none !important;
+  border-color: var(--gpc-orange-400) !important;
+  box-shadow: 0 0 0 3px rgba(245,134,52,0.18);
+}
+
+/* Mobile: padding menor */
+@media (max-width: 640px) {
+  #loginOverlay > div { padding: 28px !important; }
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   FASE 5 · QA mobile / a11y
+   ════════════════════════════════════════════════════════════════════ */
+
+/* Mobile: sidebar Cofre vira drawer com overlay escuro */
+@media (max-width: 900px) {
+  body.cofre-shell > header.topbar,
+  body.cofre-shell > .app-body { margin-left: 0; }
+  body.cofre-shell .cofre-topbar { padding-left: 56px; }
+}
+
+/* Focus visível em todos os botões/links (a11y AA) */
+body.cofre-shell .cofre-nav-item:focus-visible,
+body.cofre-shell .cofre-icon-btn:focus-visible,
+body.cofre-shell .ebtn:focus-visible,
+body.cofre-shell .pfb-per:focus-visible,
+body.cofre-shell .pfb-apply:focus-visible {
+  outline: 2px solid var(--highlight);
+  outline-offset: 2px;
+}
+
+/* Reduzir motion para usuários sensíveis */
+@media (prefers-reduced-motion: reduce) {
+  body.cofre-shell *,
+  body.cofre-shell *::before,
+  body.cofre-shell *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+  }
+}
+
+/* Print mode: esconde sidebar e topbar pra economizar tinta */
+@media print {
+  body.cofre-shell .cofre-sidebar,
+  body.cofre-shell .topbar,
+  body.cofre-shell .nav-back-fab { display: none !important; }
+  body.cofre-shell > header.topbar,
+  body.cofre-shell > .app-body { margin-left: 0 !important; }
+}
+
 /* Quando shell Cofre não ativo (rollback), restaura grid antigo (não faz nada) */
 
 </style>
