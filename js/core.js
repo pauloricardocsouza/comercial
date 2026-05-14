@@ -6723,18 +6723,50 @@ function _cofreRenderSidebar(activeId){
 function _cofreUpdateBreadcrumb(activeId){
   var bc = document.getElementById('cofre-bc');
   if(!bc) return;
-  var grupo = '', nome = '';
-  for(var i=0;i<_COFRE_NAV.length;i++){
-    for(var j=0;j<_COFRE_NAV[i].items.length;j++){
-      if(_COFRE_NAV[i].items[j].id === activeId){
-        grupo = _COFRE_NAV[i].label; nome = _COFRE_NAV[i].items[j].name; break;
+  // Resolve grupo+nome a partir do _COFRE_NAV
+  function _resolve(id){
+    for(var i=0;i<_COFRE_NAV.length;i++){
+      for(var j=0;j<_COFRE_NAV[i].items.length;j++){
+        if(_COFRE_NAV[i].items[j].id === id){
+          return { grupo: _COFRE_NAV[i].label, nome: _COFRE_NAV[i].items[j].name };
+        }
       }
     }
+    // Páginas dinâmicas (diag-forn etc.) podem não estar no menu — fallback
+    if(id === 'diagnostico') return { grupo: 'Análise', nome: 'Diag. Produto' };
+    if(id === 'diag-forn')   return { grupo: 'Análise', nome: 'Diag. Fornecedor' };
+    return null;
   }
-  if(!nome) nome = 'Comercial GPC';
-  bc.innerHTML = (grupo
-    ? '<span>'+grupo+'</span><span class="sep">›</span>'
-    : '') + '<span class="cur">'+nome+'</span>';
+  var cur = _resolve(activeId) || { grupo: '', nome: 'Comercial GPC' };
+  var html = '';
+  // Pilha de navegação: cada item vira um crumb clicável que volta naquela etapa
+  var stack = (window._navStack && window._navStack.length) ? window._navStack : [];
+  if(stack.length){
+    for(var k=0;k<stack.length;k++){
+      var entry = stack[k];
+      var src = _resolve(entry.sourcePage);
+      var lbl = (src ? src.nome : entry.sourcePage) || '';
+      html += '<button class="stack-crumb" type="button" data-stack-idx="'+k+'">'+lbl+'</button>';
+      html += '<span class="sep">›</span>';
+    }
+  } else if(cur.grupo){
+    html += '<span>'+cur.grupo+'</span><span class="sep">›</span>';
+  }
+  html += '<span class="cur">'+cur.nome+'</span>';
+  bc.innerHTML = html;
+  // Bind: clicar no crumb da pilha volta até aquele nível
+  var crumbs = bc.querySelectorAll('.stack-crumb[data-stack-idx]');
+  for(var c=0;c<crumbs.length;c++){
+    crumbs[c].addEventListener('click', function(){
+      var idx = parseInt(this.getAttribute('data-stack-idx'), 10);
+      if(!window._navStack) return;
+      // Pop até voltar pro nível clicado
+      var passos = window._navStack.length - idx;
+      for(var p=0;p<passos;p++){
+        if(typeof window._navBack === 'function') window._navBack();
+      }
+    });
+  }
 }
 
 function _cofreUpdateBaseBadge(){

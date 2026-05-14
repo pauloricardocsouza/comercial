@@ -1923,6 +1923,100 @@ body.cofre-shell .tscroll table.t th:last-child  { border-top-right-radius: var(
 [data-theme="dark"] body.cofre-shell .pfb-per { background: var(--surface-2); border-color: var(--border-strong); }
 [data-theme="dark"] body.cofre-shell .pfb-per.on { background: var(--gpc-orange-400); color: var(--gpc-navy-900); border-color: var(--gpc-orange-400); }
 
+/* ════════════════════════════════════════════════════════════════════
+   FASE 3 · Hero pages (Diag. Produto/Fornecedor) + breadcrumb da pilha
+   ════════════════════════════════════════════════════════════════════ */
+
+/* Hero refinado: gradient navy→orange-bg, vinheta laranja maior, título 26px */
+body.cofre-shell .raiox-hero {
+  background: linear-gradient(135deg, var(--surface) 0%, var(--accent-bg) 60%, var(--highlight-bg) 130%);
+  border: 1px solid var(--border);
+  border-radius: var(--r-xl);
+  padding: 24px 28px;
+  margin-bottom: 18px;
+  box-shadow: var(--sh-sm);
+}
+body.cofre-shell .raiox-hero::after {
+  top: -50px; right: -50px; width: 250px; height: 250px;
+  background: radial-gradient(circle, rgba(245,134,52,0.14), transparent 70%);
+}
+body.cofre-shell .raiox-hero .cod {
+  font-family: var(--font-mono); font-size: 11px; font-weight: 700;
+  color: var(--highlight-text); letter-spacing: 0.16em;
+  text-transform: uppercase; margin-bottom: 10px;
+}
+body.cofre-shell .raiox-hero h2 {
+  font-size: 26px; font-weight: 800; letter-spacing: -0.02em;
+  line-height: 1.15; color: var(--text);
+}
+body.cofre-shell .raiox-hero .meta {
+  margin-top: 14px; display: flex; gap: 22px; flex-wrap: wrap; font-size: 12px;
+}
+body.cofre-shell .raiox-hero .meta-pair .k {
+  font-family: var(--font-mono); font-size: 10px; color: var(--text-muted);
+  text-transform: uppercase; letter-spacing: 0.1em; margin-right: 6px;
+}
+body.cofre-shell .raiox-hero .meta-pair .v { font-weight: 600; color: var(--text); }
+
+/* Search hero (Diag. Produto / Diag. Fornecedor — antes do raio-X carregar) */
+body.cofre-shell .srch-hero {
+  background: linear-gradient(135deg, var(--gpc-navy-600) 0%, var(--gpc-navy-700) 100%);
+  border: 1px solid var(--gpc-navy-700);
+  border-radius: var(--r-xl); padding: 28px 28px 22px;
+  margin-bottom: 18px;
+  position: relative; overflow: hidden;
+}
+body.cofre-shell .srch-hero::after {
+  content: ""; position: absolute; top: -60px; right: -60px;
+  width: 280px; height: 280px;
+  background: radial-gradient(circle, rgba(245,134,52,0.18), transparent 70%);
+  pointer-events: none;
+}
+body.cofre-shell .srch-hero input {
+  background: rgba(255,255,255,0.95); border: 2px solid rgba(245,134,52,0.6);
+  border-radius: 10px; padding: 12px 16px;
+  font-family: var(--font-display); font-size: 14px;
+  color: var(--text); width: 100%;
+}
+body.cofre-shell .srch-hero input:focus {
+  outline: none; border-color: var(--highlight);
+  box-shadow: 0 0 0 4px rgba(245,134,52,0.25);
+}
+
+/* Breadcrumb da pilha de navegação (nav stack) */
+body.cofre-shell .cofre-bc .stack-crumb {
+  padding: 3px 9px; border-radius: 4px;
+  background: var(--accent-bg); color: var(--accent-text);
+  font-family: var(--font-mono); font-size: 10.5px; font-weight: 700;
+  cursor: pointer; border: none; transition: all .15s;
+}
+body.cofre-shell .cofre-bc .stack-crumb:hover {
+  background: var(--highlight-bg); color: var(--highlight-text);
+}
+
+/* Botão "Voltar" flutuante (nav-back-fab) — Cofre style */
+body.cofre-shell .nav-back-fab {
+  background: var(--accent); color: white;
+  font-family: var(--font-mono); font-size: 11px; font-weight: 700;
+  letter-spacing: 0.06em; text-transform: uppercase;
+  border-radius: var(--r-full); padding: 10px 16px;
+  box-shadow: var(--sh-lg); border: none;
+}
+body.cofre-shell .nav-back-fab:hover { background: var(--accent-deep); }
+[data-theme="dark"] body.cofre-shell .nav-back-fab { background: var(--highlight); color: var(--gpc-navy-900); }
+[data-theme="dark"] body.cofre-shell .nav-back-fab:hover { background: var(--highlight-deep); }
+
+/* Dark mode: hero invertido (navy mais escuro) */
+[data-theme="dark"] body.cofre-shell .raiox-hero {
+  background: linear-gradient(135deg, var(--surface) 0%, var(--surface-3) 100%);
+  border-color: var(--border);
+}
+[data-theme="dark"] body.cofre-shell .raiox-hero .cod { color: var(--gpc-orange-300); }
+[data-theme="dark"] body.cofre-shell .srch-hero {
+  background: linear-gradient(135deg, var(--gpc-navy-800) 0%, var(--gpc-navy-900) 100%);
+  border-color: var(--gpc-navy-700);
+}
+
 /* Quando shell Cofre não ativo (rollback), restaura grid antigo (não faz nada) */
 
 </style>
