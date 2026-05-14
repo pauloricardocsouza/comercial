@@ -2109,6 +2109,117 @@ body.cofre-shell .pfb-apply:focus-visible {
   body.cofre-shell > .app-body { margin-left: 0 !important; }
 }
 
+/* ════════════════════════════════════════════════════════════════════
+   FIXES VISUAIS · pós feedback inicial v4.76
+   ════════════════════════════════════════════════════════════════════ */
+
+/* FIX: KPI grid não shrinkava — texto forçava cards a expandir além do 1fr */
+body.cofre-shell .kg {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+body.cofre-shell .kg.c3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+body.cofre-shell .kg.c5 { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+body.cofre-shell .kg > * { min-width: 0; }
+body.cofre-shell .kc .kv {
+  font-variant-numeric: tabular-nums;
+  word-break: break-word;
+  overflow-wrap: break-word;
+}
+/* Em telas mais estreitas, quebra automática */
+@media (max-width: 1280px) {
+  body.cofre-shell .kg {
+    grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+  }
+}
+
+/* FIX: row2/row2eq mesmo problema */
+body.cofre-shell .row2,
+body.cofre-shell .row2eq {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+body.cofre-shell .row2 > *,
+body.cofre-shell .row2eq > * { min-width: 0; }
+
+/* FIX: cofre-content / main-content sem padding lateral suficiente,
+   conteúdo encostava no extremo direito */
+body.cofre-shell .main-content {
+  padding: 20px 24px 36px;
+  max-width: 100%;
+}
+body.cofre-shell .page,
+body.cofre-shell .page-body { max-width: 100%; min-width: 0; }
+body.cofre-shell .page-body { padding: 0 0 24px; }
+
+/* FIX: previne scroll horizontal inesperado em qualquer página */
+body.cofre-shell { overflow-x: hidden; }
+body.cofre-shell .app-body { overflow-x: hidden; }
+
+/* FIX: #userWidget (badge de usuário legado) injetado no topbar herdava
+   color:white e border-left branco — invisível sobre fundo claro do Cofre */
+body.cofre-shell #userWidget {
+  border-left-color: var(--border) !important;
+  margin-left: 8px !important;
+  padding-left: 10px !important;
+}
+body.cofre-shell #userWidget #userMenuBtn { color: var(--text) !important; }
+body.cofre-shell #userWidget #userMenuBtn:hover { background: var(--surface-2) !important; }
+body.cofre-shell #userWidget #userMenuBtn > div:first-child {
+  background: linear-gradient(135deg, var(--gpc-navy-500), var(--gpc-orange-500)) !important;
+  color: white !important;
+}
+body.cofre-shell #userWidget #userMenuBtn > div:nth-child(2) > div:first-child { color: var(--text) !important; }
+body.cofre-shell #userWidget #userMenuBtn > div:nth-child(2) > div:last-child { color: var(--text-muted) !important; }
+
+/* Se o userWidget legado aparece, esconde o avatar Cofre duplicado */
+body.cofre-shell #userWidget ~ #user-avatar,
+body.cofre-shell .cofre-tb-right:has(#userWidget) #user-avatar { display: none; }
+
+/* FIX: topbar pode ter conteúdo a mais — garante alinhamento e justify-content correto */
+body.cofre-shell header.topbar { padding: 0; }
+body.cofre-shell header.topbar .cofre-topbar {
+  width: 100%;
+  height: var(--topbar-h);
+}
+
+/* FIX: alguns botões legados de export ainda estão com classes .ebtn.xlsx/.pdf
+   herdando border branca. O cofre-icon-btn já cobre o estilo. */
+body.cofre-shell .cofre-tb-right .ebtn {
+  border-color: var(--border);
+  color: var(--text-dim);
+  background: transparent;
+}
+
+/* FIX: page header (h2 + ph-sep) precisa de espaço no topo dentro de .main-content */
+body.cofre-shell .ph { padding: 22px 0 6px; }
+body.cofre-shell .ph-sep { margin-bottom: 18px; }
+
+/* FIX: brand-text pode quebrar feio em sidebar 240px */
+body.cofre-shell .cofre-brand {
+  align-items: center;
+  gap: 12px;
+  padding: 16px 18px 12px;
+}
+body.cofre-shell .cofre-brand .brand-logo {
+  height: 38px; width: auto; flex-shrink: 0;
+}
+body.cofre-shell .cofre-brand .brand-text { min-width: 0; flex: 1; }
+body.cofre-shell .cofre-brand .brand-text .name {
+  font-size: 13px; line-height: 1.1; white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis;
+}
+
+/* FIX: pfb (period filter) — quando renderizado dentro de page-body, era loose */
+body.cofre-shell .pfb {
+  display: flex; flex-wrap: wrap; gap: 10px; align-items: center;
+}
+body.cofre-shell .pfb-inner {
+  display: flex; flex-wrap: wrap; gap: 10px; align-items: center; width: 100%;
+}
+body.cofre-shell .pfb-periods { display: inline-flex; gap: 4px; flex-wrap: wrap; }
+body.cofre-shell .pfb-sep {
+  width: 1px; height: 22px; background: var(--border); margin: 0 4px;
+}
+
 /* Quando shell Cofre não ativo (rollback), restaura grid antigo (não faz nada) */
 
 </style>
