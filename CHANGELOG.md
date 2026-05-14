@@ -4,6 +4,48 @@ Lista das melhorias do sistema de BI da R2 Soluções para o Grupo Pinto Cerquei
 
 ---
 
+## v4.76-cofre-fase1 · 14/mai/2026 · branch `feat/cofre-v4.76`
+
+**Cofre Design System — Fase 1: shell + tokens + sidebar + toggles**
+
+Primeira fase da evolução visual (proposta A · Cofre 🏛️). Inspirado em Stripe Dashboard + Nubank precision. Magnitude: evolução média preservando estrutura.
+
+### Aplicado nesta fase
+
+**Tokens de design.** Substituídos os tokens flat antigos por uma paleta escalada:
+- `--gpc-navy-50..900` (escala de 10 tons derivada da logo institucional)
+- `--gpc-orange-50..700` (escala do laranja-acento)
+- Neutros `--n-0..900` com leve viés navy
+- Semânticos (success/warning/danger/info/violet) com 50/500/700
+- Mantidos todos os aliases legacy (`--bg`, `--surface`, `--accent`, `--text`, etc.) para o CSS existente continuar funcionando enquanto migrado nas próximas fases
+
+**Tema escuro opcional.** `[data-theme="dark"]` reescreve aliases para fundo navy-900 e laranja como protagonista. Persistido em `localStorage.gpc-theme`.
+
+**Densidade ajustável.** `[data-density="compact"]` reduz `--row-h`, `--row-pad-*`, `--card-pad` e `--kpi-pad`. Persistido em `localStorage.gpc-density`.
+
+**Lucide icons** via CDN (`unpkg.com/lucide@0.469.0`). Substituição dos SVGs ad-hoc da sidebar — fase 2/3 substitui o resto.
+
+**Shell injetado via JS.**  `_cofreCriarShell()` cria:
+- Sidebar lateral fixa (240px) com brand grande + base pill + nav agrupada (4 grupos: Compras / Vendas / Análise / Sistema) + R2 no rodapé
+- Topbar slim (48px) com breadcrumb dinâmico + botões de tema/densidade/export/avatar
+
+**Routing preservado.** A nova sidebar Cofre dispara `.click()` programático nos `.sb-link[data-p="…"]` legados — todo o sistema de permissões, rendering, filtros e cache continua intacto. Itens com `display:none` (sem permissão) são automaticamente ocultados na nova sidebar.
+
+**Avatar + base badge dinâmicos.** Iniciais do usuário extraídas da sessão; nome da filial ativa atualizado no badge da sidebar.
+
+### Como ativar e rollback
+
+O shell Cofre liga sozinho ao carregar (adiciona `body.cofre-shell`). Para rollback rápido em produção, basta remover essa classe via console: `document.body.classList.remove('cofre-shell')`.
+
+### Backlog Fase 2-5 (não nesta release)
+
+- Fase 2: KPI cards minimal + tabela editorial + card containers
+- Fase 3: Hero pages (Diag. Produto/Fornecedor) + breadcrumb da pilha
+- Fase 4: Chart.js paleta restrita + ticks/grid no estilo Cofre
+- Fase 5: Tela de Login split-screen (proposta B/Painel) + QA mobile + a11y AA
+
+---
+
 ## v4.75-comercial · 14/mai/2026
 
 **Sistema preparado para atualizações diárias — auditoria sênior + correções**
