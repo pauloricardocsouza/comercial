@@ -1622,7 +1622,9 @@ body.cofre-shell .main-content { width: 100%; }
   font-family: var(--font-mono); font-size: 9px; color: var(--text-muted);
   margin-top: 3px; text-transform: uppercase; letter-spacing: 0.14em;
 }
-[data-theme="dark"] .cofre-brand .brand-logo { filter: brightness(0) invert(1); }
+/* v4.76 fix6: logo colorido oficial — em dark mode aplicamos só leve clareamento
+   pra preservar as cores institucionais (navy + laranja). */
+[data-theme="dark"] .cofre-brand .brand-logo { filter: brightness(1.15) contrast(1.05); }
 
 .cofre-base {
   padding: 10px 18px 14px; border-bottom: 1px solid var(--border);
@@ -2202,18 +2204,32 @@ body.cofre-shell .ph { padding: 22px 0 6px; }
 body.cofre-shell .ph-sep { margin-bottom: 18px; }
 
 /* FIX: brand-text pode quebrar feio em sidebar 240px */
+/* v4.76 fix6: brand vertical — logo grande no topo, texto pequeno embaixo */
 body.cofre-shell .cofre-brand {
-  align-items: center;
-  gap: 12px;
-  padding: 16px 18px 12px;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 16px 18px 14px;
 }
 body.cofre-shell .cofre-brand .brand-logo {
-  height: 38px; width: auto; flex-shrink: 0;
+  height: auto; width: 100%; max-width: 160px;
+  display: block;
 }
-body.cofre-shell .cofre-brand .brand-text { min-width: 0; flex: 1; }
+body.cofre-shell .cofre-brand .brand-text {
+  min-width: 0; width: 100%;
+  display: flex; flex-direction: row; justify-content: space-between;
+  align-items: baseline; gap: 8px;
+}
 body.cofre-shell .cofre-brand .brand-text .name {
-  font-size: 13px; line-height: 1.1; white-space: nowrap;
-  overflow: hidden; text-overflow: ellipsis;
+  font-size: 11px; line-height: 1.1;
+  font-family: var(--font-mono); font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.1em;
+  color: var(--text-muted);
+}
+body.cofre-shell .cofre-brand .brand-text .sub {
+  font-family: var(--font-mono); font-size: 9.5px; font-weight: 700;
+  color: var(--text-faint);
+  text-transform: uppercase; letter-spacing: 0.1em;
 }
 
 /* FIX: pfb (period filter) — quando renderizado dentro de page-body, era loose */
@@ -2662,10 +2678,10 @@ body.cofre-shell .pfb-sep {
      JS principal · dividido em 5 arquivos pela auditoria v4.6
      Ordem importa: core declara as globais; render-* dependem de core.
      ════════════════════════════════════════════════════════════════════════════ -->
-<script src="js/core.js?v=4.76.5"></script>
-<script src="js/render-compras.js?v=4.76.5"></script>
-<script src="js/render-vendas.js?v=4.76.5"></script>
-<script src="js/render-outros.js?v=4.76.5"></script>
-<script src="js/admin.js?v=4.76.5"></script>
+<script src="js/core.js?v=4.76.6"></script>
+<script src="js/render-compras.js?v=4.76.6"></script>
+<script src="js/render-vendas.js?v=4.76.6"></script>
+<script src="js/render-outros.js?v=4.76.6"></script>
+<script src="js/admin.js?v=4.76.6"></script>
 </body>
 </html>

@@ -216,7 +216,7 @@ const AUTH_MODE = 'firebase'; // 'mock' | 'firebase'
 // Convenção:
 //   X.x → alteração grande (quebra de compatibilidade, nova feature grande)
 //   x.X → alteração suave (fix, ajuste visual, pequeno refinamento)
-const APP_VERSION = '4.76-cofre-fix5';
+const APP_VERSION = '4.76-cofre-fix6';
 
 // ================================================================
 // HELPERS DE CHART.JS — compatíveis com Safari/iOS (sem spread ops)
@@ -6929,16 +6929,20 @@ function _cofreInitMobile(){
 // Cria os elementos do shell Cofre via JS (mais seguro que mexer no HTML).
 function _cofreCriarShell(){
   if(document.getElementById('sidebar-cofre')) return; // idempotente
-  // Brand image existente no topo: tenta puxar o src do .brand-logo legado
+  // Brand: prefere o SVG colorido oficial em assets/gpc-color.svg.
+  // Se não existir (404), o navegador dispara onerror e cai no base64 legado.
   var legadoImg = document.querySelector('header.topbar .brand-logo');
-  var brandSrc = legadoImg ? legadoImg.getAttribute('src') : '';
+  var fallbackSrc = legadoImg ? legadoImg.getAttribute('src') : '';
+  var brandHtml = '<img class="brand-logo" src="assets/gpc-color.svg" alt="GPC · Grupo Pinto Cerqueira"'
+    + (fallbackSrc ? ' onerror="this.onerror=null;this.src=\''+fallbackSrc.replace(/'/g,'&#39;')+'\';"' : ' onerror="this.style.display=\'none\';"')
+    + '>';
   // Sidebar
   var aside = document.createElement('aside');
   aside.id = 'sidebar-cofre';
   aside.className = 'cofre-sidebar';
   aside.innerHTML = ''
     + '<div class="cofre-brand">'
-    +   (brandSrc ? '<img class="brand-logo" src="'+brandSrc+'" alt="GPC" onerror="this.style.display=\'none\'">' : '')
+    +   brandHtml
     +   '<div class="brand-text">'
     +     '<span class="name">Comercial GPC</span>'
     +     '<span class="sub">R2 · v4.76</span>'
