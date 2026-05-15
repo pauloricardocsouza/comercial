@@ -216,7 +216,7 @@ const AUTH_MODE = 'firebase'; // 'mock' | 'firebase'
 // Convenção:
 //   X.x → alteração grande (quebra de compatibilidade, nova feature grande)
 //   x.X → alteração suave (fix, ajuste visual, pequeno refinamento)
-const APP_VERSION = '4.76-cofre-fix15';
+const APP_VERSION = '4.76-cofre-fix16';
 
 // ================================================================
 // HELPERS DE CHART.JS — compatíveis com Safari/iOS (sem spread ops)
@@ -7072,12 +7072,159 @@ function _cofreCriarShell(){
     // Reanexar elementos preservados se existirem
     // v4.76 fix14: btn-xlsx removido do topbar (apenas PDF fica disponivel)
     if(btnXlsx) btnXlsx.remove();
-    if(btnPdf)  ct.querySelector('.cofre-tb-right').insertBefore(btnPdf,  ct.querySelector('#theme-toggle'));
     if(filSum)  ct.querySelector('.cofre-tb-right').insertBefore(filSum,  ct.querySelector('#theme-toggle'));
     if(snapInfo) ct.querySelector('.cofre-tb-right').insertBefore(snapInfo, ct.querySelector('#theme-toggle'));
-    // Trocar visual do botão PDF pro estilo cofre-icon-btn (mantém id e listener)
-    if(btnPdf){  btnPdf.className  = 'cofre-icon-btn'; btnPdf.innerHTML  = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>'; btnPdf.title  = 'Exportar PDF'; }
+    // v4.76 fix16: descarta o btn-pdf antigo (que só fazia window.print) e cria
+    // um novo botão com handler robusto via html2canvas + jsPDF.
+    if(btnPdf) btnPdf.remove();
+    var newPdfBtn = document.createElement('button');
+    newPdfBtn.id = 'btn-pdf';
+    newPdfBtn.className = 'cofre-icon-btn';
+    newPdfBtn.title = 'Exportar página em PDF (colorido, com cabeçalho GPC e data/hora)';
+    newPdfBtn.setAttribute('aria-label', 'Exportar página em PDF');
+    newPdfBtn.innerHTML = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>';
+    newPdfBtn.addEventListener('click', _cofreExportPagePdf);
+    ct.querySelector('.cofre-tb-right').insertBefore(newPdfBtn, ct.querySelector('#theme-toggle'));
   }
+}
+
+// v4.76 fix16: exporta a página ativa em PDF colorido, sem distorção,
+// com cabeçalho (logo GPC + nome da página) e rodapé (data/hora + paginação).
+// Usa html2canvas pra capturar o DOM real (mantém cores, gráficos, tabelas) e
+// jsPDF pra empilhar em A4 retrato, fatiando alturas grandes em múltiplas páginas.
+function _cofreExportPagePdf(){
+  var jp = window.jspdf || window.jsPDF || (window.jspdf && window.jspdf.jsPDF);
+  var JsPDF = (window.jspdf && window.jspdf.jsPDF) || window.jsPDF;
+  if(!JsPDF || typeof html2canvas !== 'function'){
+    if(typeof _toast === 'function') _toast('Bibliotecas de PDF não carregaram. Recarregue a página.', 'erro');
+    else alert('Bibliotecas de PDF não carregaram. Recarregue a página.');
+    return;
+  }
+  var page = document.querySelector('.page.active');
+  if(!page){
+    if(typeof _toast === 'function') _toast('Nenhuma página ativa para exportar.', 'aviso');
+    return;
+  }
+  if(typeof _toast === 'function') _toast('Gerando PDF…', 'info');
+
+  // Nome da página (do .ph h2 + .pk) pra colocar no cabeçalho do PDF
+  var phK = page.querySelector('.ph .pk');
+  var phH = page.querySelector('.ph h2');
+  var nomePagina = ((phK ? phK.textContent.trim() : '') + (phK && phH ? ' · ' : '') + (phH ? phH.textContent.trim() : '')) || 'Comercial GPC';
+
+  // Detecta tema pra escolher fundo correto da captura
+  var isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+  var bgColor = isDark ? '#0f1620' : '#ffffff';
+
+  // Captura via html2canvas com DPI 2x pra texto nítido
+  html2canvas(page, {
+    backgroundColor: bgColor,
+    scale: 2,
+    useCORS: true,
+    allowTaint: true,
+    logging: false,
+    windowWidth: page.scrollWidth,
+    windowHeight: page.scrollHeight,
+    onclone: function(clonedDoc){
+      // Garante que a página clonada esteja visível e sem transforms
+      var clonedPage = clonedDoc.querySelector('.page.active');
+      if(clonedPage){
+        clonedPage.style.display = 'block';
+        clonedPage.style.transform = 'none';
+      }
+      // Esconde sticky/fixed que não devem aparecer no PDF
+      var s = clonedDoc.createElement('style');
+      s.textContent = '.cofre-sidebar,header.topbar,#restoreBtn,#toastStack,#userMenuDropdown,.nav-back-fab{display:none!important}';
+      clonedDoc.head.appendChild(s);
+    }
+  }).then(function(canvas){
+    var pdf = new JsPDF({orientation:'portrait', unit:'mm', format:'a4', compress:true});
+    var pageW = pdf.internal.pageSize.getWidth();   // 210mm
+    var pageH = pdf.internal.pageSize.getHeight();  // 297mm
+    var marginX = 10;
+    var headerH = 18;  // altura reservada pro cabeçalho (mm)
+    var footerH = 10;  // altura reservada pro rodapé (mm)
+    var contentW = pageW - marginX * 2;
+    var contentH = pageH - headerH - footerH;
+
+    // Mantém aspect ratio: largura do canvas → contentW; altura proporcional
+    var imgW = contentW;
+    var imgH = canvas.height * imgW / canvas.width;
+
+    // Carrega logo GPC (PNG já existente). Em dark, usa branco; no PDF sempre cor.
+    var logo = new Image();
+    logo.onload = function(){ desenhar(logo); };
+    logo.onerror = function(){ desenhar(null); };
+    logo.src = 'assets/gpc-color.png';
+
+    function desenhar(logoImg){
+      var dataUrl = canvas.toDataURL('image/jpeg', 0.92);
+      var totalPages = Math.ceil(imgH / contentH);
+      var dataHora = new Date().toLocaleString('pt-BR', { day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit' });
+
+      for(var p = 0; p < totalPages; p++){
+        if(p > 0) pdf.addPage();
+
+        // Cabeçalho — barra fina + logo + nome da página
+        if(logoImg){
+          var ratio = logoImg.width / logoImg.height;
+          var lH = 11; // altura do logo em mm
+          var lW = lH * ratio;
+          try { pdf.addImage(logoImg, 'PNG', marginX, 4, lW, lH); } catch(e){}
+        }
+        pdf.setFont('helvetica','bold');
+        pdf.setFontSize(11);
+        pdf.setTextColor(46, 71, 111); // navy GPC
+        pdf.text(nomePagina, pageW - marginX, 10, { align:'right' });
+        pdf.setFont('helvetica','normal');
+        pdf.setFontSize(8);
+        pdf.setTextColor(120,120,120);
+        pdf.text('Inteligência Comercial · Grupo Pinto Cerqueira', pageW - marginX, 15, { align:'right' });
+        // linha laranja fina abaixo do cabeçalho
+        pdf.setDrawColor(245, 134, 52);
+        pdf.setLineWidth(0.4);
+        pdf.line(marginX, headerH - 1, pageW - marginX, headerH - 1);
+
+        // Corpo — fatia da imagem correspondente à página p
+        var sliceYmm = p * contentH;
+        var remainingMm = imgH - sliceYmm;
+        var thisSliceMm = Math.min(contentH, remainingMm);
+        // Converte para px do canvas
+        var pxPerMm = canvas.width / imgW;
+        var srcY = Math.floor(sliceYmm * pxPerMm);
+        var srcH = Math.floor(thisSliceMm * pxPerMm);
+        // Cria canvas temporário com a fatia, mantendo proporção
+        var tmp = document.createElement('canvas');
+        tmp.width = canvas.width;
+        tmp.height = srcH;
+        var tctx = tmp.getContext('2d');
+        tctx.fillStyle = bgColor;
+        tctx.fillRect(0, 0, tmp.width, tmp.height);
+        tctx.drawImage(canvas, 0, srcY, canvas.width, srcH, 0, 0, canvas.width, srcH);
+        var sliceData = tmp.toDataURL('image/jpeg', 0.92);
+        pdf.addImage(sliceData, 'JPEG', marginX, headerH, contentW, thisSliceMm, undefined, 'FAST');
+
+        // Rodapé — data/hora + paginação
+        pdf.setDrawColor(220,220,220);
+        pdf.setLineWidth(0.2);
+        pdf.line(marginX, pageH - footerH + 2, pageW - marginX, pageH - footerH + 2);
+        pdf.setFont('helvetica','normal');
+        pdf.setFontSize(8);
+        pdf.setTextColor(110,110,110);
+        pdf.text('Exportado em ' + dataHora, marginX, pageH - 4);
+        pdf.text('Página ' + (p + 1) + ' de ' + totalPages, pageW - marginX, pageH - 4, { align:'right' });
+      }
+
+      var stamp = (new Date()).toISOString().slice(0,16).replace(/[-:T]/g,'');
+      var nomeArq = 'ComercialGPC_' + (nomePagina.replace(/[^A-Za-z0-9]+/g,'_').slice(0,40)) + '_' + stamp + '.pdf';
+      pdf.save(nomeArq);
+      if(typeof _toast === 'function') _toast('PDF gerado com sucesso.', 'sucesso');
+      if(typeof _auditLog === 'function') _auditLog('export_pdf_pagina', { pagina: page.id, arquivo: nomeArq });
+    }
+  }).catch(function(err){
+    console.error('[PDF] Falha ao gerar:', err);
+    if(typeof _toast === 'function') _toast('Erro ao gerar PDF. Veja o console.', 'erro');
+  });
 }
 
 // v4.76 fix7: revertido — o sistema original (antes do Cofre) renderizava
