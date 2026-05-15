@@ -216,7 +216,7 @@ const AUTH_MODE = 'firebase'; // 'mock' | 'firebase'
 // Convenção:
 //   X.x → alteração grande (quebra de compatibilidade, nova feature grande)
 //   x.X → alteração suave (fix, ajuste visual, pequeno refinamento)
-const APP_VERSION = '4.76-cofre-fix24';
+const APP_VERSION = '4.76-cofre-fix25';
 
 // ================================================================
 // HELPERS DE CHART.JS — compatíveis com Safari/iOS (sem spread ops)
@@ -2402,7 +2402,20 @@ function _loadDadosModulares(baseSlug){
   _fetchModular('financeiro_'+baseSlug+'.json',   'F',   ['financeiro','executivo','home']);
   _fetchModular('recebimentos_'+baseSlug+'.json', 'R',   ['recebimentos','financeiro','executivo']);
   _fetchModular('verbas_'+baseSlug+'.json',       'Vb',  ['verbas','fornecedores']);
-  // Cubo NÃO é carregado aqui — só sob demanda em _carregarCuboLazy().
+  // v4.76 fix25: Cubo OLAP (~10MB) — pré-fetch silencioso após o boot, quando
+  // o navegador ficar ocioso. Antes era totalmente lazy (1ª abertura de
+  // Fornecedores / Análise Dinâmica esperava o download completo). Agora o
+  // cubo já chega "quente" em segundo plano e a navegação fica instantânea.
+  function _prefetchCubo(){
+    if(typeof _carregarCuboLazy === 'function' && typeof Cu !== 'undefined' && !Cu){
+      try { _carregarCuboLazy().catch(function(){ /* falha silenciosa */ }); } catch(e){}
+    }
+  }
+  if(typeof window.requestIdleCallback === 'function'){
+    window.requestIdleCallback(_prefetchCubo, {timeout: 4000});
+  } else {
+    setTimeout(_prefetchCubo, 2500);
+  }
 }
 
 function _renderSnapshotBanner(){
