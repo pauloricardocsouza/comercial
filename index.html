@@ -6,8 +6,8 @@
 <meta name="robots" content="noindex, nofollow">
 <title>Comercial GPC · R2 Soluções</title>
 <!-- v4.76 fix7: favicon GPC (navy + GPC branco + arco laranja) -->
-<link rel="icon" type="image/svg+xml" href="assets/favicon.svg?v=4.76.16">
-<link rel="apple-touch-icon" href="assets/favicon.svg?v=4.76.16">
+<link rel="icon" type="image/svg+xml" href="assets/favicon.svg?v=4.76.17">
+<link rel="apple-touch-icon" href="assets/favicon.svg?v=4.76.17">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <!-- DNS prefetch para Firebase: encurta o handshake de auth/firestore -->
@@ -1967,19 +1967,40 @@ body.cofre-shell .raiox-hero .meta-pair .k {
 body.cofre-shell .raiox-hero .meta-pair .v { font-weight: 600; color: var(--text); }
 
 /* Search hero (Diag. Produto / Diag. Fornecedor — antes do raio-X carregar) */
+/* v4.76 fix17: overflow visible pra não clipar o .srch-drop (dropdown de resultados);
+   o glow do ::after agora é interno (top:0 right:0) e não vaza do container */
 body.cofre-shell .srch-hero {
   background: linear-gradient(135deg, var(--gpc-navy-600) 0%, var(--gpc-navy-700) 100%);
   border: 1px solid var(--gpc-navy-700);
   border-radius: var(--r-xl); padding: 28px 28px 22px;
   margin-bottom: 18px;
-  position: relative; overflow: hidden;
+  position: relative; overflow: visible;
 }
 body.cofre-shell .srch-hero::after {
-  content: ""; position: absolute; top: -60px; right: -60px;
-  width: 280px; height: 280px;
-  background: radial-gradient(circle, rgba(245,134,52,0.18), transparent 70%);
+  content: ""; position: absolute; top: 0; right: 0;
+  width: 280px; height: 100%;
+  background: radial-gradient(circle at 90% 50%, rgba(245,134,52,0.18), transparent 70%);
+  border-radius: var(--r-xl);
   pointer-events: none;
 }
+/* Dropdown de resultados — garante visibilidade acima do hero e contraste correto */
+body.cofre-shell .srch-drop {
+  background: var(--surface) !important;
+  color: var(--text);
+  border: 1px solid var(--border) !important;
+  box-shadow: var(--sh-lg) !important;
+  z-index: 200 !important;
+}
+body.cofre-shell .srch-drop .drp-hdr {
+  background: var(--surface-2);
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border);
+}
+body.cofre-shell .srch-drop .sri { color: var(--text); border-bottom: 1px solid var(--border); }
+body.cofre-shell .srch-drop .sri:hover { background: var(--accent-bg); }
+body.cofre-shell .srch-drop .sri .si { background: var(--accent-bg); color: var(--accent-text); }
+body.cofre-shell .srch-drop .sri .sm { color: var(--text); }
+body.cofre-shell .srch-drop .sri .ss { color: var(--text-muted); }
 body.cofre-shell .srch-hero input {
   background: rgba(255,255,255,0.95); border: 2px solid rgba(245,134,52,0.6);
   border-radius: 10px; padding: 12px 16px;
@@ -2873,10 +2894,10 @@ body.cofre-shell .pfb-sep {
      JS principal · dividido em 5 arquivos pela auditoria v4.6
      Ordem importa: core declara as globais; render-* dependem de core.
      ════════════════════════════════════════════════════════════════════════════ -->
-<script src="js/core.js?v=4.76.16"></script>
-<script src="js/render-compras.js?v=4.76.16"></script>
-<script src="js/render-vendas.js?v=4.76.16"></script>
-<script src="js/render-outros.js?v=4.76.16"></script>
-<script src="js/admin.js?v=4.76.16"></script>
+<script src="js/core.js?v=4.76.17"></script>
+<script src="js/render-compras.js?v=4.76.17"></script>
+<script src="js/render-vendas.js?v=4.76.17"></script>
+<script src="js/render-outros.js?v=4.76.17"></script>
+<script src="js/admin.js?v=4.76.17"></script>
 </body>
 </html>
