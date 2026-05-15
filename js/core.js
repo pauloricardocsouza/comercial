@@ -216,7 +216,7 @@ const AUTH_MODE = 'firebase'; // 'mock' | 'firebase'
 // Convenção:
 //   X.x → alteração grande (quebra de compatibilidade, nova feature grande)
 //   x.X → alteração suave (fix, ajuste visual, pequeno refinamento)
-const APP_VERSION = '4.76-cofre-fix18';
+const APP_VERSION = '4.76-cofre-fix19';
 
 // ================================================================
 // HELPERS DE CHART.JS — compatíveis com Safari/iOS (sem spread ops)
@@ -2488,14 +2488,19 @@ function _renderSeletorFilial(){
         html += '<span style="width:14px;flex-shrink:0;"></span>';
       }
 
-      // Ícone de tipo
+      // Ícone de tipo (v4.76 fix19: override por sigla — mercado vs pallet)
+      // Pallet SVG inline pra CP1/CP40 (atacado); mercado emoji pra ATP/CP3/CP5
+      const _palletSvg = '<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="none" style="vertical-align:middle;"><rect x="2" y="12" width="20" height="3" rx="0.5"/><rect x="3" y="16" width="2.5" height="3.5" rx="0.3"/><rect x="10.75" y="16" width="2.5" height="3.5" rx="0.3"/><rect x="18.5" y="16" width="2.5" height="3.5" rx="0.3"/><rect x="6" y="7" width="12" height="5" rx="0.5" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>';
       let icon = '•';
-      if(f.tipo === 'raiz') icon = '⌂';
+      const sigU = (f.sigla||'').toUpperCase();
+      if(sigU === 'ATP' || sigU === 'CP3' || sigU === 'CP5') icon = '🏪';
+      else if(sigU === 'CP1' || sigU === 'CP40') icon = _palletSvg;
+      else if(f.tipo === 'raiz') icon = '⌂';
       else if(f.tipo === 'base') icon = '◆';
-      else if(f.tipo_negocio === 'atacado') icon = '⚙';
+      else if(f.tipo_negocio === 'atacado') icon = _palletSvg;
       else if(f.tipo_negocio === 'varejo') icon = '🏪';
 
-      html += '<span style="font-size:13px;width:14px;text-align:center;">' + icon + '</span>';
+      html += '<span style="font-size:13px;width:16px;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;color:#2E476F;">' + icon + '</span>';
       html += '<span style="flex:1;font-size:13px;">' + esc(f.nome) + '</span>';
 
       if(isAtual){
