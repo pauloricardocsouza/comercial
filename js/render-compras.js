@@ -100,10 +100,7 @@ function renderEstoqueNovo(){
 
   html += '<div class="kg" style="grid-template-columns:repeat(6,1fr);margin-bottom:14px;" id="kg-est-novo"></div>';
 
-  html += '<div class="cc"><div class="cct">Distribuição por status</div>'
-       +    '<div class="ccs">SKUs e capital imobilizado por classificação de giro</div>'
-       +    '<div style="height:280px;margin-top:8px;"><canvas id="c-est-status"></canvas></div>'
-       + '</div>';
+  // v4.76 fix23: gráfico 'Distribuição por status' removido a pedido do usuário.
 
   // Estoque por departamento · tabela hierárquica drill-down
   // Estrutura: agregar por (depto.cod) → (secao.cod) → (categoria.cod)
@@ -172,16 +169,7 @@ function renderEstoqueNovo(){
     {l:'SKUs parados/mortos',v:fI(((r.por_status&&r.por_status.PARADO&&r.por_status.PARADO.skus)||0)+((r.por_status&&r.por_status.MORTO&&r.por_status.MORTO.skus)||0)),s:'Sem giro',cls:'dn'},
   ]);
 
-  const statusOrder = ['ATIVO','CRITICO','PARADO','MORTO','ZERADO'];
-  const statusCols = {ATIVO:_PAL.ok, CRITICO:_PAL.wn, PARADO:_PAL.hl, MORTO:_PAL.dn, ZERADO:'#94a3b8'};
-  const stData = statusOrder.map(function(s){return r.por_status&&r.por_status[s]?r.por_status[s].vl_custo:0;});
-  const stLabels = statusOrder.map(function(s){return s+' ('+fI(r.por_status&&r.por_status[s]?r.por_status[s].skus:0)+' SKUs)';});
-  const stCols = statusOrder.map(function(s){return statusCols[s];});
-  mkC('c-est-status',{type:'doughnut',
-    data:{labels:stLabels,datasets:[{data:stData,backgroundColor:stCols,borderWidth:2,borderColor:'#fff'}]},
-    options:{responsive:true,maintainAspectRatio:false,
-      plugins:{legend:{position:'right',labels:{padding:8,usePointStyle:true,boxWidth:8,font:{size:10}}},
-               tooltip:{callbacks:{label:function(ctx){return ctx.label+': '+fK(ctx.raw)+(teCusto>0?' ('+fP(ctx.raw/teCusto*100)+')':'');}}}}}});
+  // v4.76 fix23: bloco do doughnut 'Distribuição por status' removido a pedido do usuário.
 
   // ─── Tabela "Estoque por departamento" (drill-down · v4.71) ────────
   // Modelo igual ao Departamentos: nível depto → seção → categoria, com
@@ -690,7 +678,7 @@ function renderExcessoNovo(){
          +      '<th class="L" style="width:24px;">#</th>'
          +      '<th class="L">Fornecedor</th>'
          +      '<th>SKUs em excesso</th>'
-         +      '<th>Vl imobilizado (custo)</th>'
+         +      '<th>Valor estoque (em excesso)</th>'
          +      '<th>Vl em preço de venda</th>'
          +      '<th>Críticos</th>'
          +      '<th>Parados</th>'
@@ -760,7 +748,7 @@ function renderExcessoNovo(){
   // ─── v4.69: registra datasets para exportação PDF/XLSX ────────────
   const _excDsForn = {
     titulo: 'Excesso · fornecedores top 50',
-    cols: ['#','Fornecedor','SKUs em excesso','Vl imobilizado (custo)','Vl em preço de venda','Críticos','Parados','Mortos'],
+    cols: ['#','Fornecedor','SKUs em excesso','Valor estoque (em excesso)','Vl em preço de venda','Críticos','Parados','Mortos'],
     rows: fornsExc.map(function(f, i){
       return [i+1, f.nome||'', f.skus||0, f.vl_custo||0, f.vl_preco||0, f.criticos||0, f.parados||0, f.mortos||0];
     }),
@@ -795,7 +783,7 @@ function renderExcessoNovo(){
 
   document.getElementById('kg-exc-novo').innerHTML = kgHtml([
     {l:'SKUs em excesso',v:fI(excessos.length),s:fP(pctSku)+' do total cadastrado',cls:'dn'},
-    {l:'Vl imobilizado (custo)',v:fK(totVlCusto),s:(pctVl!==null?fP(pctVl)+' do estoque total':'estoque total não disponível'),cls:'dn'},
+    {l:'Valor estoque (em excesso)',v:fK(totVlCusto),s:(pctVl!==null?fP(pctVl)+' do estoque total':'estoque total não disponível'),cls:'dn'},
     {l:'Vl em preço de venda',v:fK(totVlPreco),s:'Se desovasse a preço cheio'},
     {l:'Status PARADO',v:fI(excessos.filter(function(p){return _status(p)==='PARADO';}).length),s:'Sem venda > 90 dias',cls:'wn'},
     {l:'Status MORTO',v:fI(excessos.filter(function(p){return _status(p)==='MORTO';}).length),s:'Sem venda > 180 dias',cls:'dn'},
@@ -2540,19 +2528,26 @@ function renderFinanceiroNovo(){
   const hojeStr = hoje.toISOString().substring(0,10);
   const venc = titulos.filter(function(t){return t.data_venc && t.data_venc < hojeStr;});
 
-  // v4.69: Calendário de pagamentos (conta 10001 - COMPRA DE MERCADORIAS)
-  html += '<div class="cc">'
-       +   '<div class="cch">'
-       +     '<div><div class="cct">Calendário de pagamentos · COMPRA DE MERCADORIAS (10001)</div>'
-       +       '<div class="ccs">Valor a pagar por dia · sábado/domingo somam na segunda-feira · cor mais escura = dia com maior valor</div></div>'
-       +     '<div style="display:flex;align-items:center;gap:6px;">'
-       +       '<button id="cal-pg-prev" type="button" style="padding:5px 10px;border:1px solid var(--border-strong);border-radius:6px;background:var(--surface);cursor:pointer;font-weight:700;">‹</button>'
-       +       '<span id="cal-pg-label" style="font-size:12px;font-weight:700;min-width:96px;text-align:center;"></span>'
-       +       '<button id="cal-pg-next" type="button" style="padding:5px 10px;border:1px solid var(--border-strong);border-radius:6px;background:var(--surface);cursor:pointer;font-weight:700;">›</button>'
-       +       '<button id="cal-pg-hoje" type="button" style="padding:5px 10px;border:1px solid var(--border-strong);border-radius:6px;background:var(--surface);cursor:pointer;font-size:11px;font-weight:600;">Hoje</button>'
+  // v4.76 fix23: Calendário de pagamentos lado a lado com Top datas (50/50)
+  html += '<div class="row2eq" style="align-items:stretch;">'
+       +   '<div class="cc" style="margin-bottom:0;">'
+       +     '<div class="cch">'
+       +       '<div><div class="cct">Calendário de pagamentos · COMPRA DE MERCADORIAS (10001)</div>'
+       +         '<div class="ccs">Valor a pagar por dia · sáb/dom somam na seg · cor mais escura = maior valor</div></div>'
+       +       '<div style="display:flex;align-items:center;gap:6px;">'
+       +         '<button id="cal-pg-prev" type="button" style="padding:5px 10px;border:1px solid var(--border-strong);border-radius:6px;background:var(--surface);cursor:pointer;font-weight:700;">‹</button>'
+       +         '<span id="cal-pg-label" style="font-size:12px;font-weight:700;min-width:96px;text-align:center;"></span>'
+       +         '<button id="cal-pg-next" type="button" style="padding:5px 10px;border:1px solid var(--border-strong);border-radius:6px;background:var(--surface);cursor:pointer;font-weight:700;">›</button>'
+       +         '<button id="cal-pg-hoje" type="button" style="padding:5px 10px;border:1px solid var(--border-strong);border-radius:6px;background:var(--surface);cursor:pointer;font-size:11px;font-weight:600;">Hoje</button>'
+       +       '</div>'
        +     '</div>'
+       +     '<div id="cal-pg-wrap" style="margin-top:10px;"></div>'
        +   '</div>'
-       +   '<div id="cal-pg-wrap" style="margin-top:10px;"></div>'
+       +   '<div class="cc" style="margin-bottom:0;display:flex;flex-direction:column;">'
+       +     '<div class="cct">Top datas · valor a pagar</div>'
+       +     '<div class="ccs">Calculado sobre o mês exibido no calendário</div>'
+       +     '<div id="cal-pg-tops" style="margin-top:10px;flex:1;display:flex;flex-direction:column;gap:14px;"></div>'
+       +   '</div>'
        + '</div>';
 
   // v4.69: Quadro 99912 + 99907 por mês em 2026
@@ -2803,16 +2798,50 @@ function _renderCalendarioPagamentos(titulosAbertos){
       const borda = ehHoje ? '2px solid var(--accent)' : '1px solid var(--border)';
       // v4.73: texto branco quando fundo azul fica escuro
       const corTxt = d.valor > 0 && _intensidade(d.valor) > 0.45 ? '#fff' : 'var(--text)';
+      // v4.76 fix23: valores maiores dentro de cada célula
       h += '<div title="'+esc(d.key)+(d.valor>0?(' · '+fB(d.valor,2)+' · '+fI(d.titulos)+' títulos'):' · sem títulos')+(ehFds?' · fim de semana':'')+'" '
-         + 'style="aspect-ratio:2.2/1;min-height:50px;max-height:84px;background:'+bg+';border:'+borda+';border-radius:5px;'
-         + 'padding:4px 6px;display:flex;flex-direction:column;justify-content:space-between;'
-         + 'font-size:11px;color:'+corTxt+';overflow:hidden;">'
-         +   '<div style="font-weight:700;font-size:12px;">'+d.d+'</div>'
-         +   (d.valor > 0 ? '<div style="font-size:10.5px;font-weight:700;line-height:1.1;text-align:right;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+fK(d.valor)+'</div>' : (ehFds?'<div style="font-size:9px;color:var(--text-muted);">—</div>':''))
+         + 'style="aspect-ratio:1.7/1;min-height:62px;background:'+bg+';border:'+borda+';border-radius:5px;'
+         + 'padding:6px 8px;display:flex;flex-direction:column;justify-content:space-between;'
+         + 'font-size:12px;color:'+corTxt+';overflow:hidden;">'
+         +   '<div style="font-weight:700;font-size:13px;">'+d.d+'</div>'
+         +   (d.valor > 0 ? '<div style="font-size:13.5px;font-weight:800;line-height:1.1;text-align:right;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+fK(d.valor)+'</div>' : (ehFds?'<div style="font-size:10px;color:var(--text-muted);">—</div>':''))
          + '</div>';
     });
     h += '</div>';
     wrap.innerHTML = h;
+
+    // v4.76 fix23: renderiza painel Top datas (maior / menor valor) do mês exibido
+    const tops = document.getElementById('cal-pg-tops');
+    if(tops){
+      const comValor = dias.filter(function(x){return x.valor > 0;});
+      const top5Maior = comValor.slice().sort(function(a,b){return b.valor - a.valor;}).slice(0, 5);
+      const top5Menor = comValor.slice().sort(function(a,b){return a.valor - b.valor;}).slice(0, 5);
+      const _diaSemAbrev = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
+      function _renderTopList(titulo, lista, corBarra){
+        if(!lista.length){
+          return '<div><div style="font-size:11px;font-weight:700;color:var(--text);margin-bottom:6px;">'+titulo+'</div>'
+               + '<div style="font-size:11px;color:var(--text-muted);padding:6px 0;">— Sem títulos no mês —</div></div>';
+        }
+        const maxVal = lista[0].valor;
+        let h2 = '<div><div style="font-size:11px;font-weight:700;color:var(--text);margin-bottom:6px;">'+titulo+'</div>';
+        h2 += '<div style="display:flex;flex-direction:column;gap:4px;">';
+        lista.forEach(function(d,i){
+          const dt = new Date(ano, mes, d.d);
+          const pct = maxVal>0 ? (d.valor/maxVal*100) : 0;
+          h2 += '<div style="display:grid;grid-template-columns:18px 88px 1fr auto;gap:8px;align-items:center;font-size:12px;padding:3px 0;border-bottom:1px solid var(--border);">'
+              +   '<div style="font-weight:700;color:var(--text-muted);">'+(i+1)+'</div>'
+              +   '<div><strong>'+fDt(d.key)+'</strong><br><span style="font-size:10px;color:var(--text-muted);">'+_diaSemAbrev[dt.getDay()]+'</span></div>'
+              +   '<div style="background:var(--surface-2);height:6px;border-radius:3px;overflow:hidden;"><div style="width:'+pct.toFixed(1)+'%;height:100%;background:'+corBarra+';"></div></div>'
+              +   '<div style="font-weight:800;text-align:right;font-family:JetBrains Mono,monospace;font-size:12px;">'+fK(d.valor)+'</div>'
+              + '</div>';
+        });
+        h2 += '</div></div>';
+        return h2;
+      }
+      tops.innerHTML =
+          _renderTopList('🔺 Maior valor a pagar (top 5)', top5Maior, _PAL.dn+'CC')
+        + _renderTopList('🔻 Menor valor a pagar (top 5)', top5Menor, _PAL.ok+'CC');
+    }
   }
 
   _draw();

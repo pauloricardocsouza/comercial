@@ -2645,6 +2645,7 @@ function renderVBenchmarking(){
     const luc26 = jmDst.reduce(function(s,r){return s+r.lucro;}, 0);
     const nfs26 = jmDst.reduce(function(s,r){return s+r.nfs;}, 0);
     const cli26 = jmDst.reduce(function(s,r){return s+r.clientes;}, 0);
+    const qt26 = jmDst.reduce(function(s,r){return s+(r.qt||0);}, 0);
 
     return {
       cod: v.cod, nome: v.nome, loja: v.loja, supervisor: v.supervisor,
@@ -2654,6 +2655,8 @@ function renderVBenchmarking(){
       marg26: fat26>0 ? luc26/fat26*100 : 0,
       marg25: fat25>0 ? luc25/fat25*100 : 0,
       ticket26: nfs26>0 ? fat26/nfs26 : 0,
+      nfs26: nfs26,
+      qt26: qt26,
       clientes26: cli26,
       ativo26: fat26 > 0,
       ativo25: fat25 > 0,
@@ -2671,9 +2674,12 @@ function renderVBenchmarking(){
   const totFat25 = compara.reduce(function(s,x){return s+x.fat25;}, 0);
   const cresceMedio = totFat25>0 ? (totFat26/totFat25 - 1)*100 : 0;
 
-  // Top 10 por margem (apenas com fat_liq > 50k pra evitar outliers)
+  // Top 10 por métrica (apenas com fat_liq > 50k pra evitar outliers)
+  // v4.76 fix23: 4 rankings agora — Faturamento / Margem / Mix / Ticket Médio
   const ativos26Filt = compara.filter(function(x){return x.fat26 > 50000;});
+  const topFat    = compara.filter(function(x){return x.fat26 > 0;}).slice().sort(function(a,b){return b.fat26 - a.fat26;}).slice(0, 10);
   const topMargem = ativos26Filt.slice().sort(function(a,b){return b.marg26 - a.marg26;}).slice(0, 10);
+  const topMix    = ativos26Filt.slice().sort(function(a,b){return (b.qt26||0) - (a.qt26||0);}).slice(0, 10);
   const topTicket = ativos26Filt.slice().sort(function(a,b){return b.ticket26 - a.ticket26;}).slice(0, 10);
 
   const labelDst = mesesDestino.length
@@ -2739,36 +2745,38 @@ function renderVBenchmarking(){
   // KPIs
   html += '<div class="kg" style="grid-template-columns:repeat(4,1fr);margin-bottom:14px;" id="kg-vbm"></div>';
 
-  // Linha 3: Top 10 por margem + Top 10 por ticket
-  html += '<div class="row2eq" style="margin-bottom:12px;">'
-       +    '<div class="cc">'
-       +      '<div class="cct">Top 10 por margem</div>'
-       +      '<div class="ccs">'+esc(labelDst)+' · com fat. > R$ 50k</div>'
-       +      '<div class="tscroll"><table class="t"><thead><tr>'
-       +        '<th class="L" style="width:24px;">#</th><th class="L">Vendedor</th>'
-       +        '<th class="L">Loja</th><th>Fat.</th><th>Margem</th>'
-       +      '</tr></thead><tbody id="tb-vbm-marg"></tbody></table></div>'
-       +    '</div>'
-       +    '<div class="cc">'
-       +      '<div class="cct">Top 10 por ticket médio</div>'
-       +      '<div class="ccs">'+esc(labelDst)+' · ticket = fat / NFs</div>'
-       +      '<div class="tscroll"><table class="t"><thead><tr>'
-       +        '<th class="L" style="width:24px;">#</th><th class="L">Vendedor</th>'
-       +        '<th class="L">Loja</th><th>NFs</th><th>Ticket</th>'
-       +      '</tr></thead><tbody id="tb-vbm-tick"></tbody></table></div>'
-       +    '</div>'
+  // v4.76 fix23: Tabs — Top Faturamento / Margem / Mix / Ticket Médio
+  html += '<div class="cc" style="margin-bottom:12px;">'
+       +   '<div class="cch"><div>'
+       +     '<div class="cct">Top 10 vendedores</div>'
+       +     '<div class="ccs" id="vbm-top-sub">'+esc(labelDst)+' · escolha a métrica abaixo · "Mix" usa quantidade de itens vendidos (proxy)</div>'
+       +   '</div></div>'
+       +   '<div class="rca-tabs" style="display:inline-flex;gap:4px;margin:8px 0;border-bottom:1px solid var(--border);padding-bottom:6px;flex-wrap:wrap;">'
+       +     '<button type="button" class="rca-top-tab on" data-tab="fat" style="padding:6px 12px;font-size:11.5px;border:1px solid var(--accent);background:var(--accent);color:#fff;border-radius:6px;cursor:pointer;font-weight:700;">🏆 Top Faturamento</button>'
+       +     '<button type="button" class="rca-top-tab" data-tab="marg" style="padding:6px 12px;font-size:11.5px;border:1px solid var(--border);background:var(--surface);color:var(--text);border-radius:6px;cursor:pointer;font-weight:600;">📈 Top Margem</button>'
+       +     '<button type="button" class="rca-top-tab" data-tab="mix" style="padding:6px 12px;font-size:11.5px;border:1px solid var(--border);background:var(--surface);color:var(--text);border-radius:6px;cursor:pointer;font-weight:600;">🧺 Top Mix de Produtos</button>'
+       +     '<button type="button" class="rca-top-tab" data-tab="tick" style="padding:6px 12px;font-size:11.5px;border:1px solid var(--border);background:var(--surface);color:var(--text);border-radius:6px;cursor:pointer;font-weight:600;">💵 Top Ticket Médio</button>'
+       +   '</div>'
+       +   '<div class="tscroll"><table class="t" id="t-vbm-top"><thead id="th-vbm-top"></thead><tbody id="tb-vbm-top"></tbody></table></div>'
        + '</div>';
 
-  // Tabela completa do benchmarking
+  // v4.76 fix23: Comparativo geral com colunas clicáveis (sort) + drill-down funcional
   html += '<div class="cc">'
        +    '<div class="cct">Comparativo geral (todos os vendedores ativos)</div>'
-       +    '<div class="ccs">Ordenado por crescimento percentual · clique no nome para ver detalhe no Drill-Down</div>'
+       +    '<div class="ccs">Clique no cabeçalho da coluna para ordenar · clique no nome do vendedor para abrir o Drill-Down</div>'
        +    '<div class="tscroll"><table class="t" id="t-vbm">'
        +      '<thead><tr>'
-       +      '<th class="L">Vendedor</th><th class="L">Loja</th><th class="L">Sup.</th>'
-       +      '<th>Fat. '+esc(labelAnt)+'</th><th>Fat. '+esc(labelDst)+'</th>'
-       +      '<th>Δ R$</th><th>Δ %</th>'
-       +      '<th>Margem dest.</th><th>Status</th>'
+       +      '<th class="L vbm-sort" data-sort="nome">Vendedor</th>'
+       +      '<th class="L vbm-sort" data-sort="loja">Loja</th>'
+       +      '<th class="L vbm-sort" data-sort="supervisor">Sup.</th>'
+       +      '<th class="vbm-sort" data-sort="fat25">Fat. '+esc(labelAnt)+'</th>'
+       +      '<th class="vbm-sort" data-sort="fat26">Fat. '+esc(labelDst)+'</th>'
+       +      '<th class="vbm-sort" data-sort="dif_abs">Δ R$</th>'
+       +      '<th class="vbm-sort" data-sort="cresce">Δ %</th>'
+       +      '<th class="vbm-sort" data-sort="marg26">Margem dest.</th>'
+       +      '<th class="vbm-sort" data-sort="qt26">Mix (itens)</th>'
+       +      '<th class="vbm-sort" data-sort="ticket26">Ticket</th>'
+       +      '<th class="L">Status</th>'
        +      '</tr></thead><tbody id="tb-vbm"></tbody></table></div>'
        + '</div>';
 
@@ -2783,59 +2791,142 @@ function renderVBenchmarking(){
     {l:'Δ Faturamento total', v:(totFat26-totFat25>=0?'+':'')+fK(totFat26-totFat25), s:esc(labelDst)+' vs '+esc(labelAnt), cls:totFat26>totFat25?'up':'dn'},
   ]);
 
-  // ─── Tabelas top margem e top ticket ───
-  document.getElementById('tb-vbm-marg').innerHTML = topMargem.map(function(x, i){
-    const margCls = x.marg26>15 ? 'val-pos' : '';
-    return '<tr>'
-      + '<td class="L" style="color:var(--text-muted);font-weight:700;">'+(i+1)+'</td>'
-      + '<td class="L"><div style="font-weight:600;">'+esc(x.nome)+'</div></td>'
-      + '<td class="L">'+esc(x.loja||'—')+'</td>'
-      + '<td>'+fK(x.fat26)+'</td>'
-      + '<td class="'+margCls+'"><strong>'+fP(x.marg26)+'</strong></td>'
+  // ─── v4.76 fix23: Tabs Top 10 vendedores (Faturamento / Margem / Mix / Ticket) ───
+  const _vbmTopDefs = {
+    fat:  {dados: topFat,    cols: ['#','Vendedor','Loja','Fat.','Margem'],         render: function(x){return ['<strong>'+fK(x.fat26)+'</strong>', fP(x.marg26)];}},
+    marg: {dados: topMargem, cols: ['#','Vendedor','Loja','Fat.','Margem'],         render: function(x){var c=x.marg26>15?'val-pos':''; return [fK(x.fat26), '<strong class="'+c+'">'+fP(x.marg26)+'</strong>'];}},
+    mix:  {dados: topMix,    cols: ['#','Vendedor','Loja','Itens vendidos','Fat.'], render: function(x){return ['<strong>'+fI(x.qt26||0)+'</strong>', fK(x.fat26)];}},
+    tick: {dados: topTicket, cols: ['#','Vendedor','Loja','NFs','Ticket'],          render: function(x){var nfs=x.fat26>0 && x.ticket26>0?Math.round(x.fat26/x.ticket26):0; return ['<span class="val-dim">'+fI(nfs)+'</span>', '<strong>'+fK(x.ticket26)+'</strong>'];}},
+  };
+  function _renderVbmTopTab(key){
+    const def = _vbmTopDefs[key] || _vbmTopDefs.fat;
+    const th = document.getElementById('th-vbm-top');
+    const tb = document.getElementById('tb-vbm-top');
+    if(!th || !tb) return;
+    th.innerHTML = '<tr>'
+      + '<th class="L" style="width:24px;">'+def.cols[0]+'</th>'
+      + '<th class="L">'+def.cols[1]+'</th>'
+      + '<th class="L">'+def.cols[2]+'</th>'
+      + '<th>'+def.cols[3]+'</th>'
+      + '<th>'+def.cols[4]+'</th>'
       + '</tr>';
-  }).join('');
-
-  document.getElementById('tb-vbm-tick').innerHTML = topTicket.map(function(x, i){
-    const nfs = x.fat26>0 && x.ticket26>0 ? Math.round(x.fat26/x.ticket26) : 0;
-    return '<tr>'
-      + '<td class="L" style="color:var(--text-muted);font-weight:700;">'+(i+1)+'</td>'
-      + '<td class="L"><div style="font-weight:600;">'+esc(x.nome)+'</div></td>'
-      + '<td class="L">'+esc(x.loja||'—')+'</td>'
-      + '<td class="val-dim">'+fI(nfs)+'</td>'
-      + '<td><strong>'+fK(x.ticket26)+'</strong></td>'
-      + '</tr>';
-  }).join('');
-
-  // ─── Tabela geral ───
-  // Sort por crescimento (nulls no fim)
-  const compSort = compara.slice().sort(function(a,b){
-    if(a.cresce === null && b.cresce === null) return 0;
-    if(a.cresce === null) return 1;
-    if(b.cresce === null) return -1;
-    return b.cresce - a.cresce;
+    tb.innerHTML = def.dados.map(function(x, i){
+      const cells = def.render(x);
+      return '<tr>'
+        + '<td class="L" style="color:var(--text-muted);font-weight:700;">'+(i+1)+'</td>'
+        + '<td class="L"><div style="font-weight:600;cursor:pointer;color:var(--accent);" data-vend-cod="'+esc(x.cod)+'" data-vend-nome="'+escAttr(x.nome)+'" title="Abrir Drill-Down deste vendedor">'+esc(x.nome)+'</div></td>'
+        + '<td class="L">'+esc(x.loja||'—')+'</td>'
+        + '<td>'+cells[0]+'</td>'
+        + '<td>'+cells[1]+'</td>'
+        + '</tr>';
+    }).join('');
+  }
+  _renderVbmTopTab('fat');
+  document.querySelectorAll('.rca-top-tab').forEach(function(btn){
+    btn.addEventListener('click', function(){
+      document.querySelectorAll('.rca-top-tab').forEach(function(b){
+        b.classList.remove('on');
+        b.style.background = 'var(--surface)';
+        b.style.color = 'var(--text)';
+        b.style.borderColor = 'var(--border)';
+        b.style.fontWeight = '600';
+      });
+      btn.classList.add('on');
+      btn.style.background = 'var(--accent)';
+      btn.style.color = '#fff';
+      btn.style.borderColor = 'var(--accent)';
+      btn.style.fontWeight = '700';
+      _renderVbmTopTab(btn.getAttribute('data-tab'));
+    });
   });
-  document.getElementById('tb-vbm').innerHTML = compSort.map(function(x){
-    const difCls = x.dif_abs>=0 ? 'val-pos' : 'val-neg';
-    let status, statusCls;
-    if(!x.ativo25 && x.ativo26){ status = 'Novo'; statusCls = 'val-pos'; }
-    else if(x.ativo25 && !x.ativo26){ status = 'Inativo no período'; statusCls = 'val-neg'; }
-    else if(x.ativo25 && x.ativo26){ status = 'Ativo'; statusCls = ''; }
-    else { status = '—'; statusCls = 'val-dim'; }
-    const cresceStr = x.cresce===null ? '—' : (x.cresce>=0?'+':'')+fP(x.cresce);
-    const cresceCls = x.cresce===null ? 'val-dim' : x.cresce>=0?'val-pos':'val-neg';
-    return '<tr>'
-      + '<td class="L"><div style="font-family:\'JetBrains Mono\',monospace;font-size:10px;color:var(--text-muted);">#'+esc(x.cod)+'</div>'
-      +    '<div style="font-weight:600;">'+esc(x.nome)+'</div></td>'
-      + '<td class="L">'+esc(x.loja||'—')+'</td>'
-      + '<td class="L val-dim" style="font-size:10px;">'+esc(x.supervisor||'—')+'</td>'
-      + '<td class="val-dim">'+(x.fat25>0?fK(x.fat25):'—')+'</td>'
-      + '<td>'+(x.fat26>0?fK(x.fat26):'—')+'</td>'
-      + '<td class="'+difCls+'">'+(x.dif_abs>=0?'+':'')+fK(x.dif_abs)+'</td>'
-      + '<td class="'+cresceCls+'">'+cresceStr+'</td>'
-      + '<td>'+(x.fat26>0?fP(x.marg26):'—')+'</td>'
-      + '<td class="'+statusCls+'">'+status+'</td>'
-      + '</tr>';
-  }).join('');
+
+  // ─── v4.76 fix23: Tabela geral ordenável + drill-down clicável ───
+  // Sort default: crescimento desc (nulls last)
+  window._rcaSortKey = window._rcaSortKey || 'cresce';
+  window._rcaSortDir = window._rcaSortDir || 'desc';
+  function _rcaCompararSort(arr){
+    const key = window._rcaSortKey;
+    const dir = window._rcaSortDir === 'asc' ? 1 : -1;
+    return arr.slice().sort(function(a,b){
+      const va = a[key], vb = b[key];
+      // Nulls sempre no fim
+      const an = (va===null || va===undefined);
+      const bn = (vb===null || vb===undefined);
+      if(an && bn) return 0;
+      if(an) return 1;
+      if(bn) return -1;
+      if(typeof va === 'string') return va.localeCompare(vb) * dir;
+      return (va - vb) * dir;
+    });
+  }
+  function _rcaRenderTabVbm(){
+    const compSort = _rcaCompararSort(compara);
+    document.getElementById('tb-vbm').innerHTML = compSort.map(function(x){
+      const difCls = x.dif_abs>=0 ? 'val-pos' : 'val-neg';
+      let status, statusCls;
+      if(!x.ativo25 && x.ativo26){ status = 'Novo'; statusCls = 'val-pos'; }
+      else if(x.ativo25 && !x.ativo26){ status = 'Inativo no período'; statusCls = 'val-neg'; }
+      else if(x.ativo25 && x.ativo26){ status = 'Ativo'; statusCls = ''; }
+      else { status = '—'; statusCls = 'val-dim'; }
+      const cresceStr = x.cresce===null ? '—' : (x.cresce>=0?'+':'')+fP(x.cresce);
+      const cresceCls = x.cresce===null ? 'val-dim' : x.cresce>=0?'val-pos':'val-neg';
+      return '<tr>'
+        + '<td class="L"><div style="font-family:\'JetBrains Mono\',monospace;font-size:10px;color:var(--text-muted);">#'+esc(x.cod)+'</div>'
+        +    '<div style="font-weight:600;cursor:pointer;color:var(--accent);" data-vend-cod="'+esc(x.cod)+'" data-vend-nome="'+escAttr(x.nome)+'" title="Abrir Drill-Down deste vendedor">'+esc(x.nome)+'</div></td>'
+        + '<td class="L">'+esc(x.loja||'—')+'</td>'
+        + '<td class="L val-dim" style="font-size:10px;">'+esc(x.supervisor||'—')+'</td>'
+        + '<td class="val-dim">'+(x.fat25>0?fK(x.fat25):'—')+'</td>'
+        + '<td>'+(x.fat26>0?fK(x.fat26):'—')+'</td>'
+        + '<td class="'+difCls+'">'+(x.dif_abs>=0?'+':'')+fK(x.dif_abs)+'</td>'
+        + '<td class="'+cresceCls+'">'+cresceStr+'</td>'
+        + '<td>'+(x.fat26>0?fP(x.marg26):'—')+'</td>'
+        + '<td class="val-dim">'+(x.qt26>0?fI(x.qt26):'—')+'</td>'
+        + '<td>'+(x.ticket26>0?fK(x.ticket26):'—')+'</td>'
+        + '<td class="'+statusCls+'">'+status+'</td>'
+        + '</tr>';
+    }).join('');
+    // Atualiza indicador de sort no <th>
+    document.querySelectorAll('#t-vbm .vbm-sort').forEach(function(th){
+      const k = th.getAttribute('data-sort');
+      const cur = th.textContent.replace(/[\s↑↓]+$/,'');
+      th.innerHTML = cur + (k === window._rcaSortKey ? (window._rcaSortDir==='asc'?' ↑':' ↓') : '');
+      th.style.cursor = 'pointer';
+    });
+  }
+  _rcaRenderTabVbm();
+
+  // Click no cabeçalho ordena (toggle asc/desc)
+  document.querySelectorAll('#t-vbm .vbm-sort').forEach(function(th){
+    th.addEventListener('click', function(){
+      const k = th.getAttribute('data-sort');
+      if(window._rcaSortKey === k){
+        window._rcaSortDir = window._rcaSortDir === 'asc' ? 'desc' : 'asc';
+      } else {
+        window._rcaSortKey = k;
+        window._rcaSortDir = (k === 'nome' || k === 'loja' || k === 'supervisor') ? 'asc' : 'desc';
+      }
+      _rcaRenderTabVbm();
+    });
+  });
+
+  // Click no nome do vendedor → abre Drill-Down (página oculta no menu, mas funcional)
+  function _rcaAbrirDrillDown(ev){
+    const el = ev.target.closest('[data-vend-cod]');
+    if(!el) return;
+    const cod = el.getAttribute('data-vend-cod');
+    try { window._rcaVendedorFoco = cod; } catch(e){}
+    // Esconde demais .page e mostra page-v-drilldown
+    document.querySelectorAll('.page').forEach(function(p){ p.classList.remove('active'); p.style.display=''; });
+    const pg = document.getElementById('page-v-drilldown');
+    if(pg){
+      pg.classList.add('active');
+      pg.style.display = 'block';
+      if(typeof renderVDrilldown === 'function') renderVDrilldown();
+      window.scrollTo({top: 0, behavior: 'smooth'});
+    }
+  }
+  document.getElementById('tb-vbm').addEventListener('click', _rcaAbrirDrillDown);
+  document.getElementById('tb-vbm-top').addEventListener('click', _rcaAbrirDrillDown);
 
   // ─── Listeners filtros ───
   document.querySelectorAll('.rca-mes-btn').forEach(function(btn){
