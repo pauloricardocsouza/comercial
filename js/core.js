@@ -216,7 +216,7 @@ const AUTH_MODE = 'firebase'; // 'mock' | 'firebase'
 // Convenção:
 //   X.x → alteração grande (quebra de compatibilidade, nova feature grande)
 //   x.X → alteração suave (fix, ajuste visual, pequeno refinamento)
-const APP_VERSION = '4.76-cofre-fix19';
+const APP_VERSION = '4.76-cofre-fix20';
 
 // ================================================================
 // HELPERS DE CHART.JS — compatíveis com Safari/iOS (sem spread ops)
@@ -5321,7 +5321,8 @@ function buildFilterBar(pageId){
     deptosList = Array.from(set).sort();
   }
   // v4.69: na página Compras × Vendas o filtro de Departamento é ocultado.
-  const _semDeptoFilter = (pageId === 'cv');
+  // v4.76 fix20: idem para a Visão Executiva (KPIs do grupo, não faz sentido segmentar).
+  const _semDeptoFilter = (pageId === 'cv' || pageId === 'executivo');
   const _deptoBlock = _semDeptoFilter ? '' : (
       '<div class="pfb-sep"></div>'
     + '<div class="pfb-label">Departamento</div>'

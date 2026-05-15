@@ -1978,12 +1978,20 @@ function renderExecutivo(){
   }
 
   // Atualiza cabeçalho da página com base na visão atual
-  // (substitui o "Dashboard · ATP" hardcoded do template inicial)
+  // v4.76 fix20: sempre mostra "sigla - nome" (ex: "CP1 - Comercial Pinto")
   const _phExecPk = document.getElementById('ph-exec-pk');
   if(_phExecPk){
-    const slug = (typeof _getBaseSlug === 'function') ? _getBaseSlug() : 'atp';
-    const baseInfo = (_basesDisponiveis || []).find(function(b){ return b.sigla === slug; });
-    const labelBase = (baseInfo && baseInfo.nome) || slug.toUpperCase();
+    const fil = (typeof _filialAtual !== 'undefined') ? _filialAtual : null;
+    let labelBase;
+    if(fil && fil.sigla){
+      const sg = String(fil.sigla).toUpperCase();
+      const nm = fil.nome ? String(fil.nome).trim() : '';
+      labelBase = (nm && nm.toUpperCase() !== sg) ? (sg + ' - ' + nm) : sg;
+    } else {
+      const slug = (typeof _getBaseSlug === 'function') ? _getBaseSlug() : 'atp';
+      const baseInfo = (_basesDisponiveis || []).find(function(b){ return b.sigla === slug; });
+      labelBase = (baseInfo && baseInfo.nome) || slug.toUpperCase();
+    }
     _phExecPk.textContent = 'Dashboard · ' + labelBase;
   }
 
