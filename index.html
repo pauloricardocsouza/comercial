@@ -6,8 +6,8 @@
 <meta name="robots" content="noindex, nofollow">
 <title>Comercial GPC · R2 Soluções</title>
 <!-- v4.76 fix7: favicon GPC (navy + GPC branco + arco laranja) -->
-<link rel="icon" type="image/svg+xml" href="assets/favicon.svg?v=4.76.20">
-<link rel="apple-touch-icon" href="assets/favicon.svg?v=4.76.20">
+<link rel="icon" type="image/svg+xml" href="assets/favicon.svg?v=4.76.21">
+<link rel="apple-touch-icon" href="assets/favicon.svg?v=4.76.21">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <!-- DNS prefetch para Firebase: encurta o handshake de auth/firestore -->
@@ -2416,6 +2416,12 @@ body.cofre-shell .cofre-tb-right { margin-left: auto; }
 
 @keyframes cofreFadeIn { from { opacity: 0; } to { opacity: 1; } }
 
+/* v4.76 fix21: Visão Executiva — 3 gráficos lado a lado.
+   Em telas menores, empilha em 1 coluna pra não esmagar. */
+@media (max-width: 1100px) {
+  body.cofre-shell .exec-charts-row { grid-template-columns: 1fr !important; }
+}
+
 @media (max-width: 560px) {
   /* Telefone pequeno: drawer mais estreito + sem density + breadcrumb oculto */
   body.cofre-shell .cofre-sidebar { width: min(260px, 86vw) !important; }
@@ -2655,10 +2661,11 @@ body.cofre-shell .pfb-sep {
   <div class="page-body">
     <div class="kg" style="grid-template-columns:repeat(4,1fr);" id="kg-exec"></div>
     <div id="exec-metas-wrap"></div>
-    <div class="cc"><div class="cct">Compras líq. × Vendas líq. × Pagamentos</div><div class="ccs">Evolução mensal · Compras deduzem devoluções a fornecedor</div><div style="height:240px;"><canvas id="c-exec-evo"></canvas></div></div>
-    <div class="row2">
-      <div class="cc"><div class="cct">Participação por departamento</div><div class="ccs">% do faturamento total</div><div style="height:220px;"><canvas id="c-exec-dept"></canvas></div></div>
-      <div class="cc"><div class="cct">Agenda de vencimentos</div><div class="ccs">Duplicatas em aberto por mês de vencimento (rotina 717)</div><div style="height:220px;"><canvas id="c-exec-agenda"></canvas></div></div>
+    <!-- v4.76 fix21: 3 gráficos em uma única linha (Compras×Vendas×Pag · Departamento · Agenda) -->
+    <div class="exec-charts-row" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;margin-bottom:14px;">
+      <div class="cc" style="margin-bottom:0;min-width:0;"><div class="cct">Compras líq. × Vendas líq. × Pagamentos</div><div class="ccs">Evolução mensal · Compras deduzem devoluções</div><div style="height:240px;"><canvas id="c-exec-evo"></canvas></div></div>
+      <div class="cc" style="margin-bottom:0;min-width:0;"><div class="cct">Participação por departamento</div><div class="ccs">% do faturamento total</div><div style="height:240px;"><canvas id="c-exec-dept"></canvas></div></div>
+      <div class="cc" style="margin-bottom:0;min-width:0;"><div class="cct">Agenda de vencimentos</div><div class="ccs">Duplicatas em aberto · rotina 717</div><div style="height:240px;"><canvas id="c-exec-agenda"></canvas></div></div>
     </div>
     <div class="cc">
       <div class="cct">Top 20 produtos por faturamento líquido</div>
@@ -2894,10 +2901,10 @@ body.cofre-shell .pfb-sep {
      JS principal · dividido em 5 arquivos pela auditoria v4.6
      Ordem importa: core declara as globais; render-* dependem de core.
      ════════════════════════════════════════════════════════════════════════════ -->
-<script src="js/core.js?v=4.76.20"></script>
-<script src="js/render-compras.js?v=4.76.20"></script>
-<script src="js/render-vendas.js?v=4.76.20"></script>
-<script src="js/render-outros.js?v=4.76.20"></script>
-<script src="js/admin.js?v=4.76.20"></script>
+<script src="js/core.js?v=4.76.21"></script>
+<script src="js/render-compras.js?v=4.76.21"></script>
+<script src="js/render-vendas.js?v=4.76.21"></script>
+<script src="js/render-outros.js?v=4.76.21"></script>
+<script src="js/admin.js?v=4.76.21"></script>
 </body>
 </html>

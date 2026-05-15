@@ -216,7 +216,7 @@ const AUTH_MODE = 'firebase'; // 'mock' | 'firebase'
 // Convenção:
 //   X.x → alteração grande (quebra de compatibilidade, nova feature grande)
 //   x.X → alteração suave (fix, ajuste visual, pequeno refinamento)
-const APP_VERSION = '4.76-cofre-fix20';
+const APP_VERSION = '4.76-cofre-fix21';
 
 // ================================================================
 // HELPERS DE CHART.JS — compatíveis com Safari/iOS (sem spread ops)
@@ -5382,6 +5382,8 @@ function buildFilterBar(pageId){
     const activeId = active ? active.id.replace('page-','') : null;
     if(activeId && renderedPages.has(activeId)){
       renderPage(activeId);
+      // v4.76 fix21: pós-render, re-aplica filial nos titulos
+      if(typeof _cofreSyncFilialNoTitulo === 'function') _cofreSyncFilialNoTitulo();
     }
     // Invalida o resto: na próxima visita o renderPage será disparado de novo
     if(renderedPages && renderedPages.forEach){
@@ -6831,6 +6833,8 @@ function _cofreUpdateBreadcrumb(activeId){
   }
   html += '<span class="cur">'+cur.nome+'</span>';
   bc.innerHTML = html;
+  // v4.76 fix21: sempre re-sincroniza filial no kicker das páginas
+  try { _cofreSyncFilialNoTitulo(); } catch(e){}
   // Bind: clicar no crumb da pilha volta até aquele nível
   var crumbs = bc.querySelectorAll('.stack-crumb[data-stack-idx]');
   for(var c=0;c<crumbs.length;c++){
@@ -6845,6 +6849,37 @@ function _cofreUpdateBreadcrumb(activeId){
     });
   }
 }
+
+// v4.76 fix21: propaga "<grupo> · <SIGLA - Nome>" em todas as .ph .pk de toda página.
+// Roda após render, troca de página e troca de filial. A primeira execução em
+// cada .pk salva o texto base em data-pk-base; chamadas seguintes reconstroem
+// a partir desse base + filial atual, garantindo idempotência.
+function _cofreSyncFilialNoTitulo(){
+  function rotuloFilial(){
+    try {
+      var f = (typeof _filialAtual !== 'undefined') ? _filialAtual : null;
+      if(!f || !f.sigla) return '';
+      var sg = String(f.sigla).toUpperCase();
+      var nm = f.nome ? String(f.nome).trim() : '';
+      return (nm && nm.toUpperCase() !== sg) ? (sg + ' - ' + nm) : sg;
+    } catch(e){ return ''; }
+  }
+  var rot = rotuloFilial();
+  var pks = document.querySelectorAll('.page .ph .pk');
+  for(var i=0; i<pks.length; i++){
+    var el = pks[i];
+    var base = el.getAttribute('data-pk-base');
+    if(base === null){
+      // Remove sufixo " · …" eventual que já tenha sido aplicado por renderExecutivo
+      var raw = (el.textContent || '').trim();
+      var cut = raw.indexOf(' · ');
+      base = cut > 0 ? raw.substring(0, cut) : raw;
+      el.setAttribute('data-pk-base', base);
+    }
+    el.textContent = rot ? (base + ' · ' + rot) : base;
+  }
+}
+window._cofreSyncFilialNoTitulo = _cofreSyncFilialNoTitulo;
 
 function _cofreUpdateBaseBadge(){
   var el = document.getElementById('cofre-base-badge');
