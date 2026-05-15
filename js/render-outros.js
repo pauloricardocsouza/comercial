@@ -1522,23 +1522,30 @@ function _renderCuboUI(c){
   html += '<strong>'+fI((fc.linhas||[]).length)+'</strong> compras · ';
   html += '<strong>'+fI((ff.linhas||[]).length)+'</strong> financeiro';
   html += '</div>';
-  html += '<button id="pv-export-xlsx" class="ebtn" style="background:var(--surface);color:var(--text);border:1px solid var(--border);padding:6px 10px;font-size:11px;">📥 XLSX</button>';
   html += '<button id="pv-chart" class="ebtn" style="background:var(--surface);color:var(--text);border:1px solid var(--border);padding:6px 10px;font-size:11px;">📊 Gráfico</button>';
+  // v4.76 fix18: três opções de export do conteúdo gerado (XLSX, PDF, JPG)
+  html += '<div class="pv-export-group" style="display:inline-flex;gap:4px;border-left:1px solid var(--border);padding-left:8px;margin-left:4px;">';
+  html += '<button id="pv-export-xlsx" class="ebtn" title="Exportar tabela em XLSX" style="background:var(--surface);color:var(--text);border:1px solid var(--border);padding:6px 10px;font-size:11px;">📥 XLSX</button>';
+  html += '<button id="pv-export-pdf" class="ebtn" title="Exportar conteúdo em PDF (sem topbar/sidebar)" style="background:var(--surface);color:var(--text);border:1px solid var(--border);padding:6px 10px;font-size:11px;">📄 PDF</button>';
+  html += '<button id="pv-export-jpg" class="ebtn" title="Exportar conteúdo como imagem JPG" style="background:var(--surface);color:var(--text);border:1px solid var(--border);padding:6px 10px;font-size:11px;">🖼 JPG</button>';
+  html += '</div>';
   html += '</div>';
 
   // ─── Painel de configuração (área superior) ───
-  html += '<div id="pv-painel" class="pv-painel" style="display:'+(painelOculto?'none':'grid')+';grid-template-columns:240px 1fr;gap:14px;align-items:start;margin-bottom:14px;">';
+  // v4.76 fix18: layout equilibrado — colunas com larguras balanceadas,
+  // stretch pra mesma altura, lista de campos em 2 colunas
+  html += '<div id="pv-painel" class="pv-painel" style="display:'+(painelOculto?'none':'grid')+';grid-template-columns:minmax(320px,1.1fr) minmax(0,1fr);gap:14px;align-items:stretch;margin-bottom:14px;">';
 
-  // ── Coluna esquerda: lista de campos ──
-  html += '<div class="pv-fields-pane cc" style="padding:12px;display:flex;flex-direction:column;max-height:520px;">';
+  // ── Coluna esquerda: lista de campos (2 colunas internas) ──
+  html += '<div class="pv-fields-pane cc" style="padding:12px;display:flex;flex-direction:column;min-height:420px;">';
   html += '<div class="cct" style="font-size:11px;margin-bottom:4px;">Campos disponíveis</div>';
   html += '<div class="ccs" style="font-size:10px;margin-bottom:10px;">Arraste para as zonas →</div>';
   // Container scrollável dos campos (dimensões + métricas)
   html += '<div class="pv-fields-scroll" style="flex:1;overflow-y:auto;padding-right:4px;margin-right:-4px;">';
 
-  // Dimensões
+  // Dimensões (v4.76 fix18: grid 2 colunas)
   html += '<div style="font-size:9px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;font-weight:700;margin-bottom:4px;">Dimensões</div>';
-  html += '<div id="pv-fields" style="display:flex;flex-direction:column;gap:4px;margin-bottom:14px;">';
+  html += '<div id="pv-fields" style="display:grid;grid-template-columns:1fr 1fr;gap:5px;margin-bottom:14px;">';
   Object.keys(_CUBO_DIMS_INFO).forEach(function(dCod){
     const usadoEm = Object.keys(_CUBO_FATO_DIMS).filter(function(f){
       return _CUBO_FATO_DIMS[f].indexOf(dCod) >= 0;
@@ -1553,11 +1560,11 @@ function _renderCuboUI(c){
   });
   html += '</div>';
 
-  // Métricas agrupadas
-  html += '<div id="pv-metrics" style="display:flex;flex-direction:column;gap:4px;">';
+  // Métricas agrupadas (v4.76 fix18: grid 2 colunas; labels de grupo ocupam linha inteira)
+  html += '<div id="pv-metrics" style="display:grid;grid-template-columns:1fr 1fr;gap:5px;">';
   ['vendas','compras','financeiro'].forEach(function(grupoFato){
     const titulos = {vendas:'Vendas', compras:'Compras', financeiro:'Financeiro'};
-    html += '<div style="font-size:9px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;font-weight:700;margin-top:6px;">'+titulos[grupoFato]+'</div>';
+    html += '<div style="grid-column:1/-1;font-size:9px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;font-weight:700;margin-top:6px;">'+titulos[grupoFato]+'</div>';
     Object.keys(_CUBO_METRICAS).forEach(function(mCod){
       const m = _CUBO_METRICAS[mCod];
       if(m.fato !== grupoFato) return;
@@ -1571,11 +1578,11 @@ function _renderCuboUI(c){
   html += '</div>'; // pv-fields-scroll
   html += '</div>'; // pv-fields-pane
 
-  // ── Coluna direita: zonas + ações ──
-  html += '<div class="pv-zones-pane cc" style="padding:12px;">';
+  // ── Coluna direita: zonas + ações (v4.76 fix18: flex-column pra ficar mesma altura que campos) ──
+  html += '<div class="pv-zones-pane cc" style="padding:12px;display:flex;flex-direction:column;">';
 
-  // Zonas em layout 2x2 ou 1x4
-  html += '<div class="pv-zones-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">';
+  // Zonas em layout 2x2 — ocupam todo espaço vertical disponível
+  html += '<div class="pv-zones-grid" style="display:grid;grid-template-columns:1fr 1fr;grid-auto-rows:1fr;gap:10px;flex:1;">';
   const zonasLabels = {
     filters:{titulo:'🔍 Filtros',  desc:'restringe os dados'},
     rows:   {titulo:'📋 Linhas',   desc:'agrupa em linhas'},
@@ -1584,13 +1591,14 @@ function _renderCuboUI(c){
   };
   ['filters','cols','rows','vals'].forEach(function(zona){
     const info = zonasLabels[zona];
-    html += '<div class="pv-zone-wrap">';
+    // v4.76 fix18: cada wrap em flex-column pra zona crescer com altura disponivel
+    html += '<div class="pv-zone-wrap" style="display:flex;flex-direction:column;min-height:0;">';
     html += '<div style="display:flex;align-items:baseline;gap:6px;margin-bottom:4px;">';
     html += '<span style="font-size:11px;font-weight:700;color:var(--text);">'+info.titulo+'</span>';
     html += '<span style="font-size:9.5px;color:var(--text-muted);">'+info.desc+'</span>';
     html += '</div>';
     html += '<div class="pv-zone" data-zone="'+zona+'" '
-         +  'style="min-height:50px;background:var(--surface-2);border:2px dashed var(--border);border-radius:5px;padding:5px;display:flex;flex-direction:column;gap:3px;"></div>';
+         +  'style="flex:1;min-height:50px;background:var(--surface-2);border:2px dashed var(--border);border-radius:5px;padding:5px;display:flex;flex-direction:column;gap:3px;"></div>';
     html += '</div>';
   });
   html += '</div>'; // pv-zones-grid
@@ -1712,8 +1720,12 @@ function _renderCuboUI(c){
   document.getElementById('pv-chart-type').addEventListener('change', _pvRenderGrafico);
   document.getElementById('pv-chart-metric').addEventListener('change', _pvRenderGrafico);
 
-  // Export XLSX
+  // Export XLSX/PDF/JPG (v4.76 fix18: três formatos para o conteúdo gerado)
   document.getElementById('pv-export-xlsx').addEventListener('click', _pvExportarXLSX);
+  var btnPdfPv = document.getElementById('pv-export-pdf');
+  if(btnPdfPv) btnPdfPv.addEventListener('click', _pvExportarPDF);
+  var btnJpgPv = document.getElementById('pv-export-jpg');
+  if(btnJpgPv) btnJpgPv.addEventListener('click', _pvExportarJPG);
 
   // Renderiza pivot inicial
   _pvAtualizar();
@@ -2918,6 +2930,144 @@ function _dimLabel(d){
 }
 function _metricaLabel(m){
   return (_CUBO_METRICAS[m] && _CUBO_METRICAS[m].label) || m;
+}
+
+// ────────────────────────────────────────────────────────────────────
+// v4.76 fix18: EXPORTAR pivot pra PDF e JPG — captura só o conteúdo gerado
+// (tabela #pv-result + gráfico se visível). Usa html2canvas + jsPDF.
+// ────────────────────────────────────────────────────────────────────
+function _pvCapturaAlvo(){
+  // Captura: gráfico (se visível) + tabela resultado. Cria wrapper temporário
+  // pra ficar tudo em ordem visual no PDF/JPG.
+  var chartWrap = document.getElementById('pv-chart-wrap');
+  var resultEl  = document.getElementById('pv-result');
+  if(!resultEl || !resultEl.children.length){
+    if(typeof _toast === 'function') _toast('Nada para exportar — gere uma análise antes.', 'aviso');
+    else alert('Nada para exportar. Gere uma análise antes.');
+    return null;
+  }
+  var wrap = document.createElement('div');
+  var isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+  wrap.style.cssText = 'position:fixed;left:-99999px;top:0;padding:18px;background:'+(isDark?'#0f1620':'#ffffff')+';color:'+(isDark?'#e6edf3':'#1a2031')+';width:'+Math.max(1100, resultEl.scrollWidth+40)+'px;font-family:Inter,Arial,sans-serif;';
+  // Título
+  var h = document.createElement('div');
+  h.style.cssText = 'font-family:Archivo,Arial,sans-serif;font-weight:800;font-size:18px;margin-bottom:4px;color:'+(isDark?'#fff':'#2E476F')+';';
+  h.textContent = 'Análise Dinâmica · Comercial GPC';
+  wrap.appendChild(h);
+  var sub = document.createElement('div');
+  sub.style.cssText = 'font-family:"JetBrains Mono",monospace;font-size:10px;color:#888;margin-bottom:14px;text-transform:uppercase;letter-spacing:.1em;';
+  sub.textContent = 'Gerado em ' + new Date().toLocaleString('pt-BR');
+  wrap.appendChild(sub);
+  // Gráfico (clone se visível)
+  if(chartWrap && chartWrap.style.display !== 'none'){
+    var clone = chartWrap.cloneNode(true);
+    clone.style.display = 'block';
+    clone.style.marginBottom = '14px';
+    wrap.appendChild(clone);
+  }
+  // Tabela (clone)
+  var resClone = resultEl.cloneNode(true);
+  resClone.style.overflow = 'visible';
+  wrap.appendChild(resClone);
+  document.body.appendChild(wrap);
+  return wrap;
+}
+
+function _pvExportarPDF(){
+  var JsPDF = (window.jspdf && window.jspdf.jsPDF) || window.jsPDF;
+  if(!JsPDF || typeof html2canvas !== 'function'){
+    alert('Bibliotecas de PDF/canvas não carregaram.');
+    return;
+  }
+  var wrap = _pvCapturaAlvo();
+  if(!wrap) return;
+  if(typeof _toast === 'function') _toast('Gerando PDF…', 'info');
+  var isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+  html2canvas(wrap, {scale:2, backgroundColor: isDark ? '#0f1620' : '#ffffff', useCORS:true, logging:false}).then(function(canvas){
+    document.body.removeChild(wrap);
+    // Orientação: paisagem se canvas for mais largo que alto
+    var orient = canvas.width >= canvas.height ? 'landscape' : 'portrait';
+    var pdf = new JsPDF({orientation:orient, unit:'mm', format:'a4', compress:true});
+    var pageW = pdf.internal.pageSize.getWidth();
+    var pageH = pdf.internal.pageSize.getHeight();
+    var marginX = 10, headerH = 16, footerH = 9;
+    var contentW = pageW - marginX*2;
+    var contentH = pageH - headerH - footerH;
+    var imgW = contentW;
+    var imgH = canvas.height * imgW / canvas.width;
+    var totalPages = Math.ceil(imgH / contentH);
+    var dt = new Date().toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});
+    var pxPerMm = canvas.width / imgW;
+    var logo = new Image();
+    logo.onload = render; logo.onerror = function(){ render(null); };
+    logo.src = 'assets/gpc-color.png';
+    function render(logoImg){
+      for(var p=0; p<totalPages; p++){
+        if(p>0) pdf.addPage();
+        if(logoImg){
+          var ratio = logoImg.width/logoImg.height; var lH=10; var lW=lH*ratio;
+          try{ pdf.addImage(logoImg, 'PNG', marginX, 4, lW, lH);}catch(e){}
+        }
+        pdf.setFont('helvetica','bold'); pdf.setFontSize(11); pdf.setTextColor(46,71,111);
+        pdf.text('Análise Dinâmica', pageW - marginX, 9, {align:'right'});
+        pdf.setFont('helvetica','normal'); pdf.setFontSize(8); pdf.setTextColor(120,120,120);
+        pdf.text('Inteligência Comercial · Grupo Pinto Cerqueira', pageW - marginX, 13, {align:'right'});
+        pdf.setDrawColor(245,134,52); pdf.setLineWidth(0.4);
+        pdf.line(marginX, headerH - 1, pageW - marginX, headerH - 1);
+
+        var sliceYmm = p*contentH;
+        var remainingMm = imgH - sliceYmm;
+        var thisSliceMm = Math.min(contentH, remainingMm);
+        var srcY = Math.floor(sliceYmm*pxPerMm);
+        var srcH = Math.floor(thisSliceMm*pxPerMm);
+        var tmp = document.createElement('canvas');
+        tmp.width = canvas.width; tmp.height = srcH;
+        var tctx = tmp.getContext('2d');
+        tctx.fillStyle = isDark ? '#0f1620' : '#ffffff';
+        tctx.fillRect(0,0,tmp.width,tmp.height);
+        tctx.drawImage(canvas, 0, srcY, canvas.width, srcH, 0, 0, canvas.width, srcH);
+        pdf.addImage(tmp.toDataURL('image/jpeg',0.92),'JPEG',marginX,headerH,contentW,thisSliceMm,undefined,'FAST');
+
+        pdf.setDrawColor(220,220,220); pdf.setLineWidth(0.2);
+        pdf.line(marginX, pageH - footerH + 2, pageW - marginX, pageH - footerH + 2);
+        pdf.setFont('helvetica','normal'); pdf.setFontSize(8); pdf.setTextColor(110,110,110);
+        pdf.text('Exportado em ' + dt, marginX, pageH - 3);
+        pdf.text('Página ' + (p+1) + ' de ' + totalPages, pageW - marginX, pageH - 3, {align:'right'});
+      }
+      var stamp = (new Date()).toISOString().slice(0,16).replace(/[-:T]/g,'');
+      pdf.save('AnaliseDinamica_'+stamp+'.pdf');
+      if(typeof _toast === 'function') _toast('PDF gerado.', 'sucesso');
+    }
+  }).catch(function(err){
+    if(wrap.parentNode) document.body.removeChild(wrap);
+    console.error('[PV PDF]', err);
+    if(typeof _toast === 'function') _toast('Erro ao gerar PDF.', 'erro');
+  });
+}
+
+function _pvExportarJPG(){
+  if(typeof html2canvas !== 'function'){ alert('html2canvas não carregou.'); return; }
+  var wrap = _pvCapturaAlvo();
+  if(!wrap) return;
+  if(typeof _toast === 'function') _toast('Gerando JPG…', 'info');
+  var isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+  html2canvas(wrap, {scale:2, backgroundColor: isDark ? '#0f1620' : '#ffffff', useCORS:true, logging:false}).then(function(canvas){
+    document.body.removeChild(wrap);
+    canvas.toBlob(function(blob){
+      if(!blob){ if(typeof _toast === 'function') _toast('Falha ao codificar JPG.', 'erro'); return; }
+      var a = document.createElement('a');
+      var stamp = (new Date()).toISOString().slice(0,16).replace(/[-:T]/g,'');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'AnaliseDinamica_'+stamp+'.jpg';
+      document.body.appendChild(a); a.click();
+      setTimeout(function(){ URL.revokeObjectURL(a.href); a.remove(); }, 100);
+      if(typeof _toast === 'function') _toast('JPG gerado.', 'sucesso');
+    }, 'image/jpeg', 0.92);
+  }).catch(function(err){
+    if(wrap.parentNode) document.body.removeChild(wrap);
+    console.error('[PV JPG]', err);
+    if(typeof _toast === 'function') _toast('Erro ao gerar JPG.', 'erro');
+  });
 }
 
 // Helper: converte 'YYYY-MM' em 'Mmm/AA' (ex: 2026-04 → 'Abr/26')
