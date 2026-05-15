@@ -216,7 +216,7 @@ const AUTH_MODE = 'firebase'; // 'mock' | 'firebase'
 // Convenção:
 //   X.x → alteração grande (quebra de compatibilidade, nova feature grande)
 //   x.X → alteração suave (fix, ajuste visual, pequeno refinamento)
-const APP_VERSION = '4.76-cofre-fix21';
+const APP_VERSION = '4.76-cofre-fix22';
 
 // ================================================================
 // HELPERS DE CHART.JS — compatíveis com Safari/iOS (sem spread ops)
@@ -1037,6 +1037,7 @@ const PAGINAS_CATALOGO = [
   {id:'v-vendas-diarias', nome:'Vendas Diárias',      grupo:'Vendas'},
   {id:'v-dias-cp',        nome:'Dias C & P',          grupo:'Vendas'},
   {id:'v-metas',          nome:'Metas',               grupo:'Vendas'},
+  {id:'recebimentos',     nome:'Inadimplência',       grupo:'Vendas'},
   {id:'v-benchmarking',   nome:'RCA',        grupo:'Vendas'},
   {id:'v-ano2026',        nome:'Análise 2026',        grupo:'Vendas'},
   {id:'cubo',             nome:'Análise Dinâmica',    grupo:'Análise'},
@@ -3192,7 +3193,7 @@ async function renderHistorico(){
     }
 
     const linhas = snaps.map(function(s,i){
-      const dt = s.data.split('-').reverse().join('/');
+      const dt = fDt(s.data);
       const isAtual = (i===0);
       const isCarregado = _snapshotCarregado && _snapshotCarregado.data===s.data;
       let tags = '';
@@ -4422,7 +4423,7 @@ function renderAjuda(){
   // Preencher info do sistema
   const m = D.meta || {};
   document.getElementById('aj-info-periodo').textContent = (m.per_ini && m.per_fim)
-    ? (m.per_ini.split('-').reverse().join('/') + ' até ' + m.per_fim.split('-').reverse().join('/'))
+    ? (fDt(m.per_ini) + ' até ' + fDt(m.per_fim))
     : 'Período não disponível';
   document.getElementById('aj-info-filial').textContent = _filialAtual ? _filialAtual.nome : 'GPC Consolidado';
 
@@ -5907,7 +5908,7 @@ async function _procRenderHist(id, rel, base){
   histDiv.innerHTML = list.map(u=>{
     const dt = u.uploaded_at && u.uploaded_at.toDate ? u.uploaded_at.toDate() : null;
     const dtTxt = dt ? fDt(dt)+' '+dt.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}) : '—';
-    const per = (u.periodo_ini && u.periodo_fim) ? (u.periodo_ini.split('-').reverse().join('/')+' a '+u.periodo_fim.split('-').reverse().join('/')) : '';
+    const per = (u.periodo_ini && u.periodo_fim) ? (fDt(u.periodo_ini)+' a '+fDt(u.periodo_fim)) : '';
     const tamanho = u.arquivo_tamanho ? (u.arquivo_tamanho/1024/1024).toFixed(2)+' MB' : '';
     const quem = u.uploaded_by_email || '';
     const detParts = [];

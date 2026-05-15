@@ -153,7 +153,7 @@ function renderRecebimentos(){
   // Banner com escopo
   html += '<div style="background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:10px 14px;margin-bottom:14px;font-size:12px;color:var(--text-dim);">'
        +   '<strong>Escopo:</strong> '+esc(meta.escopo||'Inadimplência ATP')+' · '
-       +   '<strong>Vencidos:</strong> '+esc((meta.periodo_vencimento||{}).inicio||'?')+' a '+esc((meta.periodo_vencimento||{}).fim||'?')+' · '
+       +   '<strong>Vencidos:</strong> '+fDt((meta.periodo_vencimento||{}).inicio||'')+' a '+fDt((meta.periodo_vencimento||{}).fim||'')+' · '
        +   fI(meta.linhas_processadas||0)+' linhas processadas · '
        +   'gerado em '+esc((meta.geradoEm||'').substring(0,16).replace('T',' '))
        + '</div>';

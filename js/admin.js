@@ -1196,7 +1196,7 @@ function _excExportarXLSX(){
     ['Ideal de cobertura (dias)', getEstoqueIdeal()],
     ['Departamento', excDeptFiltro || 'Todos'],
     ['Se\u00e7\u00e3o', excSecaoFiltro || 'Todas'],
-    ['Cadastrado at\u00e9', excCadAte ? excCadAte.split('-').reverse().join('/') : 'Sem filtro'],
+    ['Cadastrado at\u00e9', excCadAte ? fDt(excCadAte) : 'Sem filtro'],
     [],
     ['Total de itens em excesso', items.length],
     ['Valor em excesso (R$)', totalExcesso],
@@ -1212,7 +1212,7 @@ function _excExportarXLSX(){
                   'Pre\u00e7o venda unit.','Classifica\u00e7\u00e3o'];
   const rows = items.map(i => [
     i.c, i.d, i.dp, i.sc, i.f,
-    i.dc ? i.dc.split('-').reverse().join('/') : '',
+    i.dc ? fDt(i.dc) : '',
     i.eq, i.vendaDiaria, i.diasCob>=999?'sem venda':Number(i.diasCob.toFixed(1)),
     i.diasExcesso>=999?'sem venda':Number(i.diasExcesso.toFixed(1)),
     Number(i.excessoQt.toFixed(3)), Number(i.ev.toFixed(2)),
@@ -1292,7 +1292,7 @@ function _excExportarPDF(){
 </head><body>
   <div class="noprint"><button onclick="window.print()">Imprimir / Salvar PDF</button></div>
   <h1>Excesso de estoque - GPC</h1>
-  <div class="sub">Filial: <strong>${esc(filialTxt)}</strong> \xb7 Estoque em ${esc(dtFmt)} \xb7 Ideal: ${getEstoqueIdeal()} dias \xb7 Departamento: <strong>${esc(excDeptFiltro||'Todos')}</strong> \xb7 Se\xe7\xe3o: <strong>${esc(excSecaoFiltro||'Todas')}</strong> \xb7 Cadastrado at\xe9: <strong>${esc(excCadAte? excCadAte.split('-').reverse().join('/') : 'Sem filtro')}</strong> \xb7 Gerado em ${esc(hoje)}</div>
+  <div class="sub">Filial: <strong>${esc(filialTxt)}</strong> \xb7 Estoque em ${esc(dtFmt)} \xb7 Ideal: ${getEstoqueIdeal()} dias \xb7 Departamento: <strong>${esc(excDeptFiltro||'Todos')}</strong> \xb7 Se\xe7\xe3o: <strong>${esc(excSecaoFiltro||'Todas')}</strong> \xb7 Cadastrado at\xe9: <strong>${esc(excCadAte? fDt(excCadAte) : 'Sem filtro')}</strong> \xb7 Gerado em ${esc(hoje)}</div>
   <div class="kpis">
     <div class="kpi"><div class="l">Valor em excesso</div><div class="v">${fmtBr(totalExcesso,0)}</div></div>
     <div class="kpi"><div class="l">% do estoque</div><div class="v">${fmtPct(pctExc)}</div></div>

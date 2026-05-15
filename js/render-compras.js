@@ -4128,7 +4128,7 @@ window._openFornNovo = function(cod){
           prodsHtml += '</div>';
         }
 
-        const dataFmt = nf.data ? nf.data.split('-').reverse().join('/') : '-';
+        const dataFmt = nf.data ? fDt(nf.data) : '—';
         html += '<div class="ext-nf-row" style="padding:10px 14px;border-bottom:1px solid var(--border);display:grid;grid-template-columns:70px 90px 1fr 110px 90px 80px 70px;gap:10px;align-items:start;font-size:11.5px;">'
              +    '<div><span class="kg-tag" style="font-size:10px;background:var(--surface-2);border:1px solid var(--border);">↓ NF</span></div>'
              +    '<div>'+esc(dataFmt)+'</div>'
@@ -5426,7 +5426,7 @@ function _nfFechRender(){
 
     listaExib.forEach(function(n){
       const ign = (_nfsIgnCache && _nfsIgnCache.nfs && _nfsIgnCache.nfs[n.key]) || null;
-      const dataFmt = n.data ? n.data.split('-').reverse().join('/') : '-';
+      const dataFmt = n.data ? fDt(n.data) : '—';
       const stMap = {pago:{cls:'ok',txt:'Pago'},aberto:{cls:'wn',txt:'Em aberto'},parcial:{cls:'wn',txt:'Parcial'},desconhecido:{cls:'',txt:'—'}};
       const stInfo = stMap[n.status] || stMap['desconhecido'];
 

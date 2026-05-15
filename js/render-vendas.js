@@ -3348,7 +3348,7 @@ function renderVDiarias(){
 
   html += '<div style="background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:10px 14px;margin-bottom:14px;font-size:12px;color:var(--text-dim);">'
        +   '<strong>'+fI(dias.length)+' dias</strong> · '
-       +   'período '+dias[0].data+' a '+dias[dias.length-1].data+' · '
+       +   'período '+fDt(dias[0].data)+' a '+fDt(dias[dias.length-1].data)+' · '
        +   esc(escopoTxt)
        + '</div>';
 
@@ -3431,8 +3431,8 @@ function renderVDiarias(){
   const top1DataDt = top1 ? new Date(top1.data + 'T12:00:00') : null;
   document.getElementById('kg-vd').innerHTML = kgHtml([
     {l:'Média diária', v:fK(mediaFat), s:'desvio padrão ±'+fK(desvio)},
-    {l:'Maior dia',    v:top1?fK(top1.fat_liq):'—', s:top1?(top1.data+' · '+diaSemNome[top1DataDt.getDay()]):'',  cls:'hl'},
-    {l:'Menor dia',    v:bot10[0]?fK(bot10[0].fat_liq):'—', s:bot10[0]?bot10[0].data:''},
+    {l:'Maior dia',    v:top1?fK(top1.fat_liq):'—', s:top1?(fDt(top1.data)+' · '+diaSemNome[top1DataDt.getDay()]):'',  cls:'hl'},
+    {l:'Menor dia',    v:bot10[0]?fK(bot10[0].fat_liq):'—', s:bot10[0]?fDt(bot10[0].data):''},
     {l:'Total dias trabalhados', v:fI(dias.length), s:'cobertura completa'},
   ]);
 
@@ -3440,7 +3440,7 @@ function renderVDiarias(){
   mkC('c-vd-top', {type:'bar',
     data:{labels:top10.map(function(d){
       const dt = new Date(d.data+'T12:00:00');
-      return d.data+' ('+diaSemAbrev[dt.getDay()]+')';
+      return fDt(d.data)+' ('+diaSemAbrev[dt.getDay()]+')';
     }), datasets:[{label:'Fat. Líq.', data:top10.map(function(d){return d.fat_liq;}),
       backgroundColor:_PAL.ok+'CC', borderRadius:3}]},
     options:{indexAxis:'y', responsive:true, maintainAspectRatio:false,
@@ -3452,7 +3452,7 @@ function renderVDiarias(){
   mkC('c-vd-bot', {type:'bar',
     data:{labels:bot10.map(function(d){
       const dt = new Date(d.data+'T12:00:00');
-      return d.data+' ('+diaSemAbrev[dt.getDay()]+')';
+      return fDt(d.data)+' ('+diaSemAbrev[dt.getDay()]+')';
     }), datasets:[{label:'Fat. Líq.', data:bot10.map(function(d){return d.fat_liq;}),
       backgroundColor:_PAL.dn+'CC', borderRadius:3}]},
     options:{indexAxis:'y', responsive:true, maintainAspectRatio:false,
@@ -3492,7 +3492,7 @@ function renderVDiarias(){
     const dt = new Date(d.data+'T12:00:00');
     return '<tr>'
       + '<td class="L" style="color:var(--text-muted);font-weight:700;">'+(i+1)+'</td>'
-      + '<td class="L"><strong>'+esc(d.data)+'</strong></td>'
+      + '<td class="L"><strong>'+fDt(d.data)+'</strong></td>'
       + '<td class="L">'+diaSemNome[dt.getDay()]+'</td>'
       + '<td class="val-strong">'+fK(d.fat_liq)+'</td>'
       + '<td class="val-dim">'+fI(d.nfs)+'</td>'
@@ -3909,7 +3909,7 @@ function _dcpRenderConteudo(){
         + '<div style="font-size:24px;">'+medalhas[i]+'</div>'
         + '<div style="flex:1;">'
         +   '<div style="font-size:18px;font-weight:800;color:var(--text);">'+fK(d.fat)+'</div>'
-        +   '<div style="font-size:11.5px;color:var(--text-muted);">'+esc(d.data)+' · '+dn+' · '+esc(ymL)+'</div>'
+        +   '<div style="font-size:11.5px;color:var(--text-muted);">'+fDt(d.data)+' · '+dn+' · '+esc(ymL)+'</div>'
         + '</div>'
         + '</div>';
     });
