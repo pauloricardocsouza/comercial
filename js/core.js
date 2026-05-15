@@ -216,7 +216,7 @@ const AUTH_MODE = 'firebase'; // 'mock' | 'firebase'
 // Convenção:
 //   X.x → alteração grande (quebra de compatibilidade, nova feature grande)
 //   x.X → alteração suave (fix, ajuste visual, pequeno refinamento)
-const APP_VERSION = '4.76-cofre-fix23';
+const APP_VERSION = '4.76-cofre-fix24';
 
 // ================================================================
 // HELPERS DE CHART.JS — compatíveis com Safari/iOS (sem spread ops)
@@ -6851,10 +6851,9 @@ function _cofreUpdateBreadcrumb(activeId){
   }
 }
 
-// v4.76 fix21: propaga "<grupo> · <SIGLA - Nome>" em todas as .ph .pk de toda página.
-// Roda após render, troca de página e troca de filial. A primeira execução em
-// cada .pk salva o texto base em data-pk-base; chamadas seguintes reconstroem
-// a partir desse base + filial atual, garantindo idempotência.
+// v4.76 fix21/fix24: propaga "<base> · <SIGLA - Nome>" em todas as .ph .pk.
+// fix24: preserva texto base completo (era cortado no 1º " · "); detecta e remove
+// sufixo já aplicado pra evitar duplicação "CP3 · CP3 - Cestão L1".
 function _cofreSyncFilialNoTitulo(){
   function rotuloFilial(){
     try {
@@ -6871,10 +6870,16 @@ function _cofreSyncFilialNoTitulo(){
     var el = pks[i];
     var base = el.getAttribute('data-pk-base');
     if(base === null){
-      // Remove sufixo " · …" eventual que já tenha sido aplicado por renderExecutivo
       var raw = (el.textContent || '').trim();
-      var cut = raw.indexOf(' · ');
-      base = cut > 0 ? raw.substring(0, cut) : raw;
+      // Se já termina com o rotulo da filial atual (ou um anterior), strip.
+      // Lista o sufixo atual + qualquer "SIGLA - Nome" plausível de fallback.
+      if(rot){
+        var sufix = ' · ' + rot;
+        if(raw.length >= sufix.length && raw.substring(raw.length - sufix.length).toUpperCase() === sufix.toUpperCase()){
+          raw = raw.substring(0, raw.length - sufix.length).trim();
+        }
+      }
+      base = raw;
       el.setAttribute('data-pk-base', base);
     }
     el.textContent = rot ? (base + ' · ' + rot) : base;

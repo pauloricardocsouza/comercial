@@ -3985,48 +3985,50 @@ function _dcpRenderConteudo(){
     + '<div style="height:260px;margin-top:8px;"><canvas id="dcp-chart-repres"></canvas></div>'
     + '</div>';
 
-  // ─── Top 3 melhores dias individuais ───
+  // ─── v4.76 fix24: Top 3 dias + Top 3 eventos lado a lado (row2eq) ───
   const top3Dias = _dcpTopDias(_dcpFiltroLoja, 3);
-  if(top3Dias.length){
-    html += '<div class="cc" style="margin-bottom:14px;">'
-      + '<div class="cct">🏆 Top 3 — Melhores dias individuais</div>'
-      + '<div style="display:flex;flex-direction:column;gap:8px;margin-top:10px;">';
-    const medalhas = ['🥇','🥈','🥉'];
-    top3Dias.forEach(function(d, i){
-      const dt = new Date(d.data+'T12:00:00');
-      const dn = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'][dt.getDay()];
-      const ymL = _ymToLabel(d.data.substring(0,7));
-      html += '<div style="display:flex;align-items:center;gap:14px;padding:10px;background:var(--surface-2);border-radius:6px;">'
-        + '<div style="font-size:24px;">'+medalhas[i]+'</div>'
-        + '<div style="flex:1;">'
-        +   '<div style="font-size:18px;font-weight:800;color:var(--text);">'+fK(d.fat)+'</div>'
-        +   '<div style="font-size:11.5px;color:var(--text-muted);">'+fDt(d.data)+' · '+dn+' · '+esc(ymL)+'</div>'
-        + '</div>'
-        + '</div>';
-    });
-    html += '</div></div>';
-  }
-
-  // ─── Top 3 melhores eventos ───
   const top3Eventos = _dcpTopEventos(_dcpFiltroLoja, 3);
-  if(top3Eventos.length){
-    html += '<div class="cc" style="margin-bottom:14px;">'
-      + '<div class="cct">🥇 Top 3 — Melhores eventos (3 dias)</div>'
-      + '<div style="display:flex;flex-direction:column;gap:8px;margin-top:10px;">';
-    const medalhas = ['🥇','🥈','🥉'];
-    top3Eventos.forEach(function(ev, i){
-      const datasCurta = ev.datas_cp.map(function(d){return fDt(d);}).join(' · ');
-      const ymL = _ymToLabel(ev.ym);
-      const premiumStr = ev.premium_pct != null ? ' · Premium '+(ev.premium_pct>=0?'+':'')+fP(ev.premium_pct,0) : '';
-      html += '<div style="display:flex;align-items:center;gap:14px;padding:10px;background:var(--surface-2);border-radius:6px;">'
-        + '<div style="font-size:24px;">'+medalhas[i]+'</div>'
-        + '<div style="flex:1;">'
-        +   '<div style="font-size:18px;font-weight:800;color:var(--text);">'+fK(ev.fat_dias_cp)+' <span style="font-size:11px;color:var(--text-muted);font-weight:400;">'+ev.num_dias_cp+' dias</span></div>'
-        +   '<div style="font-size:11.5px;color:var(--text-muted);">'+esc(datasCurta)+' · '+esc(ymL)+esc(premiumStr)+'</div>'
-        + '</div>'
-        + '</div>';
-    });
-    html += '</div></div>';
+  if(top3Dias.length || top3Eventos.length){
+    html += '<div class="row2eq" style="margin-bottom:14px;align-items:stretch;">';
+    if(top3Dias.length){
+      html += '<div class="cc" style="margin-bottom:0;">'
+        + '<div class="cct">🏆 Top 3 — Melhores dias individuais</div>'
+        + '<div style="display:flex;flex-direction:column;gap:8px;margin-top:10px;">';
+      const medalhas = ['🥇','🥈','🥉'];
+      top3Dias.forEach(function(d, i){
+        const dt = new Date(d.data+'T12:00:00');
+        const dn = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'][dt.getDay()];
+        const ymL = _ymToLabel(d.data.substring(0,7));
+        html += '<div style="display:flex;align-items:center;gap:14px;padding:10px;background:var(--surface-2);border-radius:6px;">'
+          + '<div style="font-size:24px;">'+medalhas[i]+'</div>'
+          + '<div style="flex:1;min-width:0;">'
+          +   '<div style="font-size:18px;font-weight:800;color:var(--text);">'+fK(d.fat)+'</div>'
+          +   '<div style="font-size:11.5px;color:var(--text-muted);">'+fDt(d.data)+' · '+dn+' · '+esc(ymL)+'</div>'
+          + '</div>'
+          + '</div>';
+      });
+      html += '</div></div>';
+    }
+    if(top3Eventos.length){
+      html += '<div class="cc" style="margin-bottom:0;">'
+        + '<div class="cct">🥇 Top 3 — Melhores eventos (3 dias)</div>'
+        + '<div style="display:flex;flex-direction:column;gap:8px;margin-top:10px;">';
+      const medalhas2 = ['🥇','🥈','🥉'];
+      top3Eventos.forEach(function(ev, i){
+        const datasCurta = ev.datas_cp.map(function(d){return fDt(d);}).join(' · ');
+        const ymL = _ymToLabel(ev.ym);
+        const premiumStr = ev.premium_pct != null ? ' · Premium '+(ev.premium_pct>=0?'+':'')+fP(ev.premium_pct,0) : '';
+        html += '<div style="display:flex;align-items:center;gap:14px;padding:10px;background:var(--surface-2);border-radius:6px;">'
+          + '<div style="font-size:24px;">'+medalhas2[i]+'</div>'
+          + '<div style="flex:1;min-width:0;">'
+          +   '<div style="font-size:18px;font-weight:800;color:var(--text);">'+fK(ev.fat_dias_cp)+' <span style="font-size:11px;color:var(--text-muted);font-weight:400;">'+ev.num_dias_cp+' dias</span></div>'
+          +   '<div style="font-size:11.5px;color:var(--text-muted);">'+esc(datasCurta)+' · '+esc(ymL)+esc(premiumStr)+'</div>'
+          + '</div>'
+          + '</div>';
+      });
+      html += '</div></div>';
+    }
+    html += '</div>';
   }
 
   // ─── Tabela histórico completo ───
@@ -4691,12 +4693,7 @@ function _metasRenderConteudo(){
     + '<div style="height:300px;margin-top:8px;"><canvas id="metas-chart-mensal"></canvas></div>'
     + '</div>';
 
-  // ─── Gráfico 2: Desvio mensal ───
-  html += '<div class="cc" style="margin-bottom:14px;">'
-    + '<div class="cct">'+esc(escopoLbl)+' · Desvio mensal da meta (R$k)</div>'
-    + '<div class="ccs">Verde = acima · Vermelho = abaixo da meta</div>'
-    + '<div style="height:240px;margin-top:8px;"><canvas id="metas-chart-desvio"></canvas></div>'
-    + '</div>';
+  // v4.76 fix24: Gráfico 'Desvio mensal da meta' removido a pedido do usuário.
 
   // ─── Insights (piora ano a ano + pior mês) ───
   if(anos.length >= 2){
