@@ -6,8 +6,8 @@
 <meta name="robots" content="noindex, nofollow">
 <title>Comercial GPC · R2 Soluções</title>
 <!-- v4.76 fix7: favicon GPC (navy + GPC branco + arco laranja) -->
-<link rel="icon" type="image/svg+xml" href="assets/favicon.svg?v=4.76.28">
-<link rel="apple-touch-icon" href="assets/favicon.svg?v=4.76.28">
+<link rel="icon" type="image/svg+xml" href="assets/favicon.svg?v=4.76.29">
+<link rel="apple-touch-icon" href="assets/favicon.svg?v=4.76.29">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <!-- DNS prefetch para Firebase: encurta o handshake de auth/firestore -->
@@ -2472,6 +2472,30 @@ body.cofre-shell .cofre-tb-right { margin-left: auto; }
   body.cofre-shell #cal-pg-tops > div { font-size: 11px; }
 }
 
+/* v4.76 fix29: empty-state padronizado (icon + título + subtítulo).
+   Use via classe .cofre-empty ou helper _emptyState(msg, sub) em core.js. */
+body.cofre-shell .cofre-empty {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  padding: 56px 24px; gap: 12px; text-align: center;
+  color: var(--text-muted);
+}
+body.cofre-shell .cofre-empty .ce-ico {
+  width: 56px; height: 56px;
+  border-radius: 50%;
+  background: var(--surface-2);
+  display: grid; place-items: center;
+  color: var(--text-faint);
+  border: 1px dashed var(--border-strong);
+}
+body.cofre-shell .cofre-empty .ce-ico svg { width: 26px; height: 26px; }
+body.cofre-shell .cofre-empty .ce-titulo {
+  font-size: 14px; font-weight: 700; color: var(--text);
+  letter-spacing: -0.01em;
+}
+body.cofre-shell .cofre-empty .ce-sub {
+  font-size: 12px; color: var(--text-muted); max-width: 380px; line-height: 1.5;
+}
+
 /* v4.76 fix11: @media print — exportar página em PDF sem topbar e sidebar.
    Acionado por #print-page (chama window.print). O usuário escolhe "Salvar como PDF". */
 @media print {
@@ -2929,21 +2953,31 @@ body.cofre-shell .pfb-sep {
 </main></div>
 
 <script id="GD" type="application/json">{}</script>
-<!-- Tela de loading -->
+<!-- Tela de loading · v4.76 fix29: branded com logo GPC + spinner duplo -->
 <div id="dataLoader" style="position:fixed;inset:0;background:var(--bg);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:9999;font-family:'Inter',sans-serif;">
-  <div style="width:48px;height:48px;border:3px solid var(--surface-3);border-top-color:var(--accent);border-radius:50%;animation:dlSpin 0.8s linear infinite;"></div>
-  <div id="dlMsg" style="margin-top:18px;font-size:13px;color:var(--text-muted);font-family:'JetBrains Mono',monospace;">Carregando dados...</div>
-  <div id="dlProg" style="margin-top:6px;font-size:11px;color:var(--text-dim);font-family:'JetBrains Mono',monospace;"></div>
+  <div style="position:relative;width:140px;height:140px;display:grid;place-items:center;margin-bottom:18px;">
+    <!-- Spinner anel duplo -->
+    <div style="position:absolute;inset:0;border:3px solid transparent;border-top-color:#2E476F;border-right-color:#2E476F;border-radius:50%;animation:dlSpin 1.2s linear infinite;"></div>
+    <div style="position:absolute;inset:10px;border:3px solid transparent;border-bottom-color:#F58634;border-left-color:#F58634;border-radius:50%;animation:dlSpin 1.6s linear infinite reverse;"></div>
+    <!-- Logo GPC centralizado -->
+    <img src="assets/gpc-color.png" alt="GPC" style="width:74px;height:auto;display:block;">
+  </div>
+  <div style="font-family:'Archivo','Inter',sans-serif;font-weight:800;font-size:13px;letter-spacing:.16em;color:var(--accent-text);text-transform:uppercase;margin-bottom:4px;">Inteligência Comercial</div>
+  <div id="dlMsg" style="font-size:12.5px;color:var(--text-muted);font-family:'JetBrains Mono',monospace;letter-spacing:.04em;">Carregando dados...</div>
+  <div id="dlProg" style="margin-top:6px;font-size:11px;color:var(--text-dim);font-family:'JetBrains Mono',monospace;letter-spacing:.04em;"></div>
 </div>
-<style>@keyframes dlSpin{to{transform:rotate(360deg)}}</style>
+<style>
+  @keyframes dlSpin{to{transform:rotate(360deg)}}
+  [data-theme="dark"] #dataLoader img[alt="GPC"] { content: url('assets/gpc-white.png'); }
+</style>
 <!-- ════════════════════════════════════════════════════════════════════════════
      JS principal · dividido em 5 arquivos pela auditoria v4.6
      Ordem importa: core declara as globais; render-* dependem de core.
      ════════════════════════════════════════════════════════════════════════════ -->
-<script src="js/core.js?v=4.76.28"></script>
-<script src="js/render-compras.js?v=4.76.28"></script>
-<script src="js/render-vendas.js?v=4.76.28"></script>
-<script src="js/render-outros.js?v=4.76.28"></script>
-<script src="js/admin.js?v=4.76.28"></script>
+<script src="js/core.js?v=4.76.29"></script>
+<script src="js/render-compras.js?v=4.76.29"></script>
+<script src="js/render-vendas.js?v=4.76.29"></script>
+<script src="js/render-outros.js?v=4.76.29"></script>
+<script src="js/admin.js?v=4.76.29"></script>
 </body>
 </html>

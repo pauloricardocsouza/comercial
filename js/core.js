@@ -216,7 +216,7 @@ const AUTH_MODE = 'firebase'; // 'mock' | 'firebase'
 // Convenção:
 //   X.x → alteração grande (quebra de compatibilidade, nova feature grande)
 //   x.X → alteração suave (fix, ajuste visual, pequeno refinamento)
-const APP_VERSION = '4.76-cofre-fix28';
+const APP_VERSION = '4.76-cofre-fix29';
 
 // ================================================================
 // HELPERS DE CHART.JS — compatíveis com Safari/iOS (sem spread ops)
@@ -3029,6 +3029,20 @@ const fDt=d=>{
   }
   return '—';
 };
+// v4.76 fix29: helper de empty-state padronizado (uso opcional).
+// Devolve string HTML pronta com ícone + título + subtítulo. Os renderers
+// podem ir migrando seus "Sem dados" inline pra ce.
+//   _emptyState('Sem dados de vendedores', 'Carregue um JSON ou filtre outro período')
+function _emptyState(titulo, sub, icon){
+  const _ic = icon || '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>';
+  return '<div class="cofre-empty">'
+       +   '<div class="ce-ico">'+_ic+'</div>'
+       +   '<div class="ce-titulo">'+(typeof esc==='function'?esc(titulo||''):(titulo||''))+'</div>'
+       +   (sub ? '<div class="ce-sub">'+(typeof esc==='function'?esc(sub):sub)+'</div>' : '')
+       + '</div>';
+}
+window._emptyState = _emptyState;
+
 // v4.76 fix27: fDtH — data + hora no mesmo formato (DD-MM-AAAA HH:MM)
 const fDtH=d=>{
   const dt = (d instanceof Date) ? d : new Date();

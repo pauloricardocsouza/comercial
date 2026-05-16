@@ -2302,7 +2302,7 @@ function renderVDrilldown(){
   if(!cad.length || !mensalV.length){
     cont.innerHTML = '<div class="ph"><div class="pk">Vendas · Análise</div><h2>Drill-Down por <em>Vendedor</em></h2></div>'
       + '<div class="ph-sep"></div><div class="page-body">'
-      + '<div class="cc" style="text-align:center;color:var(--text-muted);padding:30px;">Sem dados de vendedores</div></div>';
+      + '<div class="cc">'+_emptyState('Sem dados de vendedores', 'Aguardando carga do JSON de vendedores ou filial sem cadastro de RCAs.')+'</div></div>';
     return;
   }
 
@@ -2594,7 +2594,7 @@ function renderVBenchmarking(){
   if(!cad.length || !mensalV.length){
     cont.innerHTML = '<div class="ph"><div class="pk">Vendas · Análise</div><h2><em>RCA</em> · Análise por Vendedor</h2></div>'
       + '<div class="ph-sep"></div><div class="page-body">'
-      + '<div class="cc" style="text-align:center;color:var(--text-muted);padding:30px;">Sem dados de vendedores</div></div>';
+      + '<div class="cc">'+_emptyState('Sem dados de vendedores', 'O JSON de vendedores ainda não foi carregado ou a base ativa não possui cadastro de RCAs.')+'</div></div>';
     return;
   }
 
@@ -3050,7 +3050,7 @@ function renderVItens(){
   if(!deptos.length){
     cont.innerHTML = '<div class="ph"><div class="pk">Vendas · Análise</div><h2>Itens & <em>Departamentos</em></h2></div>'
       + '<div class="ph-sep"></div><div class="page-body">'
-      + '<div class="cc" style="text-align:center;color:var(--text-muted);padding:30px;">Sem dados de departamentos</div></div>';
+      + '<div class="cc">'+_emptyState('Sem dados de departamentos', 'Verifique a carga do JSON de vendas para a filial selecionada.')+'</div></div>';
     return;
   }
 
@@ -3387,7 +3387,7 @@ function renderVDiarias(){
   if(!diarioRaw.length){
     cont.innerHTML = '<div class="ph"><div class="pk">Vendas · Análise</div><h2>Vendas <em>Diárias</em></h2></div>'
       + '<div class="ph-sep"></div><div class="page-body">'
-      + '<div class="cc" style="text-align:center;color:var(--text-muted);padding:30px;">Sem dados diários</div></div>';
+      + '<div class="cc">'+_emptyState('Sem dados diários', 'O JSON de vendas para esta filial não tem a granularidade diária.')+'</div></div>';
     return;
   }
 
@@ -3436,7 +3436,7 @@ function renderVDiarias(){
   if(!diario.length){
     cont.innerHTML = '<div class="ph"><div class="pk">Vendas · Análise</div><h2>Vendas <em>Diárias</em></h2></div>'
       + '<div class="ph-sep"></div><div class="page-body">'
-      + '<div class="cc" style="text-align:center;color:var(--text-muted);padding:30px;">Sem dados no período selecionado.</div></div>';
+      + '<div class="cc">'+_emptyState('Sem dados no período selecionado', 'Tente expandir o filtro de período no topo da página.')+'</div></div>';
     return;
   }
 
@@ -3936,7 +3936,7 @@ function renderVDiasCP(){
   if(!diario.length){
     cont.innerHTML = '<div class="ph"><div class="pk">Vendas · Análise</div><h2>Dias <em>C &amp; P</em> — Análise de oferta</h2></div>'
       + '<div class="ph-sep"></div><div class="page-body">'
-      + '<div class="cc" style="text-align:center;color:var(--text-muted);padding:30px;">Sem dados diários carregados</div></div>';
+      + '<div class="cc">'+_emptyState('Sem dados diários carregados', 'Esta análise depende do agregado diário de vendas. Confira a página de Processamento.')+'</div></div>';
     return;
   }
 
