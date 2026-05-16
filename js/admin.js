@@ -567,15 +567,16 @@ window.openProd=function(cod){
   `:'<div style="text-align:center;padding:20px;color:var(--text-muted);font-size:12px;">Sem compras no período.</div>';
 
   // Fornecedores do item
+  // v4.79: 1 atribuicao final via .map().join (era innerHTML += em forEach = N reflows)
   const fibEl=document.getElementById('forn-item-body');
-  if(fibEl)(p.fi||[]).forEach(f=>{
-    fibEl.innerHTML+=`<div class="forn-row">
+  if(fibEl){
+    fibEl.innerHTML = (p.fi||[]).map(f => `<div class="forn-row">
       <div><div style="font-weight:600;font-size:13px;">${esc(f.n||"")}</div><div style="font-size:10px;color:var(--text-muted);font-family:'JetBrains Mono',monospace;">${f.ne} entrada(s) · ${fI(f.q)} un</div></div>
       <div style="text-align:right;font-family:'JetBrains Mono',monospace;font-weight:700;">${fB(f.v,0)}</div>
       <div style="text-align:right;"><div style="font-size:9px;color:var(--text-muted);font-family:'JetBrains Mono',monospace;">PAGO</div><div style="font-family:'JetBrains Mono',monospace;font-weight:700;color:var(--success-text);">${fB(f.p,0)}</div></div>
       <div style="text-align:right;"><div style="font-size:9px;color:var(--text-muted);font-family:'JetBrains Mono',monospace;">ABERTO</div><div style="font-family:'JetBrains Mono',monospace;font-weight:700;color:${f.a>0?'var(--highlight-text)':'var(--text-muted)'};">${fB(f.a,0)}</div></div>
-    </div>`;
-  });
+    </div>`).join('');
+  }
 
   // Entradas tabela (item 2: datas DD/MM/AAAA)
   document.getElementById('tb-ent').innerHTML=(p.en||[]).map(e=>{
@@ -1947,7 +1948,7 @@ function _supIgnAbrirCopiarUI(paginaOrigem, labelOrigem){
     const cfgOrig = (cfg.paginas && cfg.paginas[paginaOrigem]) || {};
     if(!cfg.paginas) cfg.paginas = {};
     destinos.forEach(function(d){
-      cfg.paginas[d] = JSON.parse(JSON.stringify(cfgOrig));
+      cfg.paginas[d] = _clone(cfgOrig);
       // Remove se vazio
       const tot = Object.keys(cfg.paginas[d]).reduce(function(s,l){return s + (cfg.paginas[d][l]||[]).length;}, 0);
       if(tot === 0) delete cfg.paginas[d];

@@ -216,7 +216,7 @@ const AUTH_MODE = 'firebase'; // 'mock' | 'firebase'
 // Convenção:
 //   X.x → alteração grande (quebra de compatibilidade, nova feature grande)
 //   x.X → alteração suave (fix, ajuste visual, pequeno refinamento)
-const APP_VERSION = '4.78-cofre-fix2';
+const APP_VERSION = '4.79-perf';
 
 // ================================================================
 // HELPERS DE CHART.JS — compatíveis com Safari/iOS (sem spread ops)
@@ -975,7 +975,7 @@ async function _getPerfisFirebase(){
     return _fbCache.perfis;
   }
   if(!window.fbDb){
-    return JSON.parse(JSON.stringify(PERFIS_DEFAULT_TEMPLATE));
+    return _clone(PERFIS_DEFAULT_TEMPLATE);
   }
   try {
     const snap = await window.fbDb.collection('perfisTemplate').get();
@@ -984,14 +984,14 @@ async function _getPerfisFirebase(){
     // Se algum perfil não existe no Firestore, fallback pro default
     const defaults = PERFIS_DEFAULT_TEMPLATE;
     Object.keys(defaults).forEach(k => {
-      if(!obj[k]) obj[k] = JSON.parse(JSON.stringify(defaults[k]));
+      if(!obj[k]) obj[k] = _clone(defaults[k]);
     });
     _fbCache.perfis = obj;
     _fbCache.perfisTs = now;
     return obj;
   } catch(e){
     console.error('Erro ao buscar perfis:', e);
-    return _fbCache.perfis || JSON.parse(JSON.stringify(PERFIS_DEFAULT_TEMPLATE));
+    return _fbCache.perfis || _clone(PERFIS_DEFAULT_TEMPLATE);
   }
 }
 
@@ -1130,7 +1130,7 @@ function _getPerfisCustom(){
     const v = localStorage.getItem('perfisTemplate');
     if(v) return JSON.parse(v);
   } catch(e){}
-  return JSON.parse(JSON.stringify(PERFIS_DEFAULT_TEMPLATE));
+  return _clone(PERFIS_DEFAULT_TEMPLATE);
 }
 function _savePerfisCustom(p){
   try { localStorage.setItem('perfisTemplate', JSON.stringify(p)); } catch(e){}
@@ -3107,6 +3107,10 @@ const fP=(n,d=1)=>((n||0).toFixed(d))+'%';
 const fI=n=>Math.round(n||0).toLocaleString('pt-BR');
 // v4.78: fT · truncado · sem cifrão · sem centavos · sem aproximação (ex: 254937.42 → "254.937")
 const fT=n=>Math.trunc(n||0).toLocaleString('pt-BR');
+// v4.79: _clone · structuredClone quando disponível (2-5x mais rápido que JSON.parse(JSON.stringify))
+const _clone = (typeof structuredClone === 'function')
+  ? structuredClone
+  : (x => JSON.parse(JSON.stringify(x)));
 const fN=(n,d=0)=>(n||0).toLocaleString('pt-BR',{minimumFractionDigits:d,maximumFractionDigits:d});
 // Item 2: datas em DD/MM/AAAA
 const fD=d=>d?d.slice(8)+'/'+d.slice(5,7)+'/'+d.slice(0,4):'—';
@@ -4021,11 +4025,22 @@ async function renderAdmAuditoria(){
     + '</div>';
 
   // Filtros
-  const usuariosUnicos = [...new Set(logs.map(l => l.uid))].map(uid => {
-    const l = logs.find(x => x.uid === uid);
-    return {uid: uid, nome: l ? (l.nome || l.email) : uid};
-  });
-  const tiposUnicos = [...new Set(logs.map(l => l.tipo))];
+  // v4.79: 1 passe pra montar usuariosUnicos + tiposUnicos (era O(N²) com .find)
+  const usuariosUnicos = [];
+  const _uidVisto = new Set();
+  const tiposUnicos = [];
+  const _tipoVisto = new Set();
+  for(let i=0; i<logs.length; i++){
+    const l = logs[i];
+    if(!_uidVisto.has(l.uid)){
+      _uidVisto.add(l.uid);
+      usuariosUnicos.push({uid: l.uid, nome: l.nome || l.email || l.uid});
+    }
+    if(!_tipoVisto.has(l.tipo)){
+      _tipoVisto.add(l.tipo);
+      tiposUnicos.push(l.tipo);
+    }
+  }
 
   el.innerHTML += '<div style="background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:12px 14px;margin-bottom:10px;display:flex;gap:10px;flex-wrap:wrap;align-items:center;">'
     + '<div style="display:flex;align-items:center;gap:6px;">'
@@ -4061,11 +4076,23 @@ async function renderAdmAuditoria(){
 
   function _renderTabela(filtros){
     const tbody = document.querySelector('#aud-tbl tbody');
-    let f = logs.slice();
-    if(filtros.usr) f = f.filter(l => l.uid === filtros.usr);
-    if(filtros.tipo) f = f.filter(l => l.tipo === filtros.tipo);
-    if(filtros.dtIni) f = f.filter(l => l.timestamp.slice(0,10) >= filtros.dtIni);
-    if(filtros.dtFim) f = f.filter(l => l.timestamp.slice(0,10) <= filtros.dtFim);
+    // v4.79: 1 loop com early-continue (era 4 filters encadeados = 4 passes + 5 allocs)
+    const usr = filtros.usr || null;
+    const tipo = filtros.tipo || null;
+    const dIni = filtros.dtIni || null;
+    const dFim = filtros.dtFim || null;
+    const f = [];
+    for(let i=0; i<logs.length; i++){
+      const l = logs[i];
+      if(usr  && l.uid  !== usr ) continue;
+      if(tipo && l.tipo !== tipo) continue;
+      if(dIni || dFim){
+        const d = l.timestamp.slice(0,10);
+        if(dIni && d < dIni) continue;
+        if(dFim && d > dFim) continue;
+      }
+      f.push(l);
+    }
 
     tbody.innerHTML = f.map(function(l){
       const dt = new Date(l.timestamp);
@@ -6191,12 +6218,20 @@ const TabelaPlus = {
         inp.type = 'text';
         inp.placeholder = '🔍 Filtrar (busca em todas as colunas)…';
         inp.style.cssText = 'width:100%;max-width:340px;padding:6px 10px;border:1px solid var(--border);border-radius:5px;font-size:12px;background:var(--surface);color:var(--text);margin-bottom:8px;font-family:inherit;display:block;';
+        // v4.79: debounce 150ms · cada tecla fazia querySelectorAll('tr') + tr.textContent
+        // (forca layout-reflow) sobre todas as linhas; em tabelas grandes era o pior caso
+        let _tplusTmr = null;
         inp.addEventListener('input', function(){
-          const termo = inp.value.toLowerCase().trim();
-          tbody.querySelectorAll('tr').forEach(function(tr){
-            if(!termo){ tr.style.display = ''; return; }
-            tr.style.display = tr.textContent.toLowerCase().indexOf(termo) >= 0 ? '' : 'none';
-          });
+          clearTimeout(_tplusTmr);
+          _tplusTmr = setTimeout(function(){
+            const termo = inp.value.toLowerCase().trim();
+            const trs = tbody.querySelectorAll('tr');
+            for(let i=0; i<trs.length; i++){
+              const tr = trs[i];
+              if(!termo){ tr.style.display = ''; continue; }
+              tr.style.display = tr.textContent.toLowerCase().indexOf(termo) >= 0 ? '' : 'none';
+            }
+          }, 150);
         });
         anchorParent.insertBefore(inp, refEl);
       }

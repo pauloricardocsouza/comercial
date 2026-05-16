@@ -1445,12 +1445,17 @@ function renderFornecedoresNovo(){
   // Listener da busca
   const inp = document.getElementById('forn-novo-srch');
   if(inp){
+    // v4.79: debounce 120ms (consistente com os outros inputs de busca do projeto)
+    let _fornTmr = null;
     inp.addEventListener('input', function(){
-      _fornFiltro = (inp.value || '').toLowerCase();
-      const filtrado = _fornFiltro.length < 2 ? rankCompra : rankCompra.filter(function(f){
-        return (f.nome||'').toLowerCase().indexOf(_fornFiltro) >= 0;
-      });
-      _fornRenderTabela(filtrado);
+      clearTimeout(_fornTmr);
+      _fornTmr = setTimeout(function(){
+        _fornFiltro = (inp.value || '').toLowerCase();
+        const filtrado = _fornFiltro.length < 2 ? rankCompra : rankCompra.filter(function(f){
+          return (f.nome||'').toLowerCase().indexOf(_fornFiltro) >= 0;
+        });
+        _fornRenderTabela(filtrado);
+      }, 120);
     });
   }
 
@@ -2721,19 +2726,18 @@ function _renderCalendarioPagamentos(titulosAbertos){
   });
 
   // Sábado (6) e domingo (0) somam no próximo dia útil (segunda)
-  function _addDays(yyyymmdd, n){
-    const d = new Date(yyyymmdd + 'T12:00:00');
-    d.setDate(d.getDate() + n);
-    return d.toISOString().substring(0,10);
-  }
+  // v4.79: uma unica Date() por chamada · sem reparse a cada iteracao
   function _proxDiaUtil(yyyymmdd){
-    let s = yyyymmdd;
-    let dow = new Date(s + 'T12:00:00').getDay();
+    const d = new Date(yyyymmdd + 'T12:00:00');
+    let dow = d.getDay();
     while(dow === 6 || dow === 0){
-      s = _addDays(s, 1);
-      dow = new Date(s + 'T12:00:00').getDay();
+      d.setDate(d.getDate() + 1);
+      dow = d.getDay();
     }
-    return s;
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    return y + '-' + m + '-' + dd;
   }
   const porDia = Object.create(null);
   Object.keys(porDiaRaw).forEach(function(diaSrc){

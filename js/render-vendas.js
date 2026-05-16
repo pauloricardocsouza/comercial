@@ -2498,7 +2498,12 @@ function renderVDrilldown(){
   // Bind dos filtros
   document.getElementById('flt-vdrl-loja').addEventListener('change', rebuildTable);
   document.getElementById('flt-vdrl-sup').addEventListener('change', rebuildTable);
-  document.getElementById('flt-vdrl-q').addEventListener('input', rebuildTable);
+  // v4.79: debounce 120ms · digitar 6 letras fazia 6 rebuilds completos
+  let _vdrlTmr = null;
+  document.getElementById('flt-vdrl-q').addEventListener('input', function(){
+    clearTimeout(_vdrlTmr);
+    _vdrlTmr = setTimeout(rebuildTable, 120);
+  });
 
   // Função global para abrir detalhe (acessível via onclick)
   window._vdrlAbrir = function(cod){
@@ -5086,7 +5091,7 @@ function _metasAbrirEditorUI(){
   document.getElementById('metas-modal-cancel').addEventListener('click', function(){overlay.remove();});
   document.getElementById('metas-modal-save').addEventListener('click', async function(){
     const inputs = overlay.querySelectorAll('input[data-loja][data-ym]');
-    const novoLojas = JSON.parse(JSON.stringify(_metasDados.lojas || {}));
+    const novoLojas = _clone(_metasDados.lojas || {});
     let mudancas = 0;
     inputs.forEach(function(inp){
       const loja = inp.getAttribute('data-loja');
