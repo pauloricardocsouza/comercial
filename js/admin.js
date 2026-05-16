@@ -749,12 +749,17 @@ function openForn(nome){
   const tagsHtml=tags.map(t=>`<span class="${t.c}">${t.l}</span>`).join('');
 
   // Evolução mensal a partir dos produtos do fornecedor
+  // v4.81 (Win 5): bucket ents por ym em 1 passe (era N×|PERS| varreduras)
+  const _comByPer = {};
+  for(let _ei = 0; _ei < ents.length; _ei++){
+    const _e = ents[_ei];
+    const _k = _e.dt && _e.dt.slice(0,7);
+    if(_k) _comByPer[_k] = (_comByPer[_k] || 0) + _e.vlc;
+  }
   const evo=PERS.map(function(per,i){
     const vdo=prods.reduce(function(s,p){return s+(p.sv[i]?p.sv[i][0]:0);},0);
     const luc=prods.reduce(function(s,p){return s+(p.sv[i]?p.sv[i][1]:0);},0);
-    // compras: entradas deste mês
-    const com=ents.filter(function(e){return e.dt&&e.dt.slice(0,7)===per;})
-      .reduce(function(s,e){return s+e.vlc;},0);
+    const com=_comByPer[per] || 0;
     return{m:per,vdo:vdo,luc:luc,com:com,marg:vdo>0?luc/vdo*100:0};
   });
 
@@ -983,10 +988,23 @@ function buildFornExtrato(evo, ents, devs, prods){
   // Header de colunas
   html+='<div class="ext-header"><span>Tipo</span><span>Data</span><span>Produto(s)</span><span style="text-align:right">NF</span><span style="text-align:right">Qtde</span><span style="text-align:right">SKUs</span><span style="text-align:right">Total</span><span style="text-align:right">Status</span></div>';
 
+  // v4.81 (Win 4): bucket ents/devs por per em 1 passe (era PERS.length × N varreduras)
+  const _entsByPer = {}, _devsByPer = {};
+  for(let _ei = 0; _ei < ents.length; _ei++){
+    const _e = ents[_ei];
+    const _k = _e.dt && _e.dt.slice(0,7);
+    if(_k){ (_entsByPer[_k] = _entsByPer[_k] || []).push(_e); }
+  }
+  for(let _di = 0; _di < devs.length; _di++){
+    const _d = devs[_di];
+    const _k = _d.dt && _d.dt.slice(0,7);
+    if(_k){ (_devsByPer[_k] = _devsByPer[_k] || []).push(_d); }
+  }
+
   PERS.forEach(function(per,i){
     const ev=evo[i];
-    const entsMes=ents.filter(function(e){return e.dt&&e.dt.slice(0,7)===per;});
-    const devsMes=devs.filter(function(d){return d.dt&&d.dt.slice(0,7)===per;});
+    const entsMes=_entsByPer[per] || [];
+    const devsMes=_devsByPer[per] || [];
 
     const qtEnt=entsMes.reduce(function(s,e){return s+e.q;},0);
     const vlEnt=entsMes.reduce(function(s,e){return s+e.vlc;},0);
@@ -1846,15 +1864,17 @@ function _renderSupIgnUI(){
     html += '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:10px;">';
     lojas.forEach(function(loja){
       const sups = supPorLoja[loja];
-      const ignorados = (cfgPag[loja] || []).map(Number);
-      const totIgn = sups.filter(function(s){ return ignorados.indexOf(s.cod) >= 0; }).length;
+      // v4.81 (Win 9): Set para lookup O(1) (era indexOf 2× por sup = O(N²))
+      const _ignSet = new Set((cfgPag[loja] || []).map(Number));
+      let totIgn = 0;
+      sups.forEach(function(s){ if(_ignSet.has(s.cod)) totIgn++; });
       html += '<div style="border:1px solid var(--border);border-radius:8px;padding:10px;background:var(--surface);">';
       html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid var(--border);">';
       html += '<div style="font-weight:700;font-size:13px;">'+esc(lojaLabel[loja]||loja)+' <span style="color:var(--text-muted);font-weight:400;font-size:11px;">('+esc(loja)+')</span></div>';
       html += '<span style="font-size:10px;color:'+(totIgn>0?'#dc2626':'var(--text-muted)')+';font-weight:600;">'+totIgn+' ignorados</span>';
       html += '</div>';
       sups.forEach(function(s){
-        const checked = ignorados.indexOf(s.cod) >= 0;
+        const checked = _ignSet.has(s.cod);
         html += '<label style="display:flex;align-items:center;gap:8px;padding:5px 4px;cursor:pointer;font-size:12px;border-radius:4px;'+(checked?'background:#fee2e2;':'')+'" onmouseover="this.style.background=\''+(checked?'#fecaca':'var(--surface-2)')+'\'" onmouseout="this.style.background=\''+(checked?'#fee2e2':'')+'\'">';
         html += '<input type="checkbox" data-loja="'+escAttr(loja)+'" data-cod="'+s.cod+'" '+(checked?'checked':'')+' class="sup-ign-chk" style="cursor:pointer;">';
         html += '<span style="font-family:\'JetBrains Mono\',monospace;font-size:10px;color:var(--text-muted);min-width:28px;">#'+s.cod+'</span>';

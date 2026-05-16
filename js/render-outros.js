@@ -1442,6 +1442,17 @@ const _CUBO_DIMS_INFO = {
   cnt:        {label:'Conta',        dimKey:'conta',      icone:'💳'}
 };
 
+// v4.81 (Win 10): pré-computa quais fatos cada dim aparece (era recalculado em cada _renderCuboUI)
+const _CUBO_DIM_USOS = (function(){
+  const m = {};
+  Object.keys(_CUBO_DIMS_INFO).forEach(function(d){
+    m[d] = Object.keys(_CUBO_FATO_DIMS).filter(function(f){
+      return _CUBO_FATO_DIMS[f].indexOf(d) >= 0;
+    });
+  });
+  return m;
+})();
+
 // Estado global da pivot
 let _pivotState = null;
 
@@ -1546,10 +1557,8 @@ function _renderCuboUI(c){
   html += '<div style="font-size:9px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;font-weight:700;margin-bottom:4px;">Dimensões</div>';
   html += '<div id="pv-fields" style="display:grid;grid-template-columns:1fr 1fr;gap:5px;margin-bottom:14px;">';
   Object.keys(_CUBO_DIMS_INFO).forEach(function(dCod){
-    const usadoEm = Object.keys(_CUBO_FATO_DIMS).filter(function(f){
-      return _CUBO_FATO_DIMS[f].indexOf(dCod) >= 0;
-    });
-    if(!usadoEm.length) return;
+    // v4.81 (Win 10): usa pré-computado _CUBO_DIM_USOS (constante por boot)
+    if(!_CUBO_DIM_USOS[dCod].length) return;
     const info = _CUBO_DIMS_INFO[dCod];
     html += '<div class="pv-field" draggable="true" data-field="'+dCod+'" data-type="dim" '
          +  'style="padding:6px 10px;background:var(--surface);border:1px solid var(--border);border-radius:5px;cursor:grab;font-size:12px;display:flex;align-items:center;gap:6px;">'
@@ -2179,34 +2188,61 @@ function _pvCalcular(){
       fltAplicar.push({ci:colIdx[campoReal], setV:setV});
     });
 
+    // v4.81 (Win 6): pré-resolve índices de coluna para rows/cols ANTES do loop f.linhas
+    // (era 2 .map + 2 _campoDeDim + 2 colIdx lookup POR LINHA)
+    const rowsCi = rows.map(function(d){ const ci = colIdx[_campoDeDim(d)]; return ci != null ? ci : -1; });
+    const colsCi = cols.map(function(d){ const ci = colIdx[_campoDeDim(d)]; return ci != null ? ci : -1; });
+
+    // v4.81 (Win 7): pré-resolve métricas deste fato ANTES do loop f.linhas
+    // (era valsValidas.forEach + _CUBO_METRICAS[mCod] lookup + if(m.fato!==fato) POR LINHA)
+    const metsAditivas = []; // {mCod, ci}
+    let temMarg = false, temTkt = false;
+    const ciVLuc = (colIdx.v_luc != null ? colIdx.v_luc : -1);
+    const ciVLiq = (colIdx.v_liq != null ? colIdx.v_liq : -1);
+    const ciVNfs = (colIdx.v_nfs != null ? colIdx.v_nfs : -1);
+    for(let i=0; i<valsValidas.length; i++){
+      const mCod = valsValidas[i];
+      const m = _CUBO_METRICAS[mCod];
+      if(!m || m.fato !== fato) continue;
+      if(m.calc === 'marg') temMarg = true;
+      else if(m.calc === 'tkt') temTkt = true;
+      else metsAditivas.push({mCod: mCod, ci: (m.campo != null ? colIdx[m.campo] : -1)});
+    }
+
     f.linhas.forEach(function(lin){
       // Filtro
       for(let i = 0; i < fltAplicar.length; i++){
         if(!fltAplicar[i].setV.has(String(lin[fltAplicar[i].ci]))) return;
       }
-      // Construir rowKey/colKey
-      const rk = rows.map(function(d){ const ci = colIdx[_campoDeDim(d)]; return ci != null ? lin[ci] : '__na__'; }).join('|||');
-      const ck = cols.map(function(d){ const ci = colIdx[_campoDeDim(d)]; return ci != null ? lin[ci] : '__na__'; }).join('|||');
+      // Construir rowKey/colKey via concat manual (evita 2 alloc de array + 2 join por linha)
+      let rk = '';
+      for(let i = 0; i < rowsCi.length; i++){
+        if(i) rk += '|||';
+        rk += (rowsCi[i] >= 0 ? lin[rowsCi[i]] : '__na__');
+      }
+      let ck = '';
+      for(let i = 0; i < colsCi.length; i++){
+        if(i) ck += '|||';
+        ck += (colsCi[i] >= 0 ? lin[colsCi[i]] : '__na__');
+      }
       if(!matriz[rk]) matriz[rk] = {};
       if(!matriz[rk][ck]) matriz[rk][ck] = {};
       const cell = matriz[rk][ck];
-      // Agrega cada métrica
-      valsValidas.forEach(function(mCod){
-        const m = _CUBO_METRICAS[mCod];
-        if(m.fato !== fato) return;
-        if(m.calc){
-          // Métrica calculada: precisamos guardar campos base
-          if(m.calc === 'marg'){
-            cell.__v_luc = (cell.__v_luc||0) + (lin[colIdx.v_luc]||0);
-            cell.__v_liq = (cell.__v_liq||0) + (lin[colIdx.v_liq]||0);
-          } else if(m.calc === 'tkt'){
-            cell.__v_liq = (cell.__v_liq||0) + (lin[colIdx.v_liq]||0);
-            cell.__v_nfs = (cell.__v_nfs||0) + (lin[colIdx.v_nfs]||0);
-          }
-        } else {
-          cell[mCod] = (cell[mCod]||0) + (lin[colIdx[m.campo]]||0);
-        }
-      });
+      // Métricas aditivas (rápido)
+      for(let i = 0; i < metsAditivas.length; i++){
+        const x = metsAditivas[i];
+        cell[x.mCod] = (cell[x.mCod] || 0) + (x.ci >= 0 ? (lin[x.ci] || 0) : 0);
+      }
+      // Métricas calculadas (precisam de campos base)
+      // Preserva exatamente o comportamento original (que soma __v_liq 2x se marg+tkt presentes)
+      if(temMarg){
+        cell.__v_luc = (cell.__v_luc || 0) + (ciVLuc >= 0 ? (lin[ciVLuc] || 0) : 0);
+        cell.__v_liq = (cell.__v_liq || 0) + (ciVLiq >= 0 ? (lin[ciVLiq] || 0) : 0);
+      }
+      if(temTkt){
+        cell.__v_liq = (cell.__v_liq || 0) + (ciVLiq >= 0 ? (lin[ciVLiq] || 0) : 0);
+        cell.__v_nfs = (cell.__v_nfs || 0) + (ciVNfs >= 0 ? (lin[ciVNfs] || 0) : 0);
+      }
     });
   });
 
@@ -2227,13 +2263,14 @@ function _pvCalcular(){
 
   // Coleta rowKeys e colKeys distintos
   // Sort natural: tenta numérico primeiro, depois lexicográfico
+  // v4.81 (Win 3): decorate-sort-undecorate — split('|||') uma vez por chave
+  // (era 2 splits por COMPARAÇÃO, ou seja N log N × 2 splits)
   function _sortChaves(arr){
-    return arr.slice().sort(function(a, b){
-      const partsA = a.split('|||');
-      const partsB = b.split('|||');
+    const dec = arr.map(function(s){return {s: s, parts: s.split('|||')};});
+    dec.sort(function(a, b){
+      const partsA = a.parts, partsB = b.parts;
       for(let i = 0; i < partsA.length; i++){
         const va = partsA[i], vb = partsB[i];
-        // Tenta numérico
         const na = Number(va), nb = Number(vb);
         if(!isNaN(na) && !isNaN(nb) && va !== '' && vb !== ''){
           if(na !== nb) return na - nb;
@@ -2244,6 +2281,7 @@ function _pvCalcular(){
       }
       return 0;
     });
+    return dec.map(function(d){return d.s;});
   }
   const rowKeys = _sortChaves(Object.keys(matriz));
   const colKeysSet = new Set();
@@ -2495,13 +2533,20 @@ function _pvRenderTabela(r){
 
   // ─── Body ───
   html += '<tbody>';
-  // Total geral (linhas com __na__ acumulam tudo se cols vazia)
+  // v4.81 (Win 1): pré-cacheia HTML das células de label por rk
+  // (era esc(_pvLabelDim(d, rVals[i])) chamado linhas × rows.length vezes)
+  const _rowLabelHtml = {};
   rowKeys.forEach(function(rk){
     const rVals = rk.split('|||');
-    html += '<tr>';
-    rows.forEach(function(d, i){
-      html += '<td class="L" style="background:var(--surface);position:sticky;left:0;font-weight:600;">'+esc(_pvLabelDim(d, rVals[i]))+'</td>';
-    });
+    let s = '';
+    for(let i = 0; i < rows.length; i++){
+      s += '<td class="L" style="background:var(--surface);position:sticky;left:0;font-weight:600;">'+esc(_pvLabelDim(rows[i], rVals[i]))+'</td>';
+    }
+    _rowLabelHtml[rk] = s;
+  });
+  // Total geral (linhas com __na__ acumulam tudo se cols vazia)
+  rowKeys.forEach(function(rk){
+    html += '<tr>'+_rowLabelHtml[rk];
     let totalRow = 0; // soma da linha pra coluna Total quando 1 métrica
     colKeys.forEach(function(ck, ckIdx){
       vals.forEach(function(mCod){

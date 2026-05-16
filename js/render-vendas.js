@@ -2329,10 +2329,16 @@ function renderVDrilldown(){
   }
 
   // Agregar por vendedor: total no período, último mês, mês anterior, por loja, por supervisor
+  // v4.81: arr é sorted ASC por ym (linha 2317) — busca reversa O(2) em vez de 2× find linear
   const agregados = cad.map(function(v){
     const arr = mensalIdx.get(v.cod) || [];
-    const ult = arr.find(function(r){return r.ym === ultimoYm;});
-    const ant = arr.find(function(r){return r.ym === prevYm;});
+    let ult = null, ant = null;
+    for(let i = arr.length - 1; i >= 0; i--){
+      const r = arr[i];
+      if(!ult && r.ym === ultimoYm){ ult = r; if(ant) break; continue; }
+      if(!ant && r.ym === prevYm){ ant = r; if(ult) break; continue; }
+      if(r.ym < prevYm) break; // sorted ASC: nada mais vai matchar
+    }
     const total = arr.reduce(function(s, r){
       return {fat_liq: s.fat_liq + (r.fat_liq||0), lucro: s.lucro + (r.lucro||0),
               qt: s.qt + (r.qt||0), nfs: s.nfs + (r.nfs||0), clientes: s.clientes + (r.clientes||0)};
