@@ -2516,8 +2516,8 @@ function renderFinanceiroNovo(){
        + 'Retrato a pagar gerado em '+esc(fDt((meta.geradoEm||'').substring(0,10)))
        + '</div>';
 
-  // KPIs
-  html += '<div class="kg" style="grid-template-columns:repeat(6,1fr);margin-bottom:14px;" id="kg-fin-novo"></div>';
+  // KPIs · v4.76 fix31: grid 5-col (eram 5 KPIs em 6 colunas, deixava 1 vazia)
+  html += '<div class="kg" style="grid-template-columns:repeat(5,1fr);margin-bottom:14px;" id="kg-fin-novo"></div>';
 
   // Gráficos removidos a pedido do usuário (Pagamentos por mês, Aging, Performance, Top grupos)
 
@@ -2527,8 +2527,8 @@ function renderFinanceiroNovo(){
   const hojeStr = hoje.toISOString().substring(0,10);
   const venc = titulos.filter(function(t){return t.data_venc && t.data_venc < hojeStr;});
 
-  // v4.76 fix23: Calendário de pagamentos lado a lado com Top datas (50/50)
-  html += '<div class="row2eq" style="align-items:stretch;">'
+  // v4.76 fix31: layout 5fr/4fr — calendário um pouco menor, tops com mais ar
+  html += '<div style="display:grid;grid-template-columns:minmax(0,5fr) minmax(0,4fr);gap:14px;margin-bottom:14px;align-items:stretch;">'
        +   '<div class="cc" style="margin-bottom:0;">'
        +     '<div class="cch">'
        +       '<div><div class="cct">Calendário de pagamentos · COMPRA DE MERCADORIAS (10001)</div>'
@@ -2797,13 +2797,13 @@ function _renderCalendarioPagamentos(titulosAbertos){
       const borda = ehHoje ? '2px solid var(--accent)' : '1px solid var(--border)';
       // v4.73: texto branco quando fundo azul fica escuro
       const corTxt = d.valor > 0 && _intensidade(d.valor) > 0.45 ? '#fff' : 'var(--text)';
-      // v4.76 fix23: valores maiores dentro de cada célula
+      // v4.76 fix31: células compactas com fAbbr (k/M) pra evitar overflow horizontal
       h += '<div title="'+esc(d.key)+(d.valor>0?(' · '+fB(d.valor,2)+' · '+fI(d.titulos)+' títulos'):' · sem títulos')+(ehFds?' · fim de semana':'')+'" '
-         + 'style="aspect-ratio:1.7/1;min-height:62px;background:'+bg+';border:'+borda+';border-radius:5px;'
-         + 'padding:6px 8px;display:flex;flex-direction:column;justify-content:space-between;'
-         + 'font-size:12px;color:'+corTxt+';overflow:hidden;">'
-         +   '<div style="font-weight:700;font-size:13px;">'+d.d+'</div>'
-         +   (d.valor > 0 ? '<div style="font-size:13.5px;font-weight:800;line-height:1.1;text-align:right;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+fK(d.valor)+'</div>' : (ehFds?'<div style="font-size:10px;color:var(--text-muted);">—</div>':''))
+         + 'style="aspect-ratio:1.4/1;min-height:54px;background:'+bg+';border:'+borda+';border-radius:5px;'
+         + 'padding:4px 6px;display:flex;flex-direction:column;justify-content:space-between;'
+         + 'font-size:11px;color:'+corTxt+';overflow:hidden;">'
+         +   '<div style="font-weight:700;font-size:11.5px;line-height:1;">'+d.d+'</div>'
+         +   (d.valor > 0 ? '<div style="font-size:12px;font-weight:800;line-height:1.1;text-align:right;white-space:nowrap;">'+fAbbr(d.valor)+'</div>' : (ehFds?'<div style="font-size:9.5px;color:var(--text-muted);">—</div>':''))
          + '</div>';
     });
     h += '</div>';
