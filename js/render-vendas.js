@@ -1374,14 +1374,11 @@ function renderVAno2026(){
   // ─── Chart: mensal lado a lado ───
   const meses = ['01','02','03','04'];
   const lbl = meses.map(function(m){return _ymToLabel('2026-'+m);});
-  const d26 = meses.map(function(m){
-    const r = m2026.find(function(x){return x.ym === '2026-'+m;});
-    return r ? r.fat_liq : 0;
-  });
-  const d25 = meses.map(function(m){
-    const r = m2025JanAbr.find(function(x){return x.ym === '2025-'+m;});
-    return r ? r.fat_liq : 0;
-  });
+  // v4.80: indexar 1× para reuso no chart + YoY + tabela (era 4 find sequenciais)
+  const _m26ByYm = new Map(m2026.map(function(r){return [r.ym, r];}));
+  const _m25ByYm = new Map(m2025JanAbr.map(function(r){return [r.ym, r];}));
+  const d26 = meses.map(function(m){const r=_m26ByYm.get('2026-'+m); return r?r.fat_liq:0;});
+  const d25 = meses.map(function(m){const r=_m25ByYm.get('2025-'+m); return r?r.fat_liq:0;});
 
   mkC('c-vano-mensal', {type:'bar', data:{labels:lbl, datasets:[
     {label:'2026', data:d26, backgroundColor:_PAL.hl+'CC', borderRadius:4},
@@ -1405,8 +1402,8 @@ function renderVAno2026(){
 
   // ─── Tabela ───
   const linhas = meses.map(function(m, i){
-    const r26 = m2026.find(function(x){return x.ym === '2026-'+m;}) || {fat_liq:0, lucro:0};
-    const r25 = m2025JanAbr.find(function(x){return x.ym === '2025-'+m;}) || {fat_liq:0, lucro:0};
+    const r26 = _m26ByYm.get('2026-'+m) || {fat_liq:0, lucro:0};
+    const r25 = _m25ByYm.get('2025-'+m) || {fat_liq:0, lucro:0};
     const dif = r26.fat_liq - r25.fat_liq;
     const difPct = r25.fat_liq>0 ? dif/r25.fat_liq*100 : 0;
     const m26 = r26.fat_liq>0 ? r26.lucro/r26.fat_liq*100 : 0;
@@ -2143,18 +2140,13 @@ function renderExecutivo(){
   const lbl = ymsExibicao.map(_ymToLabel);
 
   // Chart 1: Compras × Vendas × Pago (mensal)
-  const dCompras = ymsExibicao.map(function(ym){
-    const r = mensalC.find(function(x){return x.ym === ym;});
-    return r ? r.valor : 0;
-  });
-  const dVendas = ymsExibicao.map(function(ym){
-    const r = mensalVno.find(function(x){return x.ym === ym;});
-    return r ? r.fat_liq : 0;
-  });
-  const dPagos = ymsExibicao.map(function(ym){
-    const r = mensalP.find(function(x){return x.ym === ym;});
-    return r ? r.valor : 0;
-  });
+  // v4.80: indexar 1× (era 3× O(N²) com find por ym)
+  const _cByYm = new Map(mensalC.map(function(r){return [r.ym, r];}));
+  const _vByYm = new Map(mensalVno.map(function(r){return [r.ym, r];}));
+  const _pByYm = new Map(mensalP.map(function(r){return [r.ym, r];}));
+  const dCompras = ymsExibicao.map(function(ym){const r=_cByYm.get(ym); return r?r.valor:0;});
+  const dVendas  = ymsExibicao.map(function(ym){const r=_vByYm.get(ym); return r?r.fat_liq:0;});
+  const dPagos   = ymsExibicao.map(function(ym){const r=_pByYm.get(ym); return r?r.valor:0;});
 
   mkC('c-exec-evo', {data:{labels:lbl, datasets:[
     {type:'bar', label:'Compras líq.', data:dCompras, backgroundColor:_PAL.ac+'CC', borderRadius:5},
@@ -4695,12 +4687,30 @@ function _metasRenderConteudo(){
   const atingPorAno = {}; // {2024:{soma, count}, ...}
   const atingMensal = []; // [{ym, meta, real, at, lojas:{ATP-V:{meta,real,at}, ...}}]
 
+  // v4.80: pré-indexa V.mensal por loja|ym (era O(Y*L*N) com find dentro de loop duplo)
+  const _mensalMapV = new Map();
+  if(V && V.mensal){
+    for(let i=0; i<V.mensal.length; i++){
+      const r = V.mensal[i];
+      _mensalMapV.set(r.loja + '|' + r.ym, r);
+    }
+  }
+  const _getRealFast = function(cod, ym){
+    const r = _mensalMapV.get(cod + '|' + ym);
+    if(!r) return 0;
+    if(typeof aplicaFiltroSupVMensalRow === 'function'){
+      const rf = aplicaFiltroSupVMensalRow(r, 'v-metas');
+      return rf ? (rf.fat_liq || 0) : 0;
+    }
+    return r.fat_liq || 0;
+  };
+
   yms.forEach(function(ym){
     let metaMes = 0, realMes = 0;
     const lojasMes = {};
     lojasAtivas.forEach(function(l){
       const m = _metasGetMeta(l.cod, ym);
-      const r = _metasGetRealizado(l.cod, ym);
+      const r = _getRealFast(l.cod, ym);
       lojasMes[l.cod] = {meta:m, real:r, at: _metasCalcAt(r, m)};
       metaMes += m;
       realMes += r;
@@ -4862,9 +4872,10 @@ function _metasRenderConteudo(){
     html += _metasRenderTabelaDetalhe(atingMensal.map(function(m){return {ym:m.ym, meta:m.meta, real:m.real, at:m.at};}), escopoLbl);
   }
 
+  // v4.80: Set de códigos com meta (O(1) lookup vs find O(L) por loja)
+  const _metaCodSet = new Set(lojasComMeta.map(function(x){return x.cod;}));
   lojasAtivas.forEach(function(l){
-    const semMeta = !lojasComMeta.find(function(x){return x.cod === l.cod;});
-    if(semMeta) return;
+    if(!_metaCodSet.has(l.cod)) return;
     const dados = atingMensal.map(function(m){
       const lm = m.lojas[l.cod];
       return {ym:m.ym, meta:lm.meta, real:lm.real, at:lm.at};

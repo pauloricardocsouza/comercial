@@ -216,7 +216,7 @@ const AUTH_MODE = 'firebase'; // 'mock' | 'firebase'
 // Convenção:
 //   X.x → alteração grande (quebra de compatibilidade, nova feature grande)
 //   x.X → alteração suave (fix, ajuste visual, pequeno refinamento)
-const APP_VERSION = '4.79-perf';
+const APP_VERSION = '4.80-perf';
 
 // ================================================================
 // HELPERS DE CHART.JS — compatíveis com Safari/iOS (sem spread ops)
@@ -3995,36 +3995,24 @@ async function renderAdmAuditoria(){
   const semanaInicio = new Date(agora.getTime() - 7*24*60*60000).toISOString();
   const mesInicio = new Date(agora.getTime() - 30*24*60*60000).toISOString();
 
-  const usrAtivos = function(desde){
-    const set = new Set();
-    logs.filter(l => l.timestamp >= desde && l.tipo === 'login_ok').forEach(l => set.add(l.uid));
-    return set.size;
-  };
-  const ativosHoje = usrAtivos(hoje0);
-  const ativosSemana = usrAtivos(semanaInicio);
-  const ativosMes = usrAtivos(mesInicio);
+  // v4.80: 1 passe sobre logs calcula ativos hoje/semana/mes (era 3 filter+forEach completos)
+  const _sH = new Set(), _sS = new Set(), _sM = new Set();
+  for(let i=0; i<logs.length; i++){
+    const l = logs[i];
+    if(l.tipo !== 'login_ok') continue;
+    const ts = l.timestamp;
+    if(ts >= mesInicio){
+      _sM.add(l.uid);
+      if(ts >= semanaInicio){
+        _sS.add(l.uid);
+        if(ts >= hoje0) _sH.add(l.uid);
+      }
+    }
+  }
+  const ativosHoje = _sH.size;
+  const ativosSemana = _sS.size;
+  const ativosMes = _sM.size;
 
-  // Render: contadores + filtros + tabela
-  el.innerHTML = '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;margin-bottom:14px;">'
-    + '<div style="background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:12px 14px;">'
-    + '<div style="font-family:JetBrains Mono,monospace;font-size:9px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.1em;">Ativos hoje</div>'
-    + '<div style="font-size:22px;font-weight:800;margin-top:4px;">'+ativosHoje+'</div>'
-    + '</div>'
-    + '<div style="background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:12px 14px;">'
-    + '<div style="font-family:JetBrains Mono,monospace;font-size:9px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.1em;">Ativos na semana</div>'
-    + '<div style="font-size:22px;font-weight:800;margin-top:4px;">'+ativosSemana+'</div>'
-    + '</div>'
-    + '<div style="background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:12px 14px;">'
-    + '<div style="font-family:JetBrains Mono,monospace;font-size:9px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.1em;">Ativos no mes</div>'
-    + '<div style="font-size:22px;font-weight:800;margin-top:4px;">'+ativosMes+'</div>'
-    + '</div>'
-    + '<div style="background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:12px 14px;">'
-    + '<div style="font-family:JetBrains Mono,monospace;font-size:9px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.1em;">Total eventos</div>'
-    + '<div style="font-size:22px;font-weight:800;margin-top:4px;">'+logs.length+'</div>'
-    + '</div>'
-    + '</div>';
-
-  // Filtros
   // v4.79: 1 passe pra montar usuariosUnicos + tiposUnicos (era O(N²) com .find)
   const usuariosUnicos = [];
   const _uidVisto = new Set();
@@ -4042,7 +4030,26 @@ async function renderAdmAuditoria(){
     }
   }
 
-  el.innerHTML += '<div style="background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:12px 14px;margin-bottom:10px;display:flex;gap:10px;flex-wrap:wrap;align-items:center;">'
+  // v4.80: 1 innerHTML único (era 3 atribuições — segunda e terceira reparseiam o conteúdo anterior)
+  el.innerHTML = '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;margin-bottom:14px;">'
+    + '<div style="background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:12px 14px;">'
+    + '<div style="font-family:JetBrains Mono,monospace;font-size:9px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.1em;">Ativos hoje</div>'
+    + '<div style="font-size:22px;font-weight:800;margin-top:4px;">'+ativosHoje+'</div>'
+    + '</div>'
+    + '<div style="background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:12px 14px;">'
+    + '<div style="font-family:JetBrains Mono,monospace;font-size:9px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.1em;">Ativos na semana</div>'
+    + '<div style="font-size:22px;font-weight:800;margin-top:4px;">'+ativosSemana+'</div>'
+    + '</div>'
+    + '<div style="background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:12px 14px;">'
+    + '<div style="font-family:JetBrains Mono,monospace;font-size:9px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.1em;">Ativos no mes</div>'
+    + '<div style="font-size:22px;font-weight:800;margin-top:4px;">'+ativosMes+'</div>'
+    + '</div>'
+    + '<div style="background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:12px 14px;">'
+    + '<div style="font-family:JetBrains Mono,monospace;font-size:9px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.1em;">Total eventos</div>'
+    + '<div style="font-size:22px;font-weight:800;margin-top:4px;">'+logs.length+'</div>'
+    + '</div>'
+    + '</div>'
+    + '<div style="background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:12px 14px;margin-bottom:10px;display:flex;gap:10px;flex-wrap:wrap;align-items:center;">'
     + '<div style="display:flex;align-items:center;gap:6px;">'
     + '<span style="font-family:JetBrains Mono,monospace;font-size:9px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.1em;">Usuario:</span>'
     + '<select id="aud-fil-usr" style="padding:5px 8px;border:1px solid var(--border-strong);border-radius:5px;font-size:11px;background:var(--surface);">'
@@ -4063,9 +4070,8 @@ async function renderAdmAuditoria(){
     + '</div>'
     + '<button id="aud-fil-clear" style="padding:5px 12px;background:transparent;border:1px solid var(--border-strong);border-radius:5px;font-size:11px;cursor:pointer;color:var(--text);font-family:inherit;">Limpar</button>'
     + '<div style="margin-left:auto;font-size:11px;color:var(--text-muted);font-family:JetBrains Mono,monospace;" id="aud-count">'+logs.length+' eventos</div>'
-    + '</div>';
-
-  el.innerHTML += '<div class="tscroll" style="max-height:500px;overflow:auto;border:1px solid var(--border);border-radius:8px;">'
+    + '</div>'
+    + '<div class="tscroll" style="max-height:500px;overflow:auto;border:1px solid var(--border);border-radius:8px;">'
     + '<table class="t" id="aud-tbl"><thead><tr>'
     + '<th class="L">Data/Hora</th>'
     + '<th class="L">Usuario</th>'

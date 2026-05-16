@@ -781,18 +781,27 @@ function renderExcessoNovo(){
     });
   });
 
+  // v4.80: 1 passe sobre excessos calcula contadores+valores por status (era 5 passes O(N))
+  const _stAgg = {CRITICO:{n:0,v:0},PARADO:{n:0,v:0},MORTO:{n:0,v:0}};
+  for(let i=0;i<excessos.length;i++){
+    const p = excessos[i];
+    const st = _status(p);
+    const a = _stAgg[st];
+    if(a){ a.n++; a.v += (p.estoque ? (p.estoque.vl_custo||0) : 0); }
+  }
+
   document.getElementById('kg-exc-novo').innerHTML = kgHtml([
     {l:'SKUs em excesso',v:fI(excessos.length),s:fP(pctSku)+' do total cadastrado',cls:'dn'},
     {l:'Valor estoque (em excesso)',v:fK(totVlCusto),s:(pctVl!==null?fP(pctVl)+' do estoque total':'estoque total não disponível'),cls:'dn'},
     {l:'Vl em preço de venda',v:fK(totVlPreco),s:'Se desovasse a preço cheio'},
-    {l:'Status PARADO',v:fI(excessos.filter(function(p){return _status(p)==='PARADO';}).length),s:'Sem venda > 90 dias',cls:'wn'},
-    {l:'Status MORTO',v:fI(excessos.filter(function(p){return _status(p)==='MORTO';}).length),s:'Sem venda > 180 dias',cls:'dn'},
-    {l:'Status CRÍTICO',v:fI(excessos.filter(function(p){return _status(p)==='CRITICO';}).length),s:'Risco iminente',cls:'wn'},
+    {l:'Status PARADO',v:fI(_stAgg.PARADO.n),s:'Sem venda > 90 dias',cls:'wn'},
+    {l:'Status MORTO',v:fI(_stAgg.MORTO.n),s:'Sem venda > 180 dias',cls:'dn'},
+    {l:'Status CRÍTICO',v:fI(_stAgg.CRITICO.n),s:'Risco iminente',cls:'wn'},
   ]);
 
   const statusOrder = ['CRITICO','PARADO','MORTO'];
-  const stCounts = statusOrder.map(function(s){return excessos.filter(function(p){return _status(p)===s;}).length;});
-  const stVl = statusOrder.map(function(s){return excessos.filter(function(p){return _status(p)===s;}).reduce(function(t,p){return t+(p.estoque?p.estoque.vl_custo:0);},0);});
+  const stCounts = statusOrder.map(function(s){return _stAgg[s].n;});
+  const stVl = statusOrder.map(function(s){return _stAgg[s].v;});
   mkC('c-exc-status',{type:'bar',
     data:{labels:statusOrder,datasets:[
       {label:'SKUs (qtde)',data:stCounts,backgroundColor:_PAL.ac+'CC',borderRadius:4,yAxisID:'yQt'},
