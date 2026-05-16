@@ -216,7 +216,7 @@ const AUTH_MODE = 'firebase'; // 'mock' | 'firebase'
 // Convenção:
 //   X.x → alteração grande (quebra de compatibilidade, nova feature grande)
 //   x.X → alteração suave (fix, ajuste visual, pequeno refinamento)
-const APP_VERSION = '4.78-cofre-fix1';
+const APP_VERSION = '4.78-cofre-fix2';
 
 // ================================================================
 // HELPERS DE CHART.JS — compatíveis com Safari/iOS (sem spread ops)
@@ -1567,23 +1567,112 @@ function _dataBust(){
   return (typeof APP_VERSION !== 'undefined' ? APP_VERSION : 'na');
 }
 
+// v4.76 fix33: camada IndexedDB de cache pra JSONs grandes.
+// Por que: o cubo OLAP cresce com o tempo (~10MB hoje, deve dobrar até final do ano).
+// Mesmo com HTTP cache do browser, o JSON.parse de 10MB demora 300-500ms em cada
+// pageload. Salvando o objeto já parseado em IDB, o "hit" custa ~50ms (structured
+// clone). A chave inclui manifest.gerado_em, então quando o ETL roda, a entry vira
+// stale automaticamente e refazemos o fetch.
+const _IDB_NAME = 'gpcCache';
+const _IDB_STORE = 'jsons';
+let _idbPromise = null;
+function _idbOpen(){
+  if(_idbPromise) return _idbPromise;
+  if(typeof indexedDB === 'undefined') return Promise.resolve(null);
+  _idbPromise = new Promise(function(resolve){
+    try {
+      const req = indexedDB.open(_IDB_NAME, 1);
+      req.onupgradeneeded = function(){
+        const db = req.result;
+        if(!db.objectStoreNames.contains(_IDB_STORE)) db.createObjectStore(_IDB_STORE);
+      };
+      req.onsuccess = function(){ resolve(req.result); };
+      req.onerror = function(){ resolve(null); };
+    } catch(e){ resolve(null); }
+  });
+  return _idbPromise;
+}
+function _idbGet(key){
+  return _idbOpen().then(function(db){
+    if(!db) return null;
+    return new Promise(function(resolve){
+      try {
+        const tx = db.transaction(_IDB_STORE, 'readonly');
+        const store = tx.objectStore(_IDB_STORE);
+        const r = store.get(key);
+        r.onsuccess = function(){ resolve(r.result || null); };
+        r.onerror = function(){ resolve(null); };
+      } catch(e){ resolve(null); }
+    });
+  });
+}
+function _idbPut(key, value){
+  return _idbOpen().then(function(db){
+    if(!db) return;
+    return new Promise(function(resolve){
+      try {
+        const tx = db.transaction(_IDB_STORE, 'readwrite');
+        const store = tx.objectStore(_IDB_STORE);
+        store.put(value, key);
+        tx.oncomplete = function(){ resolve(); };
+        tx.onerror = function(){ resolve(); };
+      } catch(e){ resolve(); }
+    });
+  });
+}
+// Limpa entries antigas (versão != atual) — roda em idle, não bloqueia
+function _idbLimparAntigas(){
+  _idbOpen().then(function(db){
+    if(!db) return;
+    try {
+      const tx = db.transaction(_IDB_STORE, 'readwrite');
+      const store = tx.objectStore(_IDB_STORE);
+      const bustAtual = _dataBust();
+      const req = store.openCursor();
+      req.onsuccess = function(e){
+        const cur = e.target.result;
+        if(!cur) return;
+        // Chave formato: "<filename>::<bust>". Apaga se bust diferente.
+        const idx = cur.key.lastIndexOf('::');
+        if(idx > 0 && cur.key.substring(idx + 2) !== bustAtual){
+          cur.delete();
+        }
+        cur.continue();
+      };
+    } catch(e){}
+  });
+}
+
 function _fetchJsonComGz(url){
   return _carregarManifest().then(function(){
     const info = _temArquivo(url);
-    // Manifest ausente: comportamento antigo (tenta .gz, fallback .json)
     if(info === 'unknown') return _fetchJsonComGzLegacy(url);
-    // Arquivo não existe (nem .gz nem .json): retorna null sem barulho
     if(info === null) return null;
-    // .gz disponível: usa fluxo gzip
-    if(info.gz) return _fetchGz(url);
-    // Só .json puro disponível: fetch direto (com cache-bust)
-    if(info.json) {
-      const bust = (url.indexOf('?') >= 0 ? '&' : '?') + 'v=' + _dataBust();
-      return fetch(url + bust, {cache:'default'}).then(function(r){
-        return r.ok ? r.json() : null;
+
+    // v4.76 fix33: tenta IDB primeiro (pula fetch + parse)
+    const cacheKey = url + '::' + _dataBust();
+    return _idbGet(cacheKey).then(function(cached){
+      if(cached !== null && cached !== undefined){
+        // Hit do cache local — devolve direto, evita rede + parse
+        return cached;
+      }
+      // Miss: vai pra rede, depois grava em IDB
+      let p;
+      if(info.gz) p = _fetchGz(url);
+      else if(info.json){
+        const bust = (url.indexOf('?') >= 0 ? '&' : '?') + 'v=' + _dataBust();
+        p = fetch(url + bust, {cache:'default'}).then(function(r){ return r.ok ? r.json() : null; });
+      } else {
+        return null;
+      }
+      return p.then(function(data){
+        if(data){
+          // Grava em background — não bloqueia o caller
+          _idbPut(cacheKey, data).catch(function(){});
+        }
+        return data;
       });
-    }
-    return null;
+    });
   });
 }
 
@@ -2465,6 +2554,14 @@ function _loadDadosModulares(baseSlug){
   } else {
     setTimeout(_prefetchCubo, 2500);
   }
+  // v4.76 fix33: limpa cache IDB de versões antigas em idle (não bloqueia render)
+  if(typeof _idbLimparAntigas === 'function'){
+    if(typeof window.requestIdleCallback === 'function'){
+      window.requestIdleCallback(_idbLimparAntigas, {timeout: 8000});
+    } else {
+      setTimeout(_idbLimparAntigas, 6000);
+    }
+  }
 }
 
 function _renderSnapshotBanner(){
@@ -3230,6 +3327,33 @@ function mkC(id,cfg){
     setTimeout(function(){ if(CH[id]) CH[id].resize(); }, 100);
   });
   return CH[id];
+}
+
+// v4.76 fix33: cria chart só quando o canvas entra na viewport.
+// Usa IntersectionObserver — gráficos abaixo da dobra não bloqueiam o initial render.
+// Fallback: se IO não existir, cria imediatamente (comportamento antigo).
+function mkCLazy(id, cfg){
+  if(typeof IntersectionObserver === 'undefined') return mkC(id, cfg);
+  const ctx = document.getElementById(id);
+  if(!ctx) return null;
+  // Se está visível imediatamente, render direto (evita 1 frame de delay)
+  const rect = ctx.getBoundingClientRect();
+  const vh = window.innerHeight || 800;
+  if(rect.top < vh + 200 && rect.bottom > -200){
+    return mkC(id, cfg);
+  }
+  // Caso contrário, aguarda entrar na viewport
+  const io = new IntersectionObserver(function(entries){
+    for(let i=0; i<entries.length; i++){
+      if(entries[i].isIntersecting){
+        io.disconnect();
+        mkC(id, cfg);
+        return;
+      }
+    }
+  }, { rootMargin: '200px' });
+  io.observe(ctx);
+  return null;
 }
 
 // Índices de produtos (só existe em modo filial, não em consolidado)
@@ -5443,44 +5567,50 @@ function buildFilterBar(pageId){
   // Sync estado global → botões
   syncFilterBar(bar);
 
-  bar.querySelectorAll('.pfb-per').forEach(btn=>{
-    btn.addEventListener('click',()=>{
+  // v4.76 fix33: pfb-per via event delegation global (1 listener no document, não 1 por botão de cada bar).
+  // Antes: cada renderPage criava uma bar nova com N botões e N listeners; após 5 páginas eram 5×N listeners.
+  // Agora: registrado uma única vez via flag _pfbPerDelegBound em window.
+  if(!window._pfbPerDelegBound){
+    window._pfbPerDelegBound = true;
+    document.addEventListener('click', function(ev){
+      const btn = ev.target.closest && ev.target.closest('.pfb-per');
+      if(!btn) return;
       btn.classList.toggle('on');
-      const per=btn.dataset.per;
-      btn.classList.contains('on')?activePers.add(per):activePers.delete(per);
-      // Sync todas as outras filterbars
-      document.querySelectorAll('.pfb-per[data-per="'+per+'"]').forEach(b=>{
-        b.className=btn.className;
-      });
+      const per = btn.dataset.per;
+      if(btn.classList.contains('on')) activePers.add(per); else activePers.delete(per);
+      // Sync visual nas outras filterbars (caso haja mais de uma renderizada)
+      const others = document.querySelectorAll('.pfb-per[data-per="'+per+'"]');
+      for(let i=0; i<others.length; i++){ others[i].className = btn.className; }
     });
-  });
+  }
 
-  bar.querySelector('.pfb-apply').addEventListener('click',()=>{
-    // Em páginas sem filtro de depto (ex: cv), pfb-dept não existe nesta bar.
-    const _sel = bar.querySelector('.pfb-dept');
-    if(_sel){
-      activeDept = _sel.value;
-      document.querySelectorAll('.pfb-dept').forEach(s=>s.value=activeDept);
-    }
-    updateFilterSummary();
-    // v4.74: re-render apenas a página ativa; as demais (já visitadas) viram
-    // "stale" e serão re-renderizadas quando o usuário navegar até elas.
-    // Antes: renderedPages.forEach(pg=>renderPage(pg)) — gastava CPU em
-    // páginas que nem estavam visíveis (5-10× mais lento).
-    const active = document.querySelector('.page.active');
-    const activeId = active ? active.id.replace('page-','') : null;
-    if(activeId && renderedPages.has(activeId)){
-      renderPage(activeId);
-      // v4.76 fix21: pós-render, re-aplica filial nos titulos
-      if(typeof _cofreSyncFilialNoTitulo === 'function') _cofreSyncFilialNoTitulo();
-    }
-    // Invalida o resto: na próxima visita o renderPage será disparado de novo
-    if(renderedPages && renderedPages.forEach){
-      const toInvalidate = [];
-      renderedPages.forEach(pg=>{ if(pg !== activeId) toInvalidate.push(pg); });
-      toInvalidate.forEach(pg=>renderedPages.delete(pg));
-    }
-  });
+  // v4.76 fix33: pfb-apply também via delegação global (mesmo motivo do pfb-per).
+  if(!window._pfbApplyDelegBound){
+    window._pfbApplyDelegBound = true;
+    document.addEventListener('click', function(ev){
+      const btn = ev.target.closest && ev.target.closest('.pfb-apply');
+      if(!btn) return;
+      const barEl = btn.closest('.pfb');
+      const _sel = barEl ? barEl.querySelector('.pfb-dept') : null;
+      if(_sel){
+        activeDept = _sel.value;
+        document.querySelectorAll('.pfb-dept').forEach(function(s){ s.value = activeDept; });
+      }
+      updateFilterSummary();
+      const active = document.querySelector('.page.active');
+      const activeId = active ? active.id.replace('page-','') : null;
+      if(activeId && renderedPages.has(activeId)){
+        renderPage(activeId);
+        if(typeof _cofreSyncFilialNoTitulo === 'function') _cofreSyncFilialNoTitulo();
+      }
+      // Invalida demais páginas pra forçar re-render no próximo acesso
+      if(renderedPages && renderedPages.forEach){
+        const toInvalidate = [];
+        renderedPages.forEach(function(pg){ if(pg !== activeId) toInvalidate.push(pg); });
+        toInvalidate.forEach(function(pg){ renderedPages.delete(pg); });
+      }
+    });
+  }
 
   return bar;
 }

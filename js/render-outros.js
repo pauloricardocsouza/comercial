@@ -796,9 +796,10 @@ function renderVerbas(){
   // ═══════════════════════════════════════════════════════════════
 
   // Gráfico mensal: barras valor + linha % redução
+  // v4.76 fix33: mkC() em vez de new Chart pra evitar leak (auto destroy do anterior)
   const ctxMes = document.getElementById('c-vb-mensal');
   if(ctxMes && mensal.length){
-    new Chart(ctxMes, {
+    mkC('c-vb-mensal', {
       type: 'bar',
       data: {
         labels: mensal.map(m => m.ym),
@@ -839,7 +840,7 @@ function renderVerbas(){
   const ctxDep = document.getElementById('c-vb-depto');
   if(ctxDep && deptos.length){
     const cores = ['#f58634','#30569f','#06b6d4','#10b981','#f59e0b','#8b5cf6','#ef4444','#64748b','#84cc16','#ec4899'];
-    new Chart(ctxDep, {
+    mkC('c-vb-depto', {
       type: 'doughnut',
       data: {
         labels: deptos.map(d => d.nome),
@@ -863,7 +864,7 @@ function renderVerbas(){
   const ctxForn = document.getElementById('c-vb-forn');
   if(ctxForn && forns.length){
     const top = forns.slice(0, 10);
-    new Chart(ctxForn, {
+    mkC('c-vb-forn', {
       type: 'bar',
       data: {
         labels: top.map(f => f.nome.substring(0,28) + (f.nome.length>28?'…':'')),
@@ -887,7 +888,7 @@ function renderVerbas(){
   const ctxSec = document.getElementById('c-vb-secao');
   if(ctxSec && secoes.length){
     const top = secoes.slice(0, 10);
-    new Chart(ctxSec, {
+    mkC('c-vb-secao', {
       type: 'bar',
       data: {
         labels: top.map(s => s.nome_sec.substring(0,28) + (s.nome_sec.length>28?'…':'')),

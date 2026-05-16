@@ -714,11 +714,12 @@ function renderVEvolucao(){
   }
 
   // Datasets das lojas presentes na base
+  // v4.79: indexar m por ym (era O(N²) com .find por mes)
   lojasDisp.forEach(function(l){
     const m = _vendasMensalPor(l, 'v-evolucao');
+    const mByYm = new Map(m.map(function(x){return [x.ym, x];}));
     const data = lblG.map(function(_, i){
-      const ym = grupo[i].ym;
-      const linha = m.find(function(x){return x.ym === ym;});
+      const linha = mByYm.get(grupo[i].ym);
       return linha ? linha.fat_liq : 0;
     });
     if(ehFolhaUnica && !ehGrupoConsolidado){
@@ -866,11 +867,12 @@ function renderVEvolucao(){
         dadosLojas[l] = m;
       });
       // Datasets: lojas não-destacadas em cinza claro fino, loja destaque colorida grossa
+      // v4.79: indexar m por ym (era O(N²) com .find)
       lojasDisp.forEach(function(l){
         const m = dadosLojas[l];
+        const mByYm = new Map(m.map(function(x){return [x.ym, x];}));
         const data = lblG.map(function(_, i){
-          const ym = grupo[i].ym;
-          const linha = m.find(function(x){return x.ym === ym;});
+          const linha = mByYm.get(grupo[i].ym);
           return linha ? linha.fat_liq : 0;
         });
         const ehDestaque = (l === lojaDestaque);
@@ -1160,13 +1162,16 @@ function _renderVLoja(loja, pageId){
   // Pega top 6 departamentos do último mês e agrega por todos os meses
   const top6Deptos = dpSorted.slice(0, 6).map(function(d){return d.nome;});
   const yms = mensal.map(function(r){return r.ym;});
+  // v4.79: indexar V.deptos da loja uma vez (O(N) build + O(1) lookup)
+  const dIdx = new Map();
+  (V.deptos || []).forEach(function(x){
+    if(x.loja !== loja) return;
+    dIdx.set(x.ym + '|' + x.nome, x.fat_liq);
+  });
   const datasetsDeptMes = top6Deptos.map(function(deptoNome, idx){
     return {
       label: deptoNome,
-      data: yms.map(function(ym){
-        const r = (V.deptos || []).find(function(x){return x.loja===loja && x.ym===ym && x.nome===deptoNome;});
-        return r ? r.fat_liq : 0;
-      }),
+      data: yms.map(function(ym){ return dIdx.get(ym + '|' + deptoNome) || 0; }),
       backgroundColor: dC[idx],
     };
   });
@@ -2206,7 +2211,8 @@ function renderExecutivo(){
       return y+'-'+String(m).padStart(2,'0');
     }
     const _ymProxMes = _proxYm(_hojeYm, 1);
-    mkC('c-exec-agenda', {type:'bar', data:{labels:agendaArr.map(function(a){return _ymToLabel(a.ym);}),
+    // v4.76 fix33: lazy — chart fica abaixo da dobra na Visão Executiva
+    mkCLazy('c-exec-agenda', {type:'bar', data:{labels:agendaArr.map(function(a){return _ymToLabel(a.ym);}),
       datasets:[{label:'A pagar', data:agendaArr.map(function(a){return a.valor;}),
                  backgroundColor:agendaArr.map(function(a){
                    // Vencidos passados em vermelho, mês corrente em laranja, futuros em azul
@@ -2247,6 +2253,11 @@ function renderExecutivo(){
       if(E && E.produtos){
         E.produtos.forEach(function(p){ eIdx.set(p.cod, p); });
       }
+      // v4.79: indexar vendas_por_sku para evitar O(N²) com .find em loop
+      const skuIdx = new Map();
+      if(V.vendas_por_sku){
+        V.vendas_por_sku.forEach(function(s){ skuIdx.set(s.cod, s); });
+      }
 
       tbody.innerHTML = top.map(function(p, i){
         const margPct = p.fat_liq>0 ? p.lucro/p.fat_liq*100 : 0;
@@ -2255,13 +2266,11 @@ function renderExecutivo(){
         const estoqueQt    = eqProd && eqProd.estoque ? eqProd.estoque.qt : 0;
         const estoqueCusto = eqProd && eqProd.estoque ? eqProd.estoque.vl_custo : 0;
 
-        // Sparkline a partir de vendas_por_sku.por_mes
+        // Sparkline a partir de vendas_por_sku.por_mes (lookup O(1) via Map)
         let sparkHtml = '';
-        if(V.vendas_por_sku){
-          const skuFull = V.vendas_por_sku.find(function(s){return s.cod === p.cod;});
-          if(skuFull && skuFull.por_mes && skuFull.por_mes.length){
-            sparkHtml = sparkSvg(skuFull.por_mes.map(function(m){return m.qt;}));
-          }
+        const skuFull = skuIdx.get(p.cod);
+        if(skuFull && skuFull.por_mes && skuFull.por_mes.length){
+          sparkHtml = sparkSvg(skuFull.por_mes.map(function(m){return m.qt;}));
         }
 
         return '<tr onclick="if(typeof openProd===\'function\')openProd('+escJs(p.cod)+');">'
@@ -2959,8 +2968,17 @@ function renderVBenchmarking(){
   }
   _rcaRenderTabVbm();
 
-  // Click no cabeçalho ordena (toggle asc/desc)
-  document.querySelectorAll('#t-vbm .vbm-sort').forEach(function(th){
+  // v4.76 fix33: bind com guard pra não acumular listeners em re-renders
+  // (filtros de mês/supervisor chamam renderVBenchmarking N vezes; antes cada chamada
+  // re-anexava listener nos <th> e no #tb-vbm-top → click disparava drilldown N vezes).
+  // Re-render. Os nós <th> são novos a cada innerHTML, mas os tbodies são re-populados
+  // (referência preservada se já marcados). Função _rcaCompararSort/_rcaRenderTabVbm
+  // estão em closure desse render — re-criadas, sem leak.
+  const _thsSort = document.querySelectorAll('#t-vbm .vbm-sort');
+  for(let _ti=0; _ti<_thsSort.length; _ti++){
+    const th = _thsSort[_ti];
+    if(th.__rcaSortBound) continue;
+    th.__rcaSortBound = true;
     th.addEventListener('click', function(){
       const k = th.getAttribute('data-sort');
       if(window._rcaSortKey === k){
@@ -2971,15 +2989,14 @@ function renderVBenchmarking(){
       }
       _rcaRenderTabVbm();
     });
-  });
+  }
 
-  // Click no nome do vendedor → abre Drill-Down (página oculta no menu, mas funcional)
+  // Click no nome do vendedor → abre Drill-Down. Usa flag __rcaDrillBound nos tbodies.
   function _rcaAbrirDrillDown(ev){
     const el = ev.target.closest('[data-vend-cod]');
     if(!el) return;
     const cod = el.getAttribute('data-vend-cod');
     try { window._rcaVendedorFoco = cod; } catch(e){}
-    // Esconde demais .page e mostra page-v-drilldown
     document.querySelectorAll('.page').forEach(function(p){ p.classList.remove('active'); p.style.display=''; });
     const pg = document.getElementById('page-v-drilldown');
     if(pg){
@@ -2989,8 +3006,16 @@ function renderVBenchmarking(){
       window.scrollTo({top: 0, behavior: 'smooth'});
     }
   }
-  document.getElementById('tb-vbm').addEventListener('click', _rcaAbrirDrillDown);
-  document.getElementById('tb-vbm-top').addEventListener('click', _rcaAbrirDrillDown);
+  const _tbVbm = document.getElementById('tb-vbm');
+  if(_tbVbm && !_tbVbm.__rcaDrillBound){
+    _tbVbm.__rcaDrillBound = true;
+    _tbVbm.addEventListener('click', _rcaAbrirDrillDown);
+  }
+  const _tbVbmTop = document.getElementById('tb-vbm-top');
+  if(_tbVbmTop && !_tbVbmTop.__rcaDrillBound){
+    _tbVbmTop.__rcaDrillBound = true;
+    _tbVbmTop.addEventListener('click', _rcaAbrirDrillDown);
+  }
 
   // ─── Listeners filtros ───
   document.querySelectorAll('.rca-mes-btn').forEach(function(btn){

@@ -2649,7 +2649,8 @@ function renderFinanceiroNovo(){
   const agOrd = ['A_VENCER','HOJE','VENCIDO_1_7','VENCIDO_8_30','VENCIDO_31_90','VENCIDO_90_PLUS'];
   const agLab = {A_VENCER:'A vencer',HOJE:'Hoje',VENCIDO_1_7:'1-7d',VENCIDO_8_30:'8-30d',VENCIDO_31_90:'31-90d',VENCIDO_90_PLUS:'90+d'};
   const agCol = {A_VENCER:_PAL.ok,HOJE:_PAL.wn,VENCIDO_1_7:_PAL.wn,VENCIDO_8_30:'#ea580c',VENCIDO_31_90:_PAL.dn,VENCIDO_90_PLUS:'#7f1d1d'};
-  mkC('c-fin-novo-aging',{type:'bar',
+  // v4.76 fix33: lazy — chart abaixo da dobra em Financeiro
+  mkCLazy('c-fin-novo-aging',{type:'bar',
     data:{labels:agOrd.map(function(k){return agLab[k];}),
           datasets:[{label:'Valor R$',data:agOrd.map(function(k){return (aging[k]||{valor:0}).valor;}),
                      backgroundColor:agOrd.map(function(k){return agCol[k]+'CC';}),borderRadius:4}]},
