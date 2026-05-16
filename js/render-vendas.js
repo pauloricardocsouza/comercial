@@ -290,7 +290,7 @@ function _vendasMensalPor(loja, pagina){
   if(loja){
     resultado = V.mensal.filter(function(r){return r.loja === loja;})
                        .map(function(r){ return aplica ? aplicaFiltroSupVMensalRow(r, pagina) : r; })
-                       .sort(function(a,b){return a.ym<b.ym?-1:1;});
+                       .sort(function(a,b){return a.ym<b.ym?-1:a.ym>b.ym?1:0;});
   } else {
     const m = new Map();
     V.mensal.forEach(function(rRaw){
@@ -304,7 +304,7 @@ function _vendasMensalPor(loja, pagina){
       x.qt      += r.qt||0;
       x.nfs     += r.nfs||0;
     });
-    resultado = Array.from(m.values()).sort(function(a,b){return a.ym<b.ym?-1:1;});
+    resultado = Array.from(m.values()).sort(function(a,b){return a.ym<b.ym?-1:a.ym>b.ym?1:0;});
   }
   return resultado;
 }
@@ -2024,7 +2024,7 @@ function renderExecutivo(){
       x.qt      += r.qt||0;
       x.nfs     += r.nfs||0;
     });
-    return Array.from(m.values()).sort(function(a,b){return a.ym<b.ym?-1:1;});
+    return Array.from(m.values()).sort(function(a,b){return a.ym<b.ym?-1:a.ym>b.ym?1:0;});
   }
 
   // Compras mensal: C.mensal é [{loja, ym, valor, qtd, nfs, ...}, ...]
@@ -2038,14 +2038,14 @@ function renderExecutivo(){
       x.valor += r.valor||0;
       x.nfs   += r.nfs||0;
     });
-    return Array.from(m.values()).sort(function(a,b){return a.ym<b.ym?-1:1;});
+    return Array.from(m.values()).sort(function(a,b){return a.ym<b.ym?-1:a.ym>b.ym?1:0;});
   }
 
   // Pagamentos mensais: F.pago.mensal é [{ym, valor, titulos, ...}]
   function _pagosMensal(){
     if(!F || !F.pago || !F.pago.mensal) return [];
     return F.pago.mensal.filter(function(r){return _filtraYm(r.ym);})
-      .slice().sort(function(a,b){return a.ym<b.ym?-1:1;});
+      .slice().sort(function(a,b){return a.ym<b.ym?-1:a.ym>b.ym?1:0;});
   }
 
   // Mês mais recente (do conjunto de vendas)
@@ -2180,7 +2180,7 @@ function renderExecutivo(){
   // Usa F.aberto.por_mes_venc se existir, senão constrói do aging
   let agendaArr = [];
   if(F && F.aberto && F.aberto.por_mes_venc){
-    agendaArr = F.aberto.por_mes_venc.slice().sort(function(a,b){return a.ym<b.ym?-1:1;});
+    agendaArr = F.aberto.por_mes_venc.slice().sort(function(a,b){return a.ym<b.ym?-1:a.ym>b.ym?1:0;});
   } else if(F && F.aberto && F.aberto.aging){
     // Fallback: usa só as faixas como pseudo-mês
     Object.entries(F.aberto.aging).forEach(function(kv){
@@ -2314,7 +2314,7 @@ function renderVDrilldown(){
     mensalIdx.get(r.cod).push(r);
   });
   // Sort de cada lista por ym
-  mensalIdx.forEach(function(arr){ arr.sort(function(a,b){return a.ym<b.ym?-1:1;}); });
+  mensalIdx.forEach(function(arr){ arr.sort(function(a,b){return a.ym<b.ym?-1:a.ym>b.ym?1:0;}); });
 
   // Determinar o último mês global
   const ultimoYm = mensalV.reduce(function(m, r){ return r.ym > m ? r.ym : m; }, '');
@@ -3524,7 +3524,7 @@ function renderVDiarias(){
   });
   const mediaMensal = Array.from(ymIdx.values()).map(function(m){
     return {ym:m.ym, media: m.count>0 ? m.fat/m.count : 0, count:m.count};
-  }).sort(function(a,b){return a.ym<b.ym?-1:1;});
+  }).sort(function(a,b){return a.ym<b.ym?-1:a.ym>b.ym?1:0;});
 
   let html = '<div class="ph"><div class="pk">Vendas · Análise</div><h2>Vendas <em>Diárias</em></h2></div>';
   html += '<div class="ph-sep"></div>';

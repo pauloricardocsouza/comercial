@@ -974,11 +974,11 @@ function renderVerbas(){
     Array.from(ymsSet).sort().map(v => ({v:v, label:v})),
     'Todos os meses');
   fillSel('f-vb-filial',
-    Array.from(filSet).map(s => { const [c,n]=s.split('|'); return {v:c, label:n+' ('+c+')', _ord:parseInt(c)}; })
+    Array.from(filSet).map(s => { const [c,n]=s.split('|'); return {v:c, label:n+' ('+c+')', _ord:parseInt(c,10)}; })
       .sort((a,b)=>a._ord-b._ord),
     'Todas as filiais');
   fillSel('f-vb-dep',
-    Array.from(depSet).map(s => { const [c,n]=s.split('|'); return {v:c, label:n+' ('+c+')', _ord:parseInt(c)}; })
+    Array.from(depSet).map(s => { const [c,n]=s.split('|'); return {v:c, label:n+' ('+c+')', _ord:parseInt(c,10)}; })
       .sort((a,b)=>a._ord-b._ord),
     'Todos os departamentos');
   fillSel('f-vb-forn',

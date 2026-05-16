@@ -216,7 +216,7 @@ const AUTH_MODE = 'firebase'; // 'mock' | 'firebase'
 // Convenção:
 //   X.x → alteração grande (quebra de compatibilidade, nova feature grande)
 //   x.X → alteração suave (fix, ajuste visual, pequeno refinamento)
-const APP_VERSION = '4.81-perf-lazytable';
+const APP_VERSION = '4.82-perf';
 
 // ================================================================
 // HELPERS DE CHART.JS — compatíveis com Safari/iOS (sem spread ops)
@@ -7069,7 +7069,11 @@ async function _persistirNfsIgnoradas(acao, nfKey){
 }
 
 // Bootstrap: carrega NFs ignoradas após login pra que filtros funcionem em qualquer página.
+// v4.82: flag guarda contra dispatches múltiplos (defensivo — DOMContentLoaded normalmente dispara 1×)
+let _nfsBootstrapStarted = false;
 document.addEventListener('DOMContentLoaded', function(){
+  if(_nfsBootstrapStarted) return;
+  _nfsBootstrapStarted = true;
   // Tenta a cada 2s nos primeiros 20s, até o usuário estar logado.
   let tentativas = 0;
   const t = setInterval(function(){

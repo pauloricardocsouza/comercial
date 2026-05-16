@@ -6,8 +6,8 @@
 <meta name="robots" content="noindex, nofollow">
 <title>Comercial GPC · R2 Soluções</title>
 <!-- v4.76 fix7: favicon GPC (navy + GPC branco + arco laranja) -->
-<link rel="icon" type="image/svg+xml" href="assets/favicon.svg?v=4.81.1">
-<link rel="apple-touch-icon" href="assets/favicon.svg?v=4.81.1">
+<link rel="icon" type="image/svg+xml" href="assets/favicon.svg?v=4.82.1">
+<link rel="apple-touch-icon" href="assets/favicon.svg?v=4.82.1">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <!-- DNS prefetch para Firebase: encurta o handshake de auth/firestore -->
@@ -17,17 +17,19 @@
 <link rel="preconnect" href="https://firestore.googleapis.com" crossorigin>
 <link rel="preconnect" href="https://identitytoolkit.googleapis.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<!-- v4.82: Chart.js + annotation permanecem sync (core.js usa Chart.defaults no top-level) -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@3.0.1/dist/chartjs-plugin-annotation.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+<!-- v4.82: export libs com defer (~800KB) — só usadas em click handlers, não bloqueiam parse -->
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
 <!-- html2canvas: usado pela exportação "PDF da página inteira" (fix16) -->
-<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <!-- pako: fallback de descompressão gzip pra browsers sem DecompressionStream nativo (Safari iOS < 16.4) -->
-<script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"></script>
-<!-- Lucide icons (v4.76 · Cofre design system) -->
-<script src="https://unpkg.com/lucide@0.469.0/dist/umd/lucide.min.js"></script>
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"></script>
+<!-- Lucide icons (v4.76 · Cofre design system) — defer: createIcons() roda após DOMContentLoaded -->
+<script defer src="https://unpkg.com/lucide@0.469.0/dist/umd/lucide.min.js"></script>
 <!-- Firebase SDK (compat - sem build step) -->
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
@@ -2983,10 +2985,10 @@ body.cofre-shell .pfb-sep {
      JS principal · dividido em 5 arquivos pela auditoria v4.6
      Ordem importa: core declara as globais; render-* dependem de core.
      ════════════════════════════════════════════════════════════════════════════ -->
-<script src="js/core.js?v=4.81.1"></script>
-<script src="js/render-compras.js?v=4.81.1"></script>
-<script src="js/render-vendas.js?v=4.81.1"></script>
-<script src="js/render-outros.js?v=4.81.1"></script>
-<script src="js/admin.js?v=4.81.1"></script>
+<script src="js/core.js?v=4.82.1"></script>
+<script src="js/render-compras.js?v=4.82.1"></script>
+<script src="js/render-vendas.js?v=4.82.1"></script>
+<script src="js/render-outros.js?v=4.82.1"></script>
+<script src="js/admin.js?v=4.82.1"></script>
 </body>
 </html>

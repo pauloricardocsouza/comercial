@@ -148,7 +148,7 @@ function doSearch(q){
   if(q.length<2){srchDrp.classList.remove('show');return;}
 
   const tokens=q.toLowerCase().split(/\s+/).filter(t=>t.length>0);
-  const qNum=tokens.length===1&&!isNaN(q.trim())?parseInt(q.trim()):null;
+  const qNum=tokens.length===1&&!isNaN(q.trim())?parseInt(q.trim(),10):null;
 
   const found=D.produtos.filter(p=>{
     // Busca exata por código
@@ -188,7 +188,7 @@ function doSearch(q){
     </div>`).join('');
 
   srchDrp.querySelectorAll('.sri').forEach(el=>{
-    el.addEventListener('click',()=>{openProd(parseInt(el.dataset.cod));srchDrp.classList.remove('show');srchInp.value='';});
+    el.addEventListener('click',()=>{openProd(parseInt(el.dataset.cod,10));srchDrp.classList.remove('show');srchInp.value='';});
   });
   srchDrp.classList.add('show');
 }
@@ -1352,7 +1352,7 @@ function getEstoqueIdeal(base){
   try{
     // Primeiro tenta por base; se não houver, tenta o legado (sem base)
     const v = localStorage.getItem('estoqueIdeal:'+base) || localStorage.getItem('estoqueIdeal');
-    if(v){ const n=parseInt(v); if(n>0&&n<=999) return n; }
+    if(v){ const n=parseInt(v,10); if(n>0&&n<=999) return n; }
   }catch(e){}
   return 180; // v4.74: default é o limite de excesso da página Excesso de estoque
 }
@@ -2048,7 +2048,7 @@ function renderAdmList(){
 
 
 window.saveEstoqueIdeal = function(){
-  const v = parseInt(document.getElementById('cfg-estoque-ideal').value);
+  const v = parseInt(document.getElementById('cfg-estoque-ideal').value,10);
   if(!v || v<1 || v>999){ _toast('Informe um valor entre 1 e 999 dias.', 'aviso'); return; }
   setEstoqueIdeal(v, _baseAdminSelecionada);
   _auditLog('admin_estoque', {base: _baseAdminSelecionada, valor: v});
@@ -2137,7 +2137,7 @@ document.getElementById('btn-xlsx').addEventListener('click',()=>{
     const _codMatch = _codTxt && _codTxt.match(/#(\d+)/);
     const cod = _codMatch && _codMatch[1];
     if(cod){
-      const p=byC.get(parseInt(cod));
+      const p=byC.get(parseInt(cod,10));
       if(p){
         XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet([
           ['RAIO-X: '+p.d],['Código',p.c,'EAN',p.ea||'—'],

@@ -2650,7 +2650,7 @@ function renderFinanceiroNovo(){
   _renderQuadroMultaJuros();
 
   // Chart 1: Mensal pago
-  const mensal = (pagas.mensal||[]).slice().sort(function(a,b){return a.ym<b.ym?-1:1;});
+  const mensal = (pagas.mensal||[]).slice().sort(function(a,b){return a.ym<b.ym?-1:a.ym>b.ym?1:0;});
   mkC('c-fin-novo-mensal',{type:'bar',
     data:{labels:mensal.map(function(m){return _ymToLabel(m.ym);}),
           datasets:[{label:'Pago',data:mensal.map(function(m){return m.pago;}),backgroundColor:_PAL.ac+'CC',borderRadius:4}]},
