@@ -2798,13 +2798,13 @@ function _renderCalendarioPagamentos(titulosAbertos){
       const borda = ehHoje ? '2px solid var(--accent)' : '1px solid var(--border)';
       // v4.73: texto branco quando fundo azul fica escuro
       const corTxt = d.valor > 0 && _intensidade(d.valor) > 0.45 ? '#fff' : 'var(--text)';
-      // v4.76 fix31: células compactas com fAbbr (k/M) pra evitar overflow horizontal
+      // v4.78: valor por dia em fT · sem cifrão · sem aproximação k/M · sem centavos
       h += '<div title="'+esc(d.key)+(d.valor>0?(' · '+fB(d.valor,2)+' · '+fI(d.titulos)+' títulos'):' · sem títulos')+(ehFds?' · fim de semana':'')+'" '
          + 'style="aspect-ratio:1.4/1;min-height:54px;background:'+bg+';border:'+borda+';border-radius:5px;'
          + 'padding:4px 6px;display:flex;flex-direction:column;justify-content:space-between;'
          + 'font-size:11px;color:'+corTxt+';overflow:hidden;">'
          +   '<div style="font-weight:700;font-size:11.5px;line-height:1;">'+d.d+'</div>'
-         +   (d.valor > 0 ? '<div style="font-size:12px;font-weight:800;line-height:1.1;text-align:right;white-space:nowrap;">'+fAbbr(d.valor)+'</div>' : (ehFds?'<div style="font-size:9.5px;color:var(--text-muted);">—</div>':''))
+         +   (d.valor > 0 ? '<div style="font-size:11.5px;font-weight:800;line-height:1.1;text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums;">'+fT(d.valor)+'</div>' : (ehFds?'<div style="font-size:9.5px;color:var(--text-muted);">—</div>':''))
          + '</div>';
     });
     h += '</div>';
@@ -2832,7 +2832,7 @@ function _renderCalendarioPagamentos(titulosAbertos){
               +   '<div style="font-weight:700;color:var(--text-muted);">'+(i+1)+'</div>'
               +   '<div><strong>'+fDt(d.key)+'</strong><br><span style="font-size:10px;color:var(--text-muted);">'+_diaSemAbrev[dt.getDay()]+'</span></div>'
               +   '<div style="background:var(--surface-2);height:6px;border-radius:3px;overflow:hidden;"><div style="width:'+pct.toFixed(1)+'%;height:100%;background:'+corBarra+';"></div></div>'
-              +   '<div style="font-weight:800;text-align:right;font-family:JetBrains Mono,monospace;font-size:12px;">'+fK(d.valor)+'</div>'
+              +   '<div style="font-weight:800;text-align:right;font-family:JetBrains Mono,monospace;font-size:12px;font-variant-numeric:tabular-nums;">'+fT(d.valor)+'</div>'
               + '</div>';
         });
         h2 += '</div></div>';
@@ -4922,13 +4922,8 @@ function renderFornGPCNovo(){
   // v4.76 fix32: KPI grid 6-col (estava sem classe .kg, cards empilhavam)
   html += '<div class="kg" style="grid-template-columns:repeat(6,1fr);margin-bottom:14px;" id="kg-fgpc-novo"></div>';
 
-  // Chart histórico (Composição faturamento removida em v4.70)
-  if(vpmYms.length > 0){
-    html += '<div class="cc"><div class="cct">Histórico de vendas · agregado intragrupo</div>'
-         +   '<div class="ccs">Soma de quantidade vendida de todos os SKUs Cerqueira</div>'
-         +   '<div style="height:240px;margin-top:8px;"><canvas id="c-fgpc-hist"></canvas></div>'
-         + '</div>';
-  }
+  // v4.78: Histórico de vendas agregado intragrupo removido (pedido do usuário)
+  // O grafico individual por fornecedor (c-df-hist no detalhe) permanece
 
   // Tabela por fornecedor (rica, com cruzamento financeiro)
   html += '<div class="cc" style="margin-top:14px;"><div class="cct">Detalhamento por fornecedor intragrupo</div>'
@@ -5018,18 +5013,8 @@ function renderFornGPCNovo(){
     {l:'SKUs paralisados', v:fI(tot.skus_paralisados), s:'Parados ou mortos no grupo', cls:tot.skus_paralisados>20?'wn':''},
   ]);
 
-  // Chart histórico mensal
-  if(vpmYms.length > 0){
-    mkC('c-fgpc-hist',{type:'bar',
-      data:{labels:vpmYms.map(function(ym){return _ymToLabel(ym);}),
-            datasets:[{label:'Qtde vendida', data:vpmYms.map(function(ym){return vpmAcc[ym];}),
-                       backgroundColor:_PAL.hl+'CC', borderRadius:4}]},
-      options:{responsive:true,maintainAspectRatio:false,
-        plugins:{legend:{display:false},
-                 tooltip:{callbacks:{label:function(ctx){return fI(ctx.raw)+' un';}}}},
-        scales:{x:{grid:{display:false},ticks:{font:{size:10}}},
-                y:{ticks:{callback:function(v){return fI(v);}}}}}});
-  }
+  // v4.78: chart c-fgpc-hist (Historico de vendas agregado intragrupo) removido
+  // O canvas correspondente foi removido do HTML acima · mkC não eh mais chamado
 
   // v4.70: gráfico "Composição faturamento por fornecedor" removido
 

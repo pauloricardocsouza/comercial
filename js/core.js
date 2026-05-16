@@ -216,7 +216,7 @@ const AUTH_MODE = 'firebase'; // 'mock' | 'firebase'
 // Convenção:
 //   X.x → alteração grande (quebra de compatibilidade, nova feature grande)
 //   x.X → alteração suave (fix, ajuste visual, pequeno refinamento)
-const APP_VERSION = '4.77-cofre-fix1';
+const APP_VERSION = '4.78-cofre-fix1';
 
 // ================================================================
 // HELPERS DE CHART.JS — compatíveis com Safari/iOS (sem spread ops)
@@ -3008,6 +3008,8 @@ const fAbbr=n=>{n=n||0;if(Math.abs(n)>=1e6)return'R$'+(n/1e6).toFixed(2)+'M';if(
 const fK=n=>fB(n,0);
 const fP=(n,d=1)=>((n||0).toFixed(d))+'%';
 const fI=n=>Math.round(n||0).toLocaleString('pt-BR');
+// v4.78: fT · truncado · sem cifrão · sem centavos · sem aproximação (ex: 254937.42 → "254.937")
+const fT=n=>Math.trunc(n||0).toLocaleString('pt-BR');
 const fN=(n,d=0)=>(n||0).toLocaleString('pt-BR',{minimumFractionDigits:d,maximumFractionDigits:d});
 // Item 2: datas em DD/MM/AAAA
 const fD=d=>d?d.slice(8)+'/'+d.slice(5,7)+'/'+d.slice(0,4):'—';
