@@ -2937,7 +2937,8 @@ function renderVBenchmarking(){
   }
   function _rcaRenderTabVbm(){
     const compSort = _rcaCompararSort(compara);
-    document.getElementById('tb-vbm').innerHTML = compSort.map(function(x){
+    // v4.78.3: lazy render — só pinta primeiras 80 linhas, demais ao scroll
+    _lazyTable(document.getElementById('tb-vbm'), compSort, function(x){
       const difCls = x.dif_abs>=0 ? 'val-pos' : 'val-neg';
       let status, statusCls;
       if(!x.ativo25 && x.ativo26){ status = 'Novo'; statusCls = 'val-pos'; }
@@ -2960,7 +2961,7 @@ function renderVBenchmarking(){
         + '<td>'+(x.ticket26>0?fK(x.ticket26):'—')+'</td>'
         + '<td class="'+statusCls+'">'+status+'</td>'
         + '</tr>';
-    }).join('');
+    });
     // Atualiza indicador de sort no <th>
     document.querySelectorAll('#t-vbm .vbm-sort').forEach(function(th){
       const k = th.getAttribute('data-sort');

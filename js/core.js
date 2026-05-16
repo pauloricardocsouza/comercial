@@ -216,7 +216,7 @@ const AUTH_MODE = 'firebase'; // 'mock' | 'firebase'
 // Convenção:
 //   X.x → alteração grande (quebra de compatibilidade, nova feature grande)
 //   x.X → alteração suave (fix, ajuste visual, pequeno refinamento)
-const APP_VERSION = '4.81-perf';
+const APP_VERSION = '4.81-perf-lazytable';
 
 // ================================================================
 // HELPERS DE CHART.JS — compatíveis com Safari/iOS (sem spread ops)
@@ -3332,6 +3332,66 @@ function mkC(id,cfg){
   });
   return CH[id];
 }
+
+// v4.78.3: lazy table render — pinta apenas as primeiras N linhas e vai
+// estendendo conforme o usuário rola dentro do .tscroll. Crítico pra páginas
+// com 500+ linhas (Fornecedores, RCA, Curva ABC, NF). Reduz tempo de paint
+// inicial de O(n) para O(min(n, 80)), preservando UX de scroll natural.
+//
+// API:  _lazyTable(tbody, rows, renderRowFn, chunk?)
+//       - tbody: <tbody> element
+//       - rows: array de objetos
+//       - renderRowFn(row, idx) → string HTML de uma <tr>
+//       - chunk: tamanho do lote (default 80)
+function _lazyTable(tbody, rows, renderRowFn, chunk){
+  if(!tbody) return;
+  chunk = chunk || 80;
+  // Cleanup de estado anterior nesse tbody (re-render)
+  if(tbody.__lazyCleanup){ try { tbody.__lazyCleanup(); } catch(e){} }
+  if(!rows || !rows.length){
+    tbody.innerHTML = '';
+    return;
+  }
+  let rendered = 0;
+  function renderBatch(){
+    const end = Math.min(rendered + chunk, rows.length);
+    let html = '';
+    for(let i=rendered; i<end; i++){ html += renderRowFn(rows[i], i); }
+    if(rendered === 0) tbody.innerHTML = html;
+    else tbody.insertAdjacentHTML('beforeend', html);
+    rendered = end;
+    return rendered >= rows.length;
+  }
+  const completou = renderBatch();
+  if(completou) return;
+  // Acha o container scrollável (.tscroll mais próximo)
+  let scroller = tbody.closest('.tscroll');
+  if(!scroller || getComputedStyle(scroller).overflowY === 'visible'){
+    scroller = window;
+  }
+  function getBottomDistance(){
+    if(scroller === window){
+      const doc = document.documentElement;
+      return (doc.scrollHeight - (window.scrollY + window.innerHeight));
+    }
+    return scroller.scrollHeight - (scroller.scrollTop + scroller.clientHeight);
+  }
+  function onScroll(){
+    if(getBottomDistance() < 300){
+      const done = renderBatch();
+      if(done) cleanup();
+    }
+  }
+  function cleanup(){
+    scroller.removeEventListener('scroll', onScroll);
+    tbody.__lazyCleanup = null;
+  }
+  scroller.addEventListener('scroll', onScroll, {passive: true});
+  tbody.__lazyCleanup = cleanup;
+  // Se a viewport for muito alta, o primeiro chunk pode não preencher — checa.
+  setTimeout(function(){ if(rendered < rows.length && getBottomDistance() < 300) onScroll(); }, 50);
+}
+window._lazyTable = _lazyTable;
 
 // v4.76 fix33: cria chart só quando o canvas entra na viewport.
 // Usa IntersectionObserver — gráficos abaixo da dobra não bloqueiam o initial render.

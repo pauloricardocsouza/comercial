@@ -1485,25 +1485,24 @@ function _fornRenderTabela(arr){
     tb.innerHTML = '<tr><td colspan="11" style="text-align:center;color:var(--text-muted);padding:14px;">Nenhum fornecedor encontrado.</td></tr>';
     return;
   }
-  let html = '';
-  arr.forEach(function(f, i){
+  // v4.78.3: lazy render — primeiras 80 linhas síncronas, demais carregam ao scroll
+  _lazyTable(tb, arr, function(f, i){
     const margCls = f.marg<0?'dn':f.marg<5?'wn':f.marg<10?'':'ok';
     const devCls  = f.pct_devol>5?'dn':f.pct_devol>2?'wn':'';
-    html += '<tr>'
-         +    '<td class="L" style="color:var(--text-muted);font-weight:700;">'+(i+1)+'</td>'
-         +    '<td class="L" data-forn-cod="'+esc(f.cod)+'" title="Clique para ver diagnóstico do fornecedor"><strong>'+esc((f.nome||'').substring(0,40))+'</strong></td>'
-         +    '<td>'+fI(f.skus)+'</td>'
-         +    '<td class="val-strong">'+fK(f.v_compra)+'</td>'
-         +    '<td>'+fI(f.nfs_compra||0)+'</td>'
-         +    '<td>'+fK(f.v_venda)+'</td>'
-         +    '<td>'+fK(f.lucro)+'</td>'
-         +    '<td><span class="kg-tag '+margCls+'">'+fP(f.marg)+'</span></td>'
-         +    '<td>'+fK(f.vl_est_custo)+'</td>'
-         +    '<td>'+(f.dev_valor>0?'<span class="kg-tag '+devCls+'">'+fK(f.dev_valor)+'</span>':'<span style="color:var(--text-muted);">—</span>')+'</td>'
-         +    '<td>'+(f.skus_paralisados>0?'<span class="kg-tag wn">'+fI(f.skus_paralisados)+'</span>':fI(f.skus_paralisados))+'</td>'
-         +  '</tr>';
+    return '<tr>'
+        +    '<td class="L" style="color:var(--text-muted);font-weight:700;">'+(i+1)+'</td>'
+        +    '<td class="L" data-forn-cod="'+esc(f.cod)+'" title="Clique para ver diagnóstico do fornecedor"><strong>'+esc((f.nome||'').substring(0,40))+'</strong></td>'
+        +    '<td>'+fI(f.skus)+'</td>'
+        +    '<td class="val-strong">'+fK(f.v_compra)+'</td>'
+        +    '<td>'+fI(f.nfs_compra||0)+'</td>'
+        +    '<td>'+fK(f.v_venda)+'</td>'
+        +    '<td>'+fK(f.lucro)+'</td>'
+        +    '<td><span class="kg-tag '+margCls+'">'+fP(f.marg)+'</span></td>'
+        +    '<td>'+fK(f.vl_est_custo)+'</td>'
+        +    '<td>'+(f.dev_valor>0?'<span class="kg-tag '+devCls+'">'+fK(f.dev_valor)+'</span>':'<span style="color:var(--text-muted);">—</span>')+'</td>'
+        +    '<td>'+(f.skus_paralisados>0?'<span class="kg-tag wn">'+fI(f.skus_paralisados)+'</span>':fI(f.skus_paralisados))+'</td>'
+        +  '</tr>';
   });
-  tb.innerHTML = html;
 }
 
 // ════════════════════════════════════════════════════════════════════════
