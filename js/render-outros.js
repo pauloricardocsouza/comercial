@@ -13,7 +13,7 @@ function renderRecebimentos(){
   if(!R){
     cont.innerHTML = '<div class="ph"><div class="pk">Vendas · Análise</div><h2><em>Inadimplência</em></h2></div>'
       + '<div class="ph-sep"></div><div class="page-body">'
-      + '<div class="cc" style="text-align:center;color:var(--text-muted);padding:30px;">Dados de recebimentos não carregados.</div></div>';
+      + '<div class="cc">'+_emptyState('Dados de recebimentos não carregados','O JSON recebimentos_<base>.json não está disponível para esta filial.')+'</div></div>';
     return;
   }
 
@@ -595,7 +595,7 @@ function renderVerbas(){
   if(!Vb){
     cont.innerHTML = '<div class="ph"><div class="pk">Compras · Análise</div><h2>Verbas aplicadas em produtos</h2></div>'
       + '<div class="ph-sep"></div><div class="page-body">'
-      + '<div class="cc" style="text-align:center;color:var(--text-muted);padding:30px;">Dados de verbas não carregados pra esta base.</div></div>';
+      + '<div class="cc">'+_emptyState('Dados de verbas não carregados','O JSON verbas_<base>.json não está disponível para a filial ativa.')+'</div></div>';
     return;
   }
 
@@ -642,9 +642,7 @@ function renderVerbas(){
   if((meta.linhas_processadas||0) === 0){
     cont.innerHTML = '<div class="ph"><div class="pk">Compras · Análise</div><h2>Verbas aplicadas em produtos</h2></div>'
       + '<div class="ph-sep"></div><div class="page-body">'
-      + '<div class="cc" style="text-align:center;color:var(--text-muted);padding:30px;">'
-      + (esc(meta.aviso || 'Sem dados de verba neste extrato pra esta base.'))
-      + '</div></div>';
+      + '<div class="cc">'+_emptyState('Sem verba registrada nesta base', meta.aviso || 'O extrato carregado não contém linhas de verba aplicada para esta filial.')+'</div></div>';
     return;
   }
 

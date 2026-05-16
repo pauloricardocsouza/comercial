@@ -1298,12 +1298,11 @@ function renderFornecedoresNovo(){
   // Se o cubo ainda não foi carregado, dispara o lazy load e mostra placeholder.
   const ymsTodos = _fornYmsDisponiveis2026();
   if(ymsTodos.length === 0){
+    // Spinner customizado pra indicar loading do cubo (ícone diferente da lupa default)
+    var _spinnerSvg = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" style="animation:dlSpin 1s linear infinite;"><path d="M21 12a9 9 0 11-6.219-8.56"/></svg>';
     cont.innerHTML = '<div class="ph"><div class="pk">Compras</div><h2>Análise de <em>fornecedores</em></h2></div>'
                    + '<div class="ph-sep"></div><div class="page-body">'
-                   + '<div class="cc" style="padding:30px;text-align:center;color:var(--text-muted);">'
-                   +   '<div style="margin-bottom:8px;">Carregando dados de 2026…</div>'
-                   +   '<div style="font-size:11px;">O cubo OLAP é carregado sob demanda (≈10 MB). Volte em alguns segundos.</div>'
-                   + '</div></div>';
+                   + '<div class="cc">'+_emptyState('Carregando dados de 2026…','O cubo OLAP é carregado sob demanda (≈10 MB). A página será preenchida automaticamente em alguns segundos.', _spinnerSvg)+'</div></div>';
     if(typeof _carregarCuboLazy === 'function'){
       _carregarCuboLazy().then(function(){
         if(typeof renderedPages !== 'undefined') renderedPages.delete('fornecedores');
@@ -4815,12 +4814,10 @@ function renderFornGPCNovo(){
   // v4.70: 2026-only via activePers (igual a Fornecedores)
   const ymsTodos = _fornYmsDisponiveis2026();
   if(ymsTodos.length === 0){
+    var _spinnerSvg2 = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" style="animation:dlSpin 1s linear infinite;"><path d="M21 12a9 9 0 11-6.219-8.56"/></svg>';
     cont.innerHTML = '<div class="ph"><div class="pk">Hierarquia · Intragrupo</div><h2><em>Fornecedores GPC</em> · Pinto Cerqueira</h2></div>'
                    + '<div class="ph-sep"></div><div class="page-body">'
-                   + '<div class="cc" style="padding:30px;text-align:center;color:var(--text-muted);">'
-                   +   '<div style="margin-bottom:8px;">Carregando dados de 2026…</div>'
-                   +   '<div style="font-size:11px;">O cubo OLAP é carregado sob demanda. Volte em alguns segundos.</div>'
-                   + '</div></div>';
+                   + '<div class="cc">'+_emptyState('Carregando dados de 2026…','O cubo OLAP é carregado sob demanda. A página será preenchida automaticamente.', _spinnerSvg2)+'</div></div>';
     if(typeof _carregarCuboLazy === 'function'){
       _carregarCuboLazy().then(function(){
         if(typeof renderedPages !== 'undefined') renderedPages.delete('forn-gpc');
@@ -5429,9 +5426,7 @@ function _nfFechRender(){
   // Tabela
   if(!listaExib.length){
     html += '<div class="cc" style="margin-top:14px;">'
-         +   '<div style="padding:30px;text-align:center;color:var(--text-muted);font-size:13px;">'
-         +     'Nenhuma NF encontrada com os filtros atuais.'
-         +   '</div>'
+         +   _emptyState('Nenhuma NF encontrada','Tente limpar ou ajustar os filtros aplicados no cabeçalho.')
          + '</div>';
   } else {
     html += '<div class="ds" style="margin-top:14px;">'
