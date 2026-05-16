@@ -2956,7 +2956,7 @@ function _pvCapturaAlvo(){
   wrap.appendChild(h);
   var sub = document.createElement('div');
   sub.style.cssText = 'font-family:"JetBrains Mono",monospace;font-size:10px;color:#888;margin-bottom:14px;text-transform:uppercase;letter-spacing:.1em;';
-  sub.textContent = 'Gerado em ' + new Date().toLocaleString('pt-BR');
+  sub.textContent = 'Gerado em ' + fDtH(new Date());
   wrap.appendChild(sub);
   // Gráfico (clone se visível)
   if(chartWrap && chartWrap.style.display !== 'none'){
@@ -2996,7 +2996,7 @@ function _pvExportarPDF(){
     var imgW = contentW;
     var imgH = canvas.height * imgW / canvas.width;
     var totalPages = Math.ceil(imgH / contentH);
-    var dt = new Date().toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});
+    var dt = fDtH(new Date());
     var pxPerMm = canvas.width / imgW;
     var logo = new Image();
     logo.onload = render; logo.onerror = function(){ render(null); };

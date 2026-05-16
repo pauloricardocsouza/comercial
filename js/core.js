@@ -216,7 +216,7 @@ const AUTH_MODE = 'firebase'; // 'mock' | 'firebase'
 // Convenção:
 //   X.x → alteração grande (quebra de compatibilidade, nova feature grande)
 //   x.X → alteração suave (fix, ajuste visual, pequeno refinamento)
-const APP_VERSION = '4.76-cofre-fix26';
+const APP_VERSION = '4.76-cofre-fix27';
 
 // ================================================================
 // HELPERS DE CHART.JS — compatíveis com Safari/iOS (sem spread ops)
@@ -3028,6 +3028,16 @@ const fDt=d=>{
     return dd + '-' + m + '-' + y;
   }
   return '—';
+};
+// v4.76 fix27: fDtH — data + hora no mesmo formato (DD-MM-AAAA HH:MM)
+const fDtH=d=>{
+  const dt = (d instanceof Date) ? d : new Date();
+  const dd = String(dt.getDate()).padStart(2,'0');
+  const mm = String(dt.getMonth()+1).padStart(2,'0');
+  const yy = dt.getFullYear();
+  const hh = String(dt.getHours()).padStart(2,'0');
+  const mi = String(dt.getMinutes()).padStart(2,'0');
+  return dd+'-'+mm+'-'+yy+' '+hh+':'+mi;
 };
 // _dataLocal(): retorna 'YYYY-MM-DD' no timezone do usuário (não UTC)
 // Diferente de new Date().toISOString().slice(0,10) que usa UTC e pode estar
@@ -6279,7 +6289,7 @@ function _exportPDF(ds){
   doc.setFontSize(14); doc.setFont('helvetica','bold');
   doc.text(ds.titulo||'Relatório', 40, 36);
   doc.setFontSize(9); doc.setFont('helvetica','normal'); doc.setTextColor(120);
-  const sub = 'Comercial GPC · '+(new Date()).toLocaleString('pt-BR');
+  const sub = 'Comercial GPC · '+fDtH(new Date());
   doc.text(sub, 40, 52);
   doc.setTextColor(0);
 
@@ -7269,7 +7279,7 @@ function _cofreExportPagePdf(){
     function desenhar(logoImg){
       var dataUrl = canvas.toDataURL('image/jpeg', 0.92);
       var totalPages = Math.ceil(imgH / contentH);
-      var dataHora = new Date().toLocaleString('pt-BR', { day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit' });
+      var dataHora = fDtH(new Date());
 
       for(var p = 0; p < totalPages; p++){
         if(p > 0) pdf.addPage();

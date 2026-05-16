@@ -2125,7 +2125,7 @@ function renderExecutivo(){
     {l:'Compras líquidas',    v:fK(totalCompras), s:fP(cobPct)+' do fat. · '+labelPeriodo,    cls:cobCls},
     {l:'Vencidos',            v:fK(valorVencidos),s:fI(nVencidos)+' títulos · 1 dia ou mais',        cls:'dn'},
     {l:'Em aberto',           v:fK(totalAberto),  s:'Total a pagar', cls:'hl'},
-    {l:'Estoque (preço venda)',v:estoqueValorPV>0?fK(estoqueValorPV):'—',s:estoqueValorPV>0?'Retrato '+dataEstoque:'sem dados', cls:'vio'},
+    {l:'Estoque (preço venda)',v:estoqueValorPV>0?fK(estoqueValorPV):'—',s:estoqueValorPV>0?'Retrato '+fDt(dataEstoque):'sem dados', cls:'vio'},
     {l:'SKUs com venda',      v:fI(skusComVenda), s:fI(skusComEstoque)+' c/ estoque atual'},
     {l:'NFs de entrada',      v:fI(totalNfs),     s:fI(totalForns)+' fornecedores'},
   ]);

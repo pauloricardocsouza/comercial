@@ -1261,7 +1261,7 @@ function _excExportarPDF(){
       <td class="t">${tierLbl[i.tier]||''}</td>
     </tr>`).join('');
 
-  const hoje = new Date().toLocaleString('pt-BR');
+  const hoje = fDtH(new Date());
   const html = `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8">
 <title>Excesso de estoque - GPC</title>
 <style>
