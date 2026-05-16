@@ -3098,8 +3098,6 @@ function renderCV(){
     {l:'Compras líquidas',v:fK(tc_liq),s:fP(tv>0?tc_liq/tv*100:0)+' de cobertura',cls:tc_liq>tv?'dn':tc_liq/tv>0.80?'':'up'},
     {l:'Pago',v:fK(tp),s:fP((tp+ta)>0?tp/(tp+ta)*100:0)+' do exigível (pago+aberto)',cls:'up'},
     {l:'Em aberto',v:fK(ta),s:'A pagar',cls:ta>0?'hl':''},
-    {l:'Dev. cliente',v:fK(tdvc),s:fP(tv>0?tdvc/tv*100:0)+' do fat.',cls:tv>0&&tdvc/tv>0.01?'dn':''},
-    {l:'Dev. fornecedor',v:fK(tdvf),s:'Subtraído das compras',cls:''},
   ]);
 
   const comLiqs=evo.map(e=>comLiq(e.com,e.dvf));
