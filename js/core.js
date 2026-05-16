@@ -216,7 +216,7 @@ const AUTH_MODE = 'firebase'; // 'mock' | 'firebase'
 // Convenção:
 //   X.x → alteração grande (quebra de compatibilidade, nova feature grande)
 //   x.X → alteração suave (fix, ajuste visual, pequeno refinamento)
-const APP_VERSION = '4.76-cofre-fix25';
+const APP_VERSION = '4.76-cofre-fix26';
 
 // ================================================================
 // HELPERS DE CHART.JS — compatíveis com Safari/iOS (sem spread ops)
@@ -1076,6 +1076,55 @@ const PERFIS_DEFAULT_TEMPLATE = {
 };
 
 // MOCK: usuários e perfis em localStorage
+// v4.76 fix26: migrador idempotente — injeta páginas adicionadas ao catálogo
+// (ex: 'recebimentos') em perfis admin/gestor e usuários com paginas_permitidas
+// explicit. Antes, quem tinha arrays salvos antes do fix22 nunca veria
+// Inadimplência. Rodar uma vez por carga é barato e seguro.
+function _migrarPermissoesNovasPaginas(){
+  var paginasObrigatorias = {
+    admin:  ['recebimentos','verbas','nf-fechamento','v-drilldown','v-benchmarking'],
+    gestor: ['recebimentos','verbas','nf-fechamento','v-drilldown','v-benchmarking'],
+  };
+  try {
+    // 1) perfisTemplate em cache
+    var raw = localStorage.getItem('perfisTemplate');
+    if(raw){
+      var p = JSON.parse(raw);
+      var mudou = false;
+      Object.keys(paginasObrigatorias).forEach(function(perfilId){
+        if(p[perfilId] && Array.isArray(p[perfilId].paginas)){
+          paginasObrigatorias[perfilId].forEach(function(pg){
+            if(p[perfilId].paginas.indexOf(pg) < 0){
+              p[perfilId].paginas.push(pg);
+              mudou = true;
+            }
+          });
+        }
+      });
+      if(mudou) localStorage.setItem('perfisTemplate', JSON.stringify(p));
+    }
+    // 2) usuariosMock em cache — só quem é admin/gestor com array explícito
+    var rawU = localStorage.getItem('usuariosMock');
+    if(rawU){
+      var us = JSON.parse(rawU);
+      var mudouU = false;
+      us.forEach(function(u){
+        var lista = paginasObrigatorias[u.perfil];
+        if(lista && Array.isArray(u.paginas_permitidas)){
+          lista.forEach(function(pg){
+            if(u.paginas_permitidas.indexOf(pg) < 0){
+              u.paginas_permitidas.push(pg);
+              mudouU = true;
+            }
+          });
+        }
+      });
+      if(mudouU) localStorage.setItem('usuariosMock', JSON.stringify(us));
+    }
+  } catch(e){ /* falha silenciosa */ }
+}
+try { _migrarPermissoesNovasPaginas(); } catch(e){}
+
 function _getPerfisCustom(){
   try {
     const v = localStorage.getItem('perfisTemplate');

@@ -2547,6 +2547,29 @@ function renderVDrilldown(){
 
   // Render inicial
   rebuildTable();
+
+  // v4.76 fix26: foco vindo do RCA — abre auto-magicamente o detalhe do vendedor
+  // clicado, com filtro de busca pré-preenchido e scroll suave até a linha.
+  try {
+    const focoCod = window._rcaVendedorFoco;
+    if(focoCod){
+      window._rcaVendedorFoco = null;
+      const vAlvo = cad.find(function(x){return String(x.cod) === String(focoCod);});
+      if(vAlvo){
+        // Pré-filtra pelo nome pra que a linha apareça primeiro
+        const inp = document.getElementById('flt-vdrl-q');
+        if(inp){ inp.value = vAlvo.nome; rebuildTable(); }
+        // Abre o detalhe e dá scroll suave
+        if(typeof window._vdrlAbrir === 'function'){
+          window._vdrlAbrir(focoCod);
+          setTimeout(function(){
+            const det = document.getElementById('vdrl-detalhe');
+            if(det && det.scrollIntoView) det.scrollIntoView({behavior:'smooth', block:'start'});
+          }, 80);
+        }
+      }
+    }
+  } catch(e){ /* ignore */ }
 }
 
 // ────────────────────────────────────────────────────────────────────
@@ -2657,11 +2680,48 @@ function renderVBenchmarking(){
       ticket26: nfs26>0 ? fat26/nfs26 : 0,
       nfs26: nfs26,
       qt26: qt26,
+      mix26: null, // preenchido abaixo a partir do cubo OLAP (Cu), se disponível
       clientes26: cli26,
       ativo26: fat26 > 0,
       ativo25: fat25 > 0,
     };
   });
+
+  // v4.76 fix26: Mix REAL (SKUs distintos por vendedor) do cubo OLAP.
+  // Se o cubo já foi carregado (pré-fetch ou navegação anterior), itera
+  // Cu.fatos.vendas.linhas uma vez e cacheia. Caso indisponível, x.mix26
+  // fica null e o ranking de Mix usa qt26 como proxy.
+  const _mixIdx = (function(){
+    try {
+      if(window._rcaMixCache) return window._rcaMixCache;
+      if(typeof Cu === 'undefined' || !Cu || !Cu.fatos || !Cu.fatos.vendas) return null;
+      const fv = Cu.fatos.vendas;
+      const camposCu = fv.campos || [];
+      const iVend = camposCu.indexOf('vend');
+      const iSku  = camposCu.indexOf('sku');
+      if(iVend < 0 || iSku < 0) return null;
+      const mapa = {};
+      const linhasCu = fv.linhas || [];
+      for(let i=0; i<linhasCu.length; i++){
+        const vc = linhasCu[i][iVend];
+        const sc = linhasCu[i][iSku];
+        if(vc == null || sc == null) continue;
+        if(!mapa[vc]) mapa[vc] = new Set();
+        mapa[vc].add(sc);
+      }
+      const out = {};
+      Object.keys(mapa).forEach(function(k){ out[k] = mapa[k].size; });
+      window._rcaMixCache = out;
+      return out;
+    } catch(e){ return null; }
+  })();
+  if(_mixIdx){
+    compara.forEach(function(x){
+      if(_mixIdx[x.cod] != null) x.mix26 = _mixIdx[x.cod];
+    });
+  }
+  // mix_val: valor unificado pra sort/coluna (SKUs distintos ou qt como proxy)
+  compara.forEach(function(x){ x.mix_val = (x.mix26 != null ? x.mix26 : (x.qt26 || 0)); });
 
   // KPIs comparativos
   const ativos25 = compara.filter(function(x){return x.ativo25;}).length;
@@ -2679,7 +2739,9 @@ function renderVBenchmarking(){
   const ativos26Filt = compara.filter(function(x){return x.fat26 > 50000;});
   const topFat    = compara.filter(function(x){return x.fat26 > 0;}).slice().sort(function(a,b){return b.fat26 - a.fat26;}).slice(0, 10);
   const topMargem = ativos26Filt.slice().sort(function(a,b){return b.marg26 - a.marg26;}).slice(0, 10);
-  const topMix    = ativos26Filt.slice().sort(function(a,b){return (b.qt26||0) - (a.qt26||0);}).slice(0, 10);
+  // v4.76 fix26: Mix prefere SKUs distintos (cubo OLAP) quando disponível; senão usa qt como proxy.
+  const _mixVal = function(x){ return (x.mix26 != null ? x.mix26 : (x.qt26||0)); };
+  const topMix    = ativos26Filt.slice().sort(function(a,b){return _mixVal(b) - _mixVal(a);}).slice(0, 10);
   const topTicket = ativos26Filt.slice().sort(function(a,b){return b.ticket26 - a.ticket26;}).slice(0, 10);
 
   const labelDst = mesesDestino.length
@@ -2774,7 +2836,7 @@ function renderVBenchmarking(){
        +      '<th class="vbm-sort" data-sort="dif_abs">Δ R$</th>'
        +      '<th class="vbm-sort" data-sort="cresce">Δ %</th>'
        +      '<th class="vbm-sort" data-sort="marg26">Margem dest.</th>'
-       +      '<th class="vbm-sort" data-sort="qt26">Mix (itens)</th>'
+       +      '<th class="vbm-sort" data-sort="mix_val" title="'+(_mixIdx?'SKUs distintos vendidos (cubo OLAP)':'Quantidade de itens vendidos · proxy enquanto SKUs distintos não estão no JSON')+'">'+(_mixIdx?'Mix (SKUs)':'Mix (qt)')+'</th>'
        +      '<th class="vbm-sort" data-sort="ticket26">Ticket</th>'
        +      '<th class="L">Status</th>'
        +      '</tr></thead><tbody id="tb-vbm"></tbody></table></div>'
@@ -2792,10 +2854,12 @@ function renderVBenchmarking(){
   ]);
 
   // ─── v4.76 fix23: Tabs Top 10 vendedores (Faturamento / Margem / Mix / Ticket) ───
+  // v4.76 fix26: coluna "Mix" muda label quando temos SKUs distintos reais (Cu)
+  const _mixLabel = _mixIdx ? 'SKUs distintos' : 'Itens vendidos (proxy)';
   const _vbmTopDefs = {
     fat:  {dados: topFat,    cols: ['#','Vendedor','Loja','Fat.','Margem'],         render: function(x){return ['<strong>'+fK(x.fat26)+'</strong>', fP(x.marg26)];}},
     marg: {dados: topMargem, cols: ['#','Vendedor','Loja','Fat.','Margem'],         render: function(x){var c=x.marg26>15?'val-pos':''; return [fK(x.fat26), '<strong class="'+c+'">'+fP(x.marg26)+'</strong>'];}},
-    mix:  {dados: topMix,    cols: ['#','Vendedor','Loja','Itens vendidos','Fat.'], render: function(x){return ['<strong>'+fI(x.qt26||0)+'</strong>', fK(x.fat26)];}},
+    mix:  {dados: topMix,    cols: ['#','Vendedor','Loja',_mixLabel,'Fat.'],        render: function(x){return ['<strong>'+fI(_mixVal(x))+'</strong>', fK(x.fat26)];}},
     tick: {dados: topTicket, cols: ['#','Vendedor','Loja','NFs','Ticket'],          render: function(x){var nfs=x.fat26>0 && x.ticket26>0?Math.round(x.fat26/x.ticket26):0; return ['<span class="val-dim">'+fI(nfs)+'</span>', '<strong>'+fK(x.ticket26)+'</strong>'];}},
   };
   function _renderVbmTopTab(key){
@@ -2880,7 +2944,7 @@ function renderVBenchmarking(){
         + '<td class="'+difCls+'">'+(x.dif_abs>=0?'+':'')+fK(x.dif_abs)+'</td>'
         + '<td class="'+cresceCls+'">'+cresceStr+'</td>'
         + '<td>'+(x.fat26>0?fP(x.marg26):'—')+'</td>'
-        + '<td class="val-dim">'+(x.qt26>0?fI(x.qt26):'—')+'</td>'
+        + '<td class="val-dim">'+(x.mix_val>0?fI(x.mix_val):'—')+'</td>'
         + '<td>'+(x.ticket26>0?fK(x.ticket26):'—')+'</td>'
         + '<td class="'+statusCls+'">'+status+'</td>'
         + '</tr>';
