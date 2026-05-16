@@ -1352,7 +1352,8 @@ function renderFornecedoresNovo(){
        + 'Retrato estoque: '+fDt(E.meta && E.meta.data_referencia)
        + '</div>';
 
-  html += '<div id="kg-forn-novo"></div>';
+  // v4.76 fix32: KPI grid 6-col (estava sem classe .kg e cards empilhavam em 1 col)
+  html += '<div class="kg" style="grid-template-columns:repeat(6,1fr);margin-bottom:14px;" id="kg-forn-novo"></div>';
 
   // 2 charts lado a lado
   html += '<div class="cc"><div class="cct">Top 12 · Compras 2026</div>'
@@ -4918,7 +4919,8 @@ function renderFornGPCNovo(){
        + '</div>';
 
   // KPIs
-  html += '<div id="kg-fgpc-novo"></div>';
+  // v4.76 fix32: KPI grid 6-col (estava sem classe .kg, cards empilhavam)
+  html += '<div class="kg" style="grid-template-columns:repeat(6,1fr);margin-bottom:14px;" id="kg-fgpc-novo"></div>';
 
   // Chart histórico (Composição faturamento removida em v4.70)
   if(vpmYms.length > 0){
