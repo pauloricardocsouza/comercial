@@ -216,7 +216,7 @@ const AUTH_MODE = 'firebase'; // 'mock' | 'firebase'
 // Convenção:
 //   X.x → alteração grande (quebra de compatibilidade, nova feature grande)
 //   x.X → alteração suave (fix, ajuste visual, pequeno refinamento)
-const APP_VERSION = '4.76-cofre-fix27';
+const APP_VERSION = '4.76-cofre-fix28';
 
 // ================================================================
 // HELPERS DE CHART.JS — compatíveis com Safari/iOS (sem spread ops)
@@ -6280,48 +6280,111 @@ function _exportXLSX(ds){
   XLSX.writeFile(wb, nome);
 }
 
+// v4.76 fix28: cache do logo GPC pra PDFs (carrega uma vez por sessão)
+let _logoGpcCacheImg = null;
+function _carregarLogoGpcPdf(){
+  if(_logoGpcCacheImg) return Promise.resolve(_logoGpcCacheImg);
+  return new Promise(function(resolve){
+    const img = new Image();
+    img.onload = function(){ _logoGpcCacheImg = img; resolve(img); };
+    img.onerror = function(){ resolve(null); };
+    img.src = 'assets/gpc-color.png';
+  });
+}
+
 function _exportPDF(ds){
   // jsPDF UMD expõe window.jspdf.jsPDF; autotable se anexa ao prototype.
   const jp = (typeof window.jspdf !== 'undefined') ? window.jspdf : null;
   if(!jp || !jp.jsPDF){ alert('jsPDF não carregado. Use XLSX por enquanto.'); return; }
-  const doc = new jp.jsPDF({orientation:'landscape', unit:'pt', format:'a4'});
-  const pageW = doc.internal.pageSize.getWidth();
-  doc.setFontSize(14); doc.setFont('helvetica','bold');
-  doc.text(ds.titulo||'Relatório', 40, 36);
-  doc.setFontSize(9); doc.setFont('helvetica','normal'); doc.setTextColor(120);
-  const sub = 'Comercial GPC · '+fDtH(new Date());
-  doc.text(sub, 40, 52);
-  doc.setTextColor(0);
 
-  const numSet = new Set(ds.numericCols || []);
-  const rowsFmt = ds.rows.map(function(r){
-    return r.map(function(c, i){
-      if(numSet.has(i) && typeof c === 'number') return c.toLocaleString('pt-BR', {minimumFractionDigits: 0, maximumFractionDigits: 2});
-      return c == null ? '' : String(c);
+  _carregarLogoGpcPdf().then(function(logoImg){
+    const doc = new jp.jsPDF({orientation:'landscape', unit:'pt', format:'a4'});
+    const pageW = doc.internal.pageSize.getWidth();
+    const pageH = doc.internal.pageSize.getHeight();
+    const marginX = 40;
+    const headerY = 50;
+    const dataHora = fDtH(new Date());
+
+    function _desenharHeader(){
+      if(logoImg){
+        try {
+          const ratio = logoImg.width / logoImg.height;
+          const lH = 24, lW = lH * ratio;
+          doc.addImage(logoImg, 'PNG', marginX, 18, lW, lH);
+        } catch(e){}
+      }
+      // Título à direita
+      doc.setFont('helvetica','bold');
+      doc.setFontSize(13);
+      doc.setTextColor(46, 71, 111);
+      doc.text(ds.titulo || 'Relatório', pageW - marginX, 28, {align:'right'});
+      doc.setFont('helvetica','normal');
+      doc.setFontSize(8);
+      doc.setTextColor(120, 120, 120);
+      doc.text('Inteligência Comercial · Grupo Pinto Cerqueira', pageW - marginX, 42, {align:'right'});
+      // Linha laranja separadora
+      doc.setDrawColor(245, 134, 52);
+      doc.setLineWidth(0.8);
+      doc.line(marginX, headerY, pageW - marginX, headerY);
+      doc.setTextColor(0, 0, 0);
+    }
+
+    function _desenharFooter(pageNum, totalPages){
+      doc.setDrawColor(220, 220, 220);
+      doc.setLineWidth(0.3);
+      doc.line(marginX, pageH - 26, pageW - marginX, pageH - 26);
+      doc.setFont('helvetica','normal');
+      doc.setFontSize(8);
+      doc.setTextColor(110, 110, 110);
+      doc.text('Exportado em ' + dataHora, marginX, pageH - 14);
+      doc.text('Página ' + pageNum + ' de ' + totalPages, pageW - marginX, pageH - 14, {align:'right'});
+    }
+
+    _desenharHeader();
+
+    const numSet = new Set(ds.numericCols || []);
+    const rowsFmt = ds.rows.map(function(r){
+      return r.map(function(c, i){
+        if(numSet.has(i) && typeof c === 'number') return c.toLocaleString('pt-BR', {minimumFractionDigits: 0, maximumFractionDigits: 2});
+        return c == null ? '' : String(c);
+      });
     });
+
+    if(typeof doc.autoTable === 'function'){
+      doc.autoTable({
+        head: [ds.cols],
+        body: rowsFmt,
+        startY: headerY + 14,
+        styles: {fontSize:8, cellPadding:3},
+        headStyles: {fillColor:[46,71,111], textColor:255, fontStyle:'bold'},
+        alternateRowStyles: {fillColor:[244,246,249]},
+        margin: {left:marginX, right:marginX, bottom:36, top:headerY + 14},
+        didDrawPage: function(data){
+          // Re-desenha header em cada página nova (a 1ª já está)
+          if(data.pageNumber > 1) _desenharHeader();
+        }
+      });
+    } else {
+      // Fallback rudimentar sem autotable
+      let y = headerY + 24;
+      doc.setFontSize(9);
+      rowsFmt.forEach(function(r){
+        doc.text(r.join(' · ').substring(0, 200), marginX, y);
+        y += 12;
+        if(y > pageH - 36){ doc.addPage(); _desenharHeader(); y = headerY + 24; }
+      });
+    }
+
+    // Footer com paginação em todas as páginas
+    const totalPages = doc.internal.getNumberOfPages();
+    for(let p = 1; p <= totalPages; p++){
+      doc.setPage(p);
+      _desenharFooter(p, totalPages);
+    }
+
+    const nome = (ds.titulo||'export').replace(/[\\/:*?"<>|]/g,'_').substring(0,60)+'.pdf';
+    doc.save(nome);
   });
-
-  if(typeof doc.autoTable === 'function'){
-    doc.autoTable({
-      head: [ds.cols],
-      body: rowsFmt,
-      startY: 64,
-      styles: {fontSize:8, cellPadding:3},
-      headStyles: {fillColor:[46,71,111], textColor:255, fontStyle:'bold'},
-      alternateRowStyles: {fillColor:[244,246,249]},
-      margin: {left:40, right:40}
-    });
-  } else {
-    // Fallback rudimentar sem autotable
-    let y = 70;
-    doc.setFontSize(9);
-    rowsFmt.forEach(function(r){
-      doc.text(r.join(' · ').substring(0, 200), 40, y);
-      y += 12; if(y > 540){ doc.addPage(); y = 40; }
-    });
-  }
-  const nome = (ds.titulo||'export').replace(/[\\/:*?"<>|]/g,'_').substring(0,60)+'.pdf';
-  doc.save(nome);
 }
 window._exportXLSX = _exportXLSX;
 window._exportPDF = _exportPDF;
