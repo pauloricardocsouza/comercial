@@ -1,5 +1,5 @@
 {
-  "gerado_em": "2026-05-01T14:25:11",
+  "gerado_em": "2026-05-17T10:15:45",
   "arquivos": {
     "compras_atp.json": {
       "json": true
@@ -94,9 +94,6 @@
     "financeiro_grupo.json": {
       "gz": true
     },
-    "metas.json": {
-      "json": true
-    },
     "recebimentos_atp.json": {
       "json": true
     },
@@ -161,5 +158,5 @@
       "gz": true
     }
   },
-  "tem_consolidado": false
+  "tem_consolidado": true
 }
