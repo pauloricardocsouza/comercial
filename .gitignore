@@ -1,5 +1,14 @@
-gpc_github.zip
-gpc_github.zip
-gpc_github.zip
-gpc_github.zip
-*.zip
+# Caches Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Backups locais do refresh de dados (não vão pro repo)
+backup/
+
+# Inputs intermediários (ficam fora — só JSONs gerados vão pro repo)
+*_input/
+vendas_input/
+compras_input/
+financeiro_input/
+cubo_input/
