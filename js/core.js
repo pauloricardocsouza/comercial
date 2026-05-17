@@ -216,7 +216,7 @@ const AUTH_MODE = 'firebase'; // 'mock' | 'firebase'
 // Convenção:
 //   X.x → alteração grande (quebra de compatibilidade, nova feature grande)
 //   x.X → alteração suave (fix, ajuste visual, pequeno refinamento)
-const APP_VERSION = '4.82-perf';
+const APP_VERSION = '4.82.1-perf';
 
 // ================================================================
 // HELPERS DE CHART.JS — compatíveis com Safari/iOS (sem spread ops)
@@ -2579,6 +2579,24 @@ function _renderSnapshotBanner(){
 }
 
 // Renderizar seletor de filial em ÁRVORE no topbar (GPC > ATP / CP > CP1, CP3...)
+// v4.81.2: cache em memória do array _filialTreeExpandidos pra evitar
+// JSON.parse repetido no hot path do redraw da árvore (rodava a cada
+// expand/collapse e a cada open do dropdown). Lazy-load + write-through.
+let _filTreeExpCache = null;
+function _filialTreeExpandidosCache(){
+  if(_filTreeExpCache) return _filTreeExpCache;
+  try {
+    _filTreeExpCache = JSON.parse(localStorage.getItem('_filialTreeExpandidos') || '["grupo","cp"]');
+  } catch(e){
+    _filTreeExpCache = ['grupo','cp'];
+  }
+  return _filTreeExpCache;
+}
+function _filialTreeExpandidosSet(arr){
+  _filTreeExpCache = arr;
+  try { localStorage.setItem('_filialTreeExpandidos', JSON.stringify(arr)); } catch(e){}
+}
+
 function _renderSeletorFilial(){
   const perfil = _getPerfilUsuario();
   if(!perfil) return;
@@ -2621,9 +2639,8 @@ function _renderSeletorFilial(){
     filiaisVisiveis.forEach(f => { idx[f.sigla] = f; });
     // Pegar raízes (sem parent, ou cujo parent não está visível)
     const raizes = filiaisVisiveis.filter(f => !f.parent || !idx[f.parent]);
-    let expandidos;
-    try { expandidos = JSON.parse(localStorage.getItem('_filialTreeExpandidos') || '["grupo","cp"]'); }
-    catch(e){ expandidos = ["grupo","cp"]; }
+    // v4.81.2: usa cache em memória (evita JSON.parse a cada redraw da árvore)
+    let expandidos = _filialTreeExpandidosCache();
 
     function nodeHTML(f, nivel){
       const filhos = filiaisVisiveis.filter(c => c.parent === f.sigla);
@@ -2710,13 +2727,12 @@ function _renderSeletorFilial(){
     if(toggleBtn){
       e.stopPropagation();
       const sigla = toggleBtn.getAttribute('data-toggle');
-      let expandidos;
-      try { expandidos = JSON.parse(localStorage.getItem('_filialTreeExpandidos') || '["grupo","cp"]'); }
-      catch(e){ expandidos = ["grupo","cp"]; }
+      // v4.81.2: cache em memória + write-through pro localStorage
+      const expandidos = _filialTreeExpandidosCache();
       const idx = expandidos.indexOf(sigla);
       if(idx >= 0) expandidos.splice(idx, 1);
       else expandidos.push(sigla);
-      localStorage.setItem('_filialTreeExpandidos', JSON.stringify(expandidos));
+      _filialTreeExpandidosSet(expandidos);
       _refreshTree();
       return;
     }
@@ -6286,6 +6302,8 @@ const TabelaPlus = {
         inp.style.cssText = 'width:100%;max-width:340px;padding:6px 10px;border:1px solid var(--border);border-radius:5px;font-size:12px;background:var(--surface);color:var(--text);margin-bottom:8px;font-family:inherit;display:block;';
         // v4.79: debounce 150ms · cada tecla fazia querySelectorAll('tr') + tr.textContent
         // (forca layout-reflow) sobre todas as linhas; em tabelas grandes era o pior caso
+        // v4.81.2: cache de textContent.toLowerCase() em tr.__tplusTxt (1ª keystroke
+        // ainda paga reflow; subsequentes lêem a string cacheada).
         let _tplusTmr = null;
         inp.addEventListener('input', function(){
           clearTimeout(_tplusTmr);
@@ -6295,7 +6313,9 @@ const TabelaPlus = {
             for(let i=0; i<trs.length; i++){
               const tr = trs[i];
               if(!termo){ tr.style.display = ''; continue; }
-              tr.style.display = tr.textContent.toLowerCase().indexOf(termo) >= 0 ? '' : 'none';
+              let txt = tr.__tplusTxt;
+              if(txt === undefined){ txt = tr.textContent.toLowerCase(); tr.__tplusTxt = txt; }
+              tr.style.display = txt.indexOf(termo) >= 0 ? '' : 'none';
             }
           }, 150);
         });

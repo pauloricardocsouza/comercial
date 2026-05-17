@@ -2826,10 +2826,10 @@ function renderVBenchmarking(){
        +     '<div class="ccs" id="vbm-top-sub">'+esc(labelDst)+' · escolha a métrica abaixo · "Mix" usa quantidade de itens vendidos (proxy)</div>'
        +   '</div></div>'
        +   '<div class="rca-tabs" style="display:inline-flex;gap:4px;margin:8px 0;border-bottom:1px solid var(--border);padding-bottom:6px;flex-wrap:wrap;">'
-       +     '<button type="button" class="rca-top-tab on" data-tab="fat" style="padding:6px 12px;font-size:11.5px;border:1px solid var(--accent);background:var(--accent);color:#fff;border-radius:6px;cursor:pointer;font-weight:700;">🏆 Top Faturamento</button>'
-       +     '<button type="button" class="rca-top-tab" data-tab="marg" style="padding:6px 12px;font-size:11.5px;border:1px solid var(--border);background:var(--surface);color:var(--text);border-radius:6px;cursor:pointer;font-weight:600;">📈 Top Margem</button>'
-       +     '<button type="button" class="rca-top-tab" data-tab="mix" style="padding:6px 12px;font-size:11.5px;border:1px solid var(--border);background:var(--surface);color:var(--text);border-radius:6px;cursor:pointer;font-weight:600;">🧺 Top Mix de Produtos</button>'
-       +     '<button type="button" class="rca-top-tab" data-tab="tick" style="padding:6px 12px;font-size:11.5px;border:1px solid var(--border);background:var(--surface);color:var(--text);border-radius:6px;cursor:pointer;font-weight:600;">💵 Top Ticket Médio</button>'
+       +     '<button type="button" class="rca-top-tab on" data-tab="fat">🏆 Top Faturamento</button>'
+       +     '<button type="button" class="rca-top-tab" data-tab="marg">📈 Top Margem</button>'
+       +     '<button type="button" class="rca-top-tab" data-tab="mix">🧺 Top Mix de Produtos</button>'
+       +     '<button type="button" class="rca-top-tab" data-tab="tick">💵 Top Ticket Médio</button>'
        +   '</div>'
        +   '<div class="tscroll"><table class="t" id="t-vbm-top"><thead id="th-vbm-top"></thead><tbody id="tb-vbm-top"></tbody></table></div>'
        + '</div>';
@@ -2898,23 +2898,23 @@ function renderVBenchmarking(){
     }).join('');
   }
   _renderVbmTopTab('fat');
-  document.querySelectorAll('.rca-top-tab').forEach(function(btn){
-    btn.addEventListener('click', function(){
-      document.querySelectorAll('.rca-top-tab').forEach(function(b){
-        b.classList.remove('on');
-        b.style.background = 'var(--surface)';
-        b.style.color = 'var(--text)';
-        b.style.borderColor = 'var(--border)';
-        b.style.fontWeight = '600';
-      });
-      btn.classList.add('on');
-      btn.style.background = 'var(--accent)';
-      btn.style.color = '#fff';
-      btn.style.borderColor = 'var(--accent)';
-      btn.style.fontWeight = '700';
-      _renderVbmTopTab(btn.getAttribute('data-tab'));
+  // v4.81.2: CSS class toggle em vez de 5 mutations de inline-style por tab
+  // (CSS .rca-top-tab.on definido em index.html). Limpa inline styles legados
+  // de chamadas anteriores também.
+  const _tabsEls = document.querySelectorAll('.rca-top-tab');
+  for(let _ti=0; _ti<_tabsEls.length; _ti++){
+    const _tb = _tabsEls[_ti];
+    // Limpa inline-style remanescentes — class on/off cuida do visual
+    _tb.removeAttribute('style');
+    if(_tb.__rcaTabBound) continue;
+    _tb.__rcaTabBound = true;
+    _tb.addEventListener('click', function(){
+      const all = document.querySelectorAll('.rca-top-tab');
+      for(let i=0; i<all.length; i++) all[i].classList.remove('on');
+      _tb.classList.add('on');
+      _renderVbmTopTab(_tb.getAttribute('data-tab'));
     });
-  });
+  }
 
   // ─── v4.76 fix23: Tabela geral ordenável + drill-down clicável ───
   // Sort default: crescimento desc (nulls last)
