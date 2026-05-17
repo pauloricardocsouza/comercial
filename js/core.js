@@ -216,7 +216,7 @@ const AUTH_MODE = 'firebase'; // 'mock' | 'firebase'
 // Convenção:
 //   X.x → alteração grande (quebra de compatibilidade, nova feature grande)
 //   x.X → alteração suave (fix, ajuste visual, pequeno refinamento)
-const APP_VERSION = '4.83-a11y';
+const APP_VERSION = '4.83.1-sw';
 
 // ================================================================
 // HELPERS DE CHART.JS — compatíveis com Safari/iOS (sem spread ops)
@@ -2574,6 +2574,35 @@ function _loadDadosModulares(baseSlug){
     } else {
       setTimeout(_idbLimparAntigas, 6000);
     }
+  }
+  // v4.82.3: registra Service Worker (cache offline-first de shell + JSONs).
+  // Só rota: https ou localhost (SW exige secure context). file:// e protocolos
+  // exóticos são pulados sem erro. Registro em idle pra não competir com o boot.
+  function _registrarSW(){
+    if(!('serviceWorker' in navigator)) return;
+    const loc = window.location;
+    const isLocal = loc.hostname === 'localhost' || loc.hostname === '127.0.0.1' || loc.hostname === '';
+    if(loc.protocol !== 'https:' && !isLocal) return;
+    try {
+      navigator.serviceWorker.register('sw.js').then(function(reg){
+        // Detecta nova versão do SW: força ativação imediata.
+        reg.addEventListener('updatefound', function(){
+          const sw = reg.installing;
+          if(!sw) return;
+          sw.addEventListener('statechange', function(){
+            if(sw.state === 'installed' && navigator.serviceWorker.controller){
+              // Nova versão pronta; pede skip waiting (recarrega na próxima visita)
+              try { sw.postMessage({ type:'SKIP_WAITING' }); } catch(e){}
+            }
+          });
+        });
+      }).catch(function(){ /* falha silenciosa (ex: política de segurança) */ });
+    } catch(e){}
+  }
+  if(typeof window.requestIdleCallback === 'function'){
+    window.requestIdleCallback(_registrarSW, {timeout: 10000});
+  } else {
+    setTimeout(_registrarSW, 4000);
   }
 }
 
