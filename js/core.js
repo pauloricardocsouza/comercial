@@ -216,7 +216,7 @@ const AUTH_MODE = 'firebase'; // 'mock' | 'firebase'
 // Convenção:
 //   X.x → alteração grande (quebra de compatibilidade, nova feature grande)
 //   x.X → alteração suave (fix, ajuste visual, pequeno refinamento)
-const APP_VERSION = '4.85-recebimentos-rico';
+const APP_VERSION = '4.86-auditoria-fixes';
 
 // ================================================================
 // HELPERS DE CHART.JS — compatíveis com Safari/iOS (sem spread ops)

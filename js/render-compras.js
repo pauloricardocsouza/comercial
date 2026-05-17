@@ -1309,7 +1309,7 @@ function renderFornecedoresNovo(){
     var _spinnerSvg = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" style="animation:dlSpin 1s linear infinite;"><path d="M21 12a9 9 0 11-6.219-8.56"/></svg>';
     cont.innerHTML = '<div class="ph"><div class="pk">Compras</div><h2>Análise de <em>fornecedores</em></h2></div>'
                    + '<div class="ph-sep"></div><div class="page-body">'
-                   + '<div class="cc">'+_emptyState('Carregando dados de 2026…','O cubo OLAP é carregado sob demanda (≈10 MB). A página será preenchida automaticamente em alguns segundos.', _spinnerSvg)+'</div></div>';
+                   + '<div class="cc">'+_emptyState('Carregando dados…','O cubo OLAP é carregado sob demanda. A página será preenchida automaticamente em alguns segundos.', _spinnerSvg)+'</div></div>';
     if(typeof _carregarCuboLazy === 'function'){
       _carregarCuboLazy().then(function(){
         if(typeof renderedPages !== 'undefined') renderedPages.delete('fornecedores');
@@ -4829,7 +4829,7 @@ function renderFornGPCNovo(){
     var _spinnerSvg2 = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" style="animation:dlSpin 1s linear infinite;"><path d="M21 12a9 9 0 11-6.219-8.56"/></svg>';
     cont.innerHTML = '<div class="ph"><div class="pk">Hierarquia · Intragrupo</div><h2><em>Fornecedores GPC</em> · Pinto Cerqueira</h2></div>'
                    + '<div class="ph-sep"></div><div class="page-body">'
-                   + '<div class="cc">'+_emptyState('Carregando dados de 2026…','O cubo OLAP é carregado sob demanda. A página será preenchida automaticamente.', _spinnerSvg2)+'</div></div>';
+                   + '<div class="cc">'+_emptyState('Carregando dados…','O cubo OLAP é carregado sob demanda. A página será preenchida automaticamente.', _spinnerSvg2)+'</div></div>';
     if(typeof _carregarCuboLazy === 'function'){
       _carregarCuboLazy().then(function(){
         if(typeof renderedPages !== 'undefined') renderedPages.delete('forn-gpc');

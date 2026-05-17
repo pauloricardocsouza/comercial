@@ -511,13 +511,27 @@ function renderVVisaoGrupo(){
   const _anoPrev = _anoNow - 1;
   const _ultYmAno = (V && V.meta && V.meta.ultimo_mes && V.meta.ultimo_mes.ym && V.meta.ultimo_mes.ym.indexOf(_anoNow+'-')===0)
     ? V.meta.ultimo_mes.ym : (_anoNow+'-03');
-  const _mesFimComp = (V && V.meta && V.meta.ultimo_mes && V.meta.ultimo_mes.aberto)
-    ? ((parseInt(_ultYmAno.substring(5,7),10)-1) || 12)
-    : parseInt(_ultYmAno.substring(5,7),10);
-  const _ymFimAtual = _anoNow + '-' + String(_mesFimComp).padStart(2,'0');
-  const _ymFimPrev  = _anoPrev + '-' + String(_mesFimComp).padStart(2,'0');
-  const _ymIniAtual = _anoNow + '-01';
-  const _ymIniPrev  = _anoPrev + '-01';
+  // v4.86 fix5: bug de janeiro — quando mês atual é jan (1) e está aberto,
+  // o '|| 12' caía em dez do MESMO ano em vez de dez do anterior.
+  // Agora: se m-1 < 1, vai pra dez do ano anterior.
+  let _mesFimAtualNum, _anoFimAtual = _anoNow, _anoFimPrev = _anoPrev;
+  if(V && V.meta && V.meta.ultimo_mes && V.meta.ultimo_mes.aberto){
+    const _mPart = parseInt(_ultYmAno.substring(5,7), 10) - 1;
+    if(_mPart < 1){
+      _mesFimAtualNum = 12;
+      _anoFimAtual = _anoNow - 1;   // dez do ano anterior
+      _anoFimPrev  = _anoPrev - 1;
+    } else {
+      _mesFimAtualNum = _mPart;
+    }
+  } else {
+    _mesFimAtualNum = parseInt(_ultYmAno.substring(5,7), 10);
+  }
+  const _mesFimComp = _mesFimAtualNum;
+  const _ymFimAtual = _anoFimAtual + '-' + String(_mesFimComp).padStart(2,'0');
+  const _ymFimPrev  = _anoFimPrev  + '-' + String(_mesFimComp).padStart(2,'0');
+  const _ymIniAtual = _anoFimAtual + '-01';
+  const _ymIniPrev  = _anoFimPrev  + '-01';
   const linhasT2 = [];
   ['ATP-V', 'ATP-A'].forEach(function(loja){
     const m25 = _vendasMensalPor(loja, 'v-visao-grupo').filter(function(r){return r.ym >= _ymIniPrev && r.ym <= _ymFimPrev;});
@@ -1794,13 +1808,16 @@ function getFilteredTotals(){
     if(perIdxs.some(function(i){return p.sv[i]&&p.sv[i][0]>0;})) n_skus++;
   });
   tc_liq=Math.max(0,tc_liq);
-  const pp=D.meta.pct_pago, pa=D.meta.pct_aberto;
+  // v4.86 fix1+2: const→let (reatribuídos dentro do if(activeDept)) + guard de D.meta nulo.
+  const _m = (D && D.meta) || {};
+  let pp = _m.pct_pago || 0;
+  let pa = _m.pct_aberto || 0;
   if(activeDept){
     const dept=D.departamentos.find(function(d){return d.n===activeDept;});
     if(dept){pp=dept.pp||pp; pa=dept.pa||pa;}
   }
   const tp=tc_liq*pp/100, ta=tc_liq*pa/100;
-  const te_pv=D.meta.te_pv||D.meta.total_est;
+  let te_pv = _m.te_pv || _m.total_est || 0;
   if(activeDept){
     const dept2=D.departamentos.find(function(d){return d.n===activeDept;});
     if(dept2) te_pv=(dept2.ev||0)*1.38;

@@ -2099,8 +2099,9 @@ document.getElementById('btn-xlsx').addEventListener('click',()=>{
     ['INDICADOR','VALOR'],
     ['Faturamento líquido',tv],['Lucro bruto',tl],['Margem %',tv>0?tl/tv*100:0],
     ['Compras líquidas',tc_liq],['Cobertura %',tv>0?tc_liq/tv*100:0],
-    ['Já pago',D.meta.total_pago],['Em aberto',D.meta.total_aberto],
-    ['% Pago',D.meta.pct_pago],['Estoque',D.meta.total_est],['SKUs',D.meta.qt_skus],[''],
+    // v4.86 fix3: guard contra D.meta nulo (refresh parcial pode deixar campos faltando)
+    ['Já pago',(D.meta||{}).total_pago||0],['Em aberto',(D.meta||{}).total_aberto||0],
+    ['% Pago',(D.meta||{}).pct_pago||0],['Estoque',(D.meta||{}).total_est||0],['SKUs',(D.meta||{}).qt_skus||0],[''],
     ['EVOLUÇÃO MENSAL'],
     ['Mês','Vendas líq.','Lucro','Margem %','Compras líq.','Cob. %','Pago','Em aberto','Dev.cli.','Dev.forn.'],
     ...evo.map(e=>{const cl=comLiq(e.com,e.dvf);return[e.m,e.vdo,e.luc,e.marg,cl,e.vdo>0?cl/e.vdo*100:0,e.pag,e.abr,e.dvc,e.dvf];}),
