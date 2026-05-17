@@ -5039,7 +5039,33 @@ function renderFornGPCNovo(){
   }
 }
 
+// v4.84.1: wrapper de renderPage com error boundary — se um renderer
+// estourar, mostra mensagem amigável na própria página em vez de quebrar
+// a shell inteira (sidebar / topbar continuam funcionais).
 function renderPage(pg){
+  try {
+    return _renderPageUnsafe(pg);
+  } catch(err){
+    console.error('[renderPage] falha em', pg, err);
+    try {
+      const cont = document.getElementById('page-'+pg);
+      if(cont){
+        const msg = (err && err.message) ? String(err.message) : String(err);
+        cont.innerHTML = '<div class="ph"><div class="pk">Erro</div><h2>Falha ao renderizar <em>'+esc(pg)+'</em></h2></div>'
+          + '<div class="ph-sep"></div><div class="page-body"><div class="cc">'
+          + '<div style="padding:24px;color:var(--text);font-size:13px;line-height:1.55;">'
+          +   '<div style="font-weight:700;margin-bottom:8px;color:var(--danger-500,#d92d20);">⚠ Ocorreu um erro ao renderizar esta página.</div>'
+          +   '<div style="color:var(--text-muted);margin-bottom:10px;">Os dados podem estar incompletos ou em formato inesperado. Tente recarregar (Ctrl+Shift+R) ou trocar de filial. Se persistir, copie a mensagem abaixo e reporte:</div>'
+          +   '<pre style="background:var(--surface-2);border:1px solid var(--border);padding:10px;border-radius:6px;font-size:11px;white-space:pre-wrap;word-break:break-word;max-height:200px;overflow:auto;">'+esc(msg)+'</pre>'
+          + '</div></div></div>';
+      }
+    } catch(e2){ /* falha do fallback — desiste silenciosamente */ }
+    // Audit log opcional pra rastrear erros em produção
+    try { if(typeof _auditLog === 'function') _auditLog('render_error', {pagina: pg, msg: String((err && err.message) || err)}); } catch(e3){}
+  }
+}
+
+function _renderPageUnsafe(pg){
   // Home oculta nesta versão — qualquer chamada cai em Visão Executiva
   if(pg === 'home') pg = 'executivo';
   // Cleanup ao sair da Análise Dinâmica: destrói chart e cancela debounce

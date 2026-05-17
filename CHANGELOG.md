@@ -4,6 +4,55 @@ Lista das melhorias do sistema de BI da R2 Soluções para o Grupo Pinto Cerquei
 
 ---
 
+## v4.78–v4.84 · 14–16/mai/2026 · Pacote de performance e refinamentos
+
+**Objetivo:** preparar o sistema para o crescimento de dados ao longo do ano sem perda de fluidez. Cinco camadas de otimização aplicadas, sem mudança em lógica de negócio.
+
+### Camadas de cache (sobrevive crescimento)
+- **Cache IndexedDB** dos JSONs (v4.78.2): chave `<arquivo>::<manifest.gerado_em>`. HIT pula fetch+parse de 10MB (~300ms → ~50ms). Limpeza de versões antigas em `requestIdleCallback`.
+- **Service Worker** (v4.83.3): `sw.js` na raiz com estratégias por tipo. Shell e libs em *stale-while-revalidate*, JSONs em *network-first* com fallback offline. Cache versionado por `CACHE_NAME` — bump da versão limpa cache antigo no `activate`.
+- **Pré-fetch do cubo OLAP** em `requestIdleCallback` após o boot — primeira visita à Fornecedores ou Análise Dinâmica não espera mais o download do cubo.
+
+### Lazy rendering (escala N → infinito)
+- Helper global **`_lazyTable(tbody, rows, renderRowFn, chunk=80)`**: pinta primeiras 80 linhas síncronas, demais carregam ao scroll via listener `{passive:true}` no `.tscroll`. Cleanup automático em re-render.
+- Aplicado em: **Fornecedores**, **RCA Comparativo**, **Curva ABC** (removido o cap de 1000), **NF Fechamento**.
+- Helper **`mkCLazy(id, cfg)`**: Chart.js só é instanciado quando o canvas entra na viewport (`IntersectionObserver` com rootMargin 200px). Aplicado nos charts off-screen da Visão Executiva e Financeiro.
+
+### Memory leak prevention
+- **Chart.js leak em Verbas** (4 charts criados com `new Chart()` direto, sem `destroy()`): substituídos por `mkC()` que faz destroy automático.
+- **`pfb-per` e `pfb-apply`** migrados para event delegation global (`window._pfbPerDelegBound` flag). Antes: 5 filterbars × N botões = 5N listeners no DOM. Agora: 1 listener no `document`.
+- **RCA tabs/sort** com guard `__rcaSortBound`/`__rcaDrillBound`/`__rcaTabBound` previne re-bind a cada re-render (antes: clique no nome do vendedor após 5 toggles abria drilldown 5x).
+
+### Micro-otimizações
+- **`tr.__tplusTxt`** cacheia `textContent.toLowerCase()` por linha no filtro do TabelaPlus — keystrokes subsequentes pulam o reflow forçado.
+- **`_filialTreeExpandidos`** em memória (`_filTreeExpCache`) com write-through pro localStorage — evita `JSON.parse` no hot path do redraw da árvore de filiais.
+- **RCA top-tabs** com CSS class `.on` em vez de 20 mutations de inline-style por clique.
+
+### Funcionalidades novas durante o pacote
+- **Migrador idempotente de permissões** (`_migrarPermissoesNovasPaginas`): garante que perfis admin/gestor cacheados recebam páginas novas do catálogo (`recebimentos`, `verbas`, `nf-fechamento`, `v-drilldown`, `v-benchmarking`). Resolveu o sumiço da Inadimplência no menu para usuários legados.
+- **Mix REAL no RCA** via cubo OLAP: quando `Cu` está carregado, itera `Cu.fatos.vendas.linhas` uma única vez construindo `Map<vendedor, Set<sku>>`. Cache em `window._rcaMixCache`. Coluna troca de "Mix (qt)" (proxy) para "Mix (SKUs)" quando dado real disponível.
+- **Drill-Down focado**: clique no nome do vendedor em RCA grava `window._rcaVendedorFoco` e navega para Drill-Down, que pré-filtra + abre o painel de detalhe + scroll suave.
+- **PDF export legado padronizado**: `_exportPDF` agora gera PDF com logo GPC + título navy + linha laranja + paginação no footer (mesma identidade visual do PDF de página e do PDF da Análise Dinâmica).
+- **Loader inicial brandizado**: spinner duplo concêntrico (navy + laranja) com logo GPC centralizado + tagline "INTELIGÊNCIA COMERCIAL".
+- **Helper `_emptyState(titulo, sub, icon)`**: empty-state padronizado com círculo cinza tracejado + ícone SVG + título bold + subtítulo. Migrado em 8+ pontos (Compras, Vendas, Análise).
+- **Calendário Financeiro**: layout 5fr/4fr (calendário menor + painel "Top datas" maior) com `fAbbr` no lugar de `fK` nas células (evita overflow horizontal).
+
+### Auditorias de código aplicadas
+- Renomeio de "ATP - Atacado Pinto" para "Atacadão Pinto" em `filiais.json`.
+- Correção da duplicação `CP3 · CP3` no kicker via `_cofreSyncFilialNoTitulo` idempotente.
+- `Inadimplência` adicionada ao `PAGINAS_CATALOGO`.
+- Cabeçalho de página agora exibe sempre `sigla - nome` (ex: "CP1 - Comercial Pinto") via handler global aplicado a todas as `.ph .pk`.
+- Fornecedores e GPC: KPI grid corrigido (faltava classe `.kg` → cards empilhavam em 1 coluna).
+- Datas padronizadas em `DD-MM-AAAA` e timestamps em `DD-MM-AAAA HH:MM` (novo helper `fDtH`).
+
+### Próximos passos identificados (não incluídos)
+- Migração de ~240 `!important` para specificity natural (manual, médio ROI).
+- Limpeza de ~50 globals `window._xxx` que poderiam ser closures locais.
+- Backend: gzip estático dos `.json` no servidor (config nginx).
+- Backend: split do cubo por base/ano no ETL.
+
+---
+
 ## v4.76-cofre · 14/mai/2026
 
 **Cofre Design System — completo (fases 1–5)**

@@ -17,7 +17,7 @@
  *   a query ?v= em sw.js, que muda CACHE_NAME → cache antigo é varrido em activate.
  */
 
-const CACHE_NAME = 'gpc-shell-v4.84';
+const CACHE_NAME = 'gpc-shell-v4.84.1';
 const PRECACHE = [
   '/',
   '/index.html',
