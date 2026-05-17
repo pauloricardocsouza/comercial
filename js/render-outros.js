@@ -269,7 +269,7 @@ function renderRecebimentos(){
   html += '<div class="row2eq" style="margin-bottom:14px;">'
        +    '<div class="cc">'
        +      '<div class="cct">Top 20 RCAs com inadimplência</div>'
-       +      '<div class="ccs">Vendedores responsáveis pelas NFs em atraso</div>'
+       +      '<div class="ccs">Vendedores responsáveis pelas NFs em atraso · clique no nome pra ver no Drill-Down</div>'
        +      '<div class="tscroll"><table class="t"><thead><tr>'
        +        '<th class="L" style="width:24px;">#</th><th class="L">Cód.</th><th class="L">Nome</th>'
        +        '<th>Valor</th><th>Parcelas</th><th>Ticket</th>'
@@ -283,6 +283,58 @@ function renderRecebimentos(){
        +      '</tr></thead><tbody id="tb-rec-cob"></tbody></table></div>'
        +    '</div>'
        + '</div>';
+
+  // v4.85: Novos blocos analíticos (dependem dos campos novos do ETL)
+  // Por dia da semana + Clientes reincidentes lado a lado
+  if((R.por_dia_semana && R.por_dia_semana.length) || (R.clientes_reincidentes && R.clientes_reincidentes.length)){
+    html += '<div class="row2eq" style="margin-bottom:14px;">';
+    if(R.por_dia_semana && R.por_dia_semana.length){
+      html += '<div class="cc">'
+           +    '<div class="cct">📅 Inadimplência por dia da semana de vencimento</div>'
+           +    '<div class="ccs">Quais dias mais vencem sem receber — útil pra ajustar agenda de cobrança</div>'
+           +    '<div style="height:240px;margin-top:8px;"><canvas id="c-rec-dow"></canvas></div>'
+           + '</div>';
+    }
+    if(R.clientes_reincidentes && R.clientes_reincidentes.length){
+      html += '<div class="cc">'
+           +    '<div class="cct">⚠️ Clientes reincidentes (top 30)</div>'
+           +    '<div class="ccs">Aparecem em 2+ faixas de aging — problema crônico, prioridade alta</div>'
+           +    '<div class="tscroll"><table class="t"><thead><tr>'
+           +      '<th class="L">Cód.</th><th>Faixas</th><th>Valor</th><th>Parcelas</th><th>Atraso máx</th>'
+           +    '</tr></thead><tbody id="tb-rec-reinc"></tbody></table></div>'
+           + '</div>';
+    }
+    html += '</div>';
+  }
+
+  // Top produtos inadimplentes
+  if(R.top_produtos && R.top_produtos.length){
+    html += '<div class="cc" style="margin-bottom:14px;">'
+         +    '<div class="cct">🛒 Top 30 produtos em inadimplência</div>'
+         +    '<div class="ccs">SKUs vendidos cujos pagamentos estão em atraso · clique no nome pra abrir Diag. Produto</div>'
+         +    '<div class="tscroll"><table class="t"><thead><tr>'
+         +      '<th class="L" style="width:24px;">#</th><th class="L">Cód.</th><th class="L">Produto</th>'
+         +      '<th>Qtde vendida</th><th>Valor inad.</th><th>Parcelas</th>'
+         +    '</tr></thead><tbody id="tb-rec-prod"></tbody></table></div>'
+         + '</div>';
+  }
+
+  // Drill por dimensão (depto/secao/cat/marca/forn) em tabs
+  if(R.por_departamento && R.por_departamento.length){
+    html += '<div class="cc" style="margin-bottom:14px;">'
+         +    '<div class="cct">🗂️ Inadimplência por dimensão (drill-down)</div>'
+         +    '<div class="ccs">Clique nas abas pra alternar entre departamento / seção / categoria / marca / fornecedor</div>'
+         +    '<div class="rec-tabs" style="display:inline-flex;gap:4px;margin:8px 0;border-bottom:1px solid var(--border);padding-bottom:6px;flex-wrap:wrap;">'
+         +      '<button type="button" class="rec-dim-tab on" data-dim="dep">Departamento</button>'
+         +      '<button type="button" class="rec-dim-tab" data-dim="sec">Seção</button>'
+         +      '<button type="button" class="rec-dim-tab" data-dim="cat">Categoria</button>'
+         +      '<button type="button" class="rec-dim-tab" data-dim="mar">Marca</button>'
+         +      '<button type="button" class="rec-dim-tab" data-dim="for">Fornecedor</button>'
+         +    '</div>'
+         +    '<div class="tscroll" style="max-height:420px;overflow:auto;"><table class="t" id="t-rec-dim">'
+         +      '<thead id="th-rec-dim"></thead><tbody id="tb-rec-dim"></tbody></table></div>'
+         + '</div>';
+  }
 
   html += '</div>';
   cont.innerHTML = html;
@@ -543,6 +595,94 @@ function renderRecebimentos(){
       + '<td class="val-dim">'+fI(c.clientes||0)+'</td>'
       + '</tr>';
   }).join('');
+
+  // ─── v4.85: Novos blocos analíticos ───
+  // Chart "por dia da semana"
+  if(R.por_dia_semana && document.getElementById('c-rec-dow')){
+    const dow = R.por_dia_semana;
+    mkC('c-rec-dow', {type:'bar',
+      data:{labels: dow.map(function(d){return d.nome;}),
+            datasets:[{label:'Valor inadimplente',
+              data: dow.map(function(d){return d.valor;}),
+              backgroundColor: dow.map(function(d,i){return i===0 || i===6 ? _PAL.dn+'CC' : _PAL.hl+'CC';}),
+              borderRadius:4}]},
+      options:{responsive:true, maintainAspectRatio:false,
+        plugins:{legend:{display:false},
+                 tooltip:{callbacks:{label:function(ctx){var d=dow[ctx.dataIndex];return fK(ctx.raw)+' · '+fI(d.parcelas)+' parcelas';}}}},
+        scales:{y:{beginAtZero:true, ticks:{callback:function(v){return fAbbr(v);}}},
+                x:{grid:{display:false}}}}});
+  }
+
+  // Tabela reincidentes
+  if(R.clientes_reincidentes && document.getElementById('tb-rec-reinc')){
+    const reinc = R.clientes_reincidentes.slice(0, 30);
+    document.getElementById('tb-rec-reinc').innerHTML = reinc.map(function(r){
+      return '<tr>'
+        + '<td class="L"><strong>#'+esc(r.cod)+'</strong></td>'
+        + '<td class="val-dim">'+fI(r.faixas_distintas||0)+'</td>'
+        + '<td class="val-strong">'+fK(r.valor||0)+'</td>'
+        + '<td class="val-dim">'+fI(r.parcelas||0)+'</td>'
+        + '<td><span class="kg-tag '+(r.dias_atraso_max>90?'dn':r.dias_atraso_max>30?'wn':'')+'">'+fI(r.dias_atraso_max||0)+'d</span></td>'
+        + '</tr>';
+    }).join('');
+  }
+
+  // Tabela top produtos
+  if(R.top_produtos && document.getElementById('tb-rec-prod')){
+    document.getElementById('tb-rec-prod').innerHTML = R.top_produtos.map(function(p, i){
+      return '<tr>'
+        + '<td class="L" style="color:var(--text-muted);font-weight:700;">'+(i+1)+'</td>'
+        + '<td class="L" style="font-family:JetBrains Mono,monospace;font-size:11px;color:var(--text-dim);">'+esc(p.cod)+'</td>'
+        + '<td class="L" data-prod-cod="'+esc(p.cod)+'" title="Clique pra abrir Diag. Produto"><strong>'+esc(p.nome||'')+'</strong></td>'
+        + '<td class="val-dim">'+fI(p.qt||0)+'</td>'
+        + '<td class="val-strong">'+fK(p.valor||0)+'</td>'
+        + '<td class="val-dim">'+fI(p.parcelas||0)+'</td>'
+        + '</tr>';
+    }).join('');
+  }
+
+  // Tabs de drill-down por dimensão (depto/secao/cat/marca/forn)
+  if(R.por_departamento && document.getElementById('tb-rec-dim')){
+    const dimMap = {
+      dep: {dados: R.por_departamento || [], rotulo: 'Departamento'},
+      sec: {dados: R.por_secao         || [], rotulo: 'Seção'},
+      cat: {dados: R.por_categoria     || [], rotulo: 'Categoria'},
+      mar: {dados: R.por_marca         || [], rotulo: 'Marca'},
+      for: {dados: R.por_fornecedor    || [], rotulo: 'Fornecedor'},
+    };
+    function _renderRecDim(key){
+      const def = dimMap[key] || dimMap.dep;
+      const th = document.getElementById('th-rec-dim');
+      const tb = document.getElementById('tb-rec-dim');
+      if(!th || !tb) return;
+      th.innerHTML = '<tr><th class="L" style="width:24px;">#</th><th class="L">Cód.</th><th class="L">'+def.rotulo+'</th><th>Valor</th><th>Parcelas</th><th>Clientes</th></tr>';
+      const top = def.dados.slice(0, 50);
+      tb.innerHTML = top.map(function(x, i){
+        return '<tr>'
+          + '<td class="L" style="color:var(--text-muted);font-weight:700;">'+(i+1)+'</td>'
+          + '<td class="L" style="font-family:JetBrains Mono,monospace;font-size:11px;color:var(--text-dim);">'+esc(x.cod)+'</td>'
+          + '<td class="L"><strong>'+esc(x.nome||'')+'</strong></td>'
+          + '<td class="val-strong">'+fK(x.valor||0)+'</td>'
+          + '<td class="val-dim">'+fI(x.parcelas||0)+'</td>'
+          + '<td class="val-dim">'+fI(x.clientes||0)+'</td>'
+          + '</tr>';
+      }).join('');
+    }
+    _renderRecDim('dep');
+    // Bind tabs com CSS .on (estilo igual ao .rca-top-tab)
+    const tabs = document.querySelectorAll('.rec-dim-tab');
+    for(let i=0; i<tabs.length; i++){
+      const tb = tabs[i];
+      if(tb.__recDimBound) continue;
+      tb.__recDimBound = true;
+      tb.addEventListener('click', function(){
+        const all = document.querySelectorAll('.rec-dim-tab');
+        for(let j=0; j<all.length; j++) all[j].classList.remove('on');
+        tb.classList.add('on');
+        _renderRecDim(tb.getAttribute('data-dim'));
+      });
+    }
+  }
 
   // ─── Binds dos filtros ───
   document.querySelectorAll('.inad-per-btn').forEach(function(btn){
