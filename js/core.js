@@ -216,7 +216,7 @@ const AUTH_MODE = 'firebase'; // 'mock' | 'firebase'
 // Convenção:
 //   X.x → alteração grande (quebra de compatibilidade, nova feature grande)
 //   x.X → alteração suave (fix, ajuste visual, pequeno refinamento)
-const APP_VERSION = '4.82.1-perf';
+const APP_VERSION = '4.83-a11y';
 
 // ================================================================
 // HELPERS DE CHART.JS — compatíveis com Safari/iOS (sem spread ops)
@@ -1310,7 +1310,12 @@ function _renderTelaLogin(precisaTrocarSenha){
   // Limpar tudo e mostrar só login
   const overlay = document.createElement('div');
   overlay.id = 'loginOverlay';
-  overlay.style.cssText = 'position:fixed;inset:0;background:linear-gradient(135deg,#1a2f5c 0%,#0d1b3d 100%);display:flex;align-items:center;justify-content:center;z-index:99999;padding:20px;';
+  // v4.83 a11y: role/aria-modal sinaliza modal pra screen readers
+  overlay.setAttribute('role', 'dialog');
+  overlay.setAttribute('aria-modal', 'true');
+  overlay.setAttribute('aria-label', 'Tela de login');
+  // v4.83 mobile: 100dvh evita corte da barra de URL do iOS Safari
+  overlay.style.cssText = 'position:fixed;inset:0;background:linear-gradient(135deg,#1a2f5c 0%,#0d1b3d 100%);display:flex;align-items:center;justify-content:center;z-index:99999;padding:20px;min-height:100vh;min-height:100dvh;';
 
   const trocarSenhaUid = precisaTrocarSenha ? (precisaTrocarSenha.uid || precisaTrocarSenha) : null;
 
@@ -1426,6 +1431,14 @@ function _renderTelaLogin(precisaTrocarSenha){
     };
     document.getElementById('loginBtnEntrar').addEventListener('click', tryLogin);
     document.getElementById('loginSenha').addEventListener('keydown', function(e){ if(e.key==='Enter') tryLogin(); });
+    // v4.83 mobile: scrollIntoView no focus evita teclado virtual cobrir o input em iOS
+    ['loginEmail','loginSenha'].forEach(function(id){
+      const el = document.getElementById(id);
+      if(el) el.addEventListener('focus', function(){
+        // requestAnimationFrame garante que o teclado já abriu antes do scroll
+        requestAnimationFrame(function(){ el.scrollIntoView({block:'center', behavior:'smooth'}); });
+      });
+    });
     // Focus no email
     setTimeout(()=>document.getElementById('loginEmail').focus(), 100);
   }

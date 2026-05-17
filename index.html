@@ -6,8 +6,8 @@
 <meta name="robots" content="noindex, nofollow">
 <title>Comercial GPC · R2 Soluções</title>
 <!-- v4.76 fix7: favicon GPC (navy + GPC branco + arco laranja) -->
-<link rel="icon" type="image/svg+xml" href="assets/favicon.svg?v=4.82.2">
-<link rel="apple-touch-icon" href="assets/favicon.svg?v=4.82.2">
+<link rel="icon" type="image/svg+xml" href="assets/favicon.svg?v=4.83.2">
+<link rel="apple-touch-icon" href="assets/favicon.svg?v=4.83.2">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <!-- DNS prefetch para Firebase: encurta o handshake de auth/firestore -->
@@ -1105,6 +1105,10 @@ textarea:focus-visible {
 .ebtn.xlsx:hover { background:rgba(16,152,84,.35); }
 .ebtn.pdf { background:rgba(217,45,32,.2); border-color:rgba(217,45,32,.4); }
 .ebtn.pdf:hover { background:rgba(217,45,32,.35); }
+/* v4.83: mobile · tap target ≥ 44×44px (WCAG 2.5.5) */
+@media (max-width: 560px) {
+  .ebtn { padding: 11px 14px; min-height: 44px; font-size: 12px; }
+}
 
 /* PRINT — Paisagem */
 @media print {
@@ -1400,8 +1404,22 @@ td[class*="cob"] { white-space: nowrap; }
 .sidebar-collapsed #collapseBtn .ico-open { display: none; }
 .sidebar-collapsed #collapseBtn .ico-close { display: block; }
 #collapseBtn .ico-close { display: none; }
-/* collapseBtn: estilos via inline no HTML */
+/* v4.83: collapseBtn · estilos consolidados em CSS (era inline + onmouseenter/leave).
+   Hover via :hover + :focus-visible também dispara em teclado/touch. */
+#collapseBtn {
+  background: transparent; border: none; color: var(--text-muted);
+  cursor: pointer; padding: 3px 5px; border-radius: 5px;
+  display: flex; align-items: center;
+  transition: background .15s, color .15s;
+}
+#collapseBtn:hover, #collapseBtn:focus-visible {
+  background: var(--surface-3); color: var(--text); outline: none;
+}
 #collapseBtn svg { display: block; }
+/* Mobile: tap target ≥ 44×44px (WCAG 2.5.5) */
+@media (max-width: 560px) {
+  #collapseBtn { padding: 10px 12px; min-width: 44px; min-height: 44px; justify-content: center; }
+}
 /* Botão de restaurar sidebar (flutuante) quando colapsado */
 #restoreBtn {
   display: none; position: fixed; left: 0; top: 50%;
@@ -2598,7 +2616,7 @@ body.cofre-shell .pfb-sep {
   <div class="sb-sec">
     <div class="sb-sec-label" style="display:flex;align-items:center;justify-content:space-between;padding-right:4px;">
       <span>Início</span>
-      <button id="collapseBtn" title="Ocultar menu" aria-label="Recolher menu lateral" onclick="document.querySelector('.app-body').classList.add('sidebar-collapsed');try{localStorage.setItem('sidebarCollapsed','1');}catch(e){}" style="background:transparent;border:none;color:var(--text-muted);cursor:pointer;padding:3px 5px;border-radius:5px;display:flex;align-items:center;transition:background .15s,color .15s;" onmouseenter="this.style.background='var(--surface-3)';this.style.color='var(--text)'" onmouseleave="this.style.background='transparent';this.style.color='var(--text-muted)'">
+      <button id="collapseBtn" title="Ocultar menu" aria-label="Recolher menu lateral" onclick="document.querySelector('.app-body').classList.add('sidebar-collapsed');try{localStorage.setItem('sidebarCollapsed','1');}catch(e){}">
         <span class="ico-open"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M11 19l-7-7 7-7"/><path d="M21 12H5" opacity=".5"/></svg></span>
         <span class="ico-close" style="display:none;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M13 5l7 7-7 7"/><path d="M3 12h16" opacity=".5"/></svg></span>
       </button>
@@ -2999,10 +3017,10 @@ body.cofre-shell .pfb-sep {
      JS principal · dividido em 5 arquivos pela auditoria v4.6
      Ordem importa: core declara as globais; render-* dependem de core.
      ════════════════════════════════════════════════════════════════════════════ -->
-<script src="js/core.js?v=4.82.2"></script>
-<script src="js/render-compras.js?v=4.82.2"></script>
-<script src="js/render-vendas.js?v=4.82.2"></script>
-<script src="js/render-outros.js?v=4.82.2"></script>
-<script src="js/admin.js?v=4.82.2"></script>
+<script src="js/core.js?v=4.83.2"></script>
+<script src="js/render-compras.js?v=4.83.2"></script>
+<script src="js/render-vendas.js?v=4.83.2"></script>
+<script src="js/render-outros.js?v=4.83.2"></script>
+<script src="js/admin.js?v=4.83.2"></script>
 </body>
 </html>
