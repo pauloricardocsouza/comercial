@@ -1,5 +1,5 @@
 {
-  "gerado_em": "2026-05-17T10:15:45",
+  "gerado_em": "2026-05-17T13:27:04",
   "arquivos": {
     "compras_atp.json": {
       "json": true
@@ -92,7 +92,7 @@
       "json": true
     },
     "financeiro_grupo.json": {
-      "gz": true
+      "json": true
     },
     "recebimentos_atp.json": {
       "json": true
