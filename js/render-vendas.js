@@ -276,15 +276,29 @@ const VENDAS_PANELS_STRUCTURE = {
  */
 // Cache memoizado para _vendasMensalPor — invalida quando V muda (verifica V.meta.geradoEm)
 // ou quando o cfg de supervisores ignorados muda (snapshot na chave).
-// Cache de _vendasMensalPor foi removido na v4.64 (causava valores errados ao
-// trocar de visão em alguns cenários — recomputar é barato).
+// v4.87: memo reintroduzido com chave robusta (loja|pagina|V.meta.geradoEm).
+// O bug histórico de cache de referência (CP5 mostrando R$25-32M em vez de
+// R$1,7M) era por usar referência mutada; aqui usamos chave por valor +
+// resultado é array novo, sem mutação. Em V.mensal de ~10k linhas × 6
+// lojas × 13 chamadas por página, evita ~120k iterações por render.
+let _vmpCache = {};        // {chave: [...resultado]}
+let _vmpCacheKey = null;   // versão atual (V.meta.geradoEm)
+function _vmpInvalidate(){ _vmpCache = {}; _vmpCacheKey = null; }
+window._vmpInvalidate = _vmpInvalidate;
+
 function _vendasMensalPor(loja, pagina){
   if(!V || !V.mensal) return [];
 
-  // Cache desabilitado: o overhead é mínimo (16 linhas × 6 lojas) e elimina
-  // qualquer hipótese de stale data ao trocar de visão. Em testes anteriores,
-  // bugs de filtros sobrepostos e cache de referência causaram valores errados
-  // (CP5 mostrando R$ 25-32M em vez de R$ 1,7M). Recomputar é seguro e barato.
+  // Versiona o cache pela geração do JSON. Se V mudou (refresh de base),
+  // o cache anterior vira inválido e é descartado num go.
+  const verAtual = (V.meta && V.meta.geradoEm) || '';
+  if(verAtual !== _vmpCacheKey){
+    _vmpCache = {};
+    _vmpCacheKey = verAtual;
+  }
+  const chave = (loja || '_all_') + '|' + (pagina || '_nopg_');
+  if(_vmpCache[chave]) return _vmpCache[chave];
+
   const aplica = pagina && typeof aplicaFiltroSupVMensalRow === 'function';
   let resultado;
   if(loja){
@@ -306,6 +320,7 @@ function _vendasMensalPor(loja, pagina){
     });
     resultado = Array.from(m.values()).sort(function(a,b){return a.ym<b.ym?-1:a.ym>b.ym?1:0;});
   }
+  _vmpCache[chave] = resultado;
   return resultado;
 }
 
@@ -1019,21 +1034,28 @@ function _renderVLoja(loja, pageId){
   // Mensal da loja
   const mensal = _vendasMensalPor(loja);
 
-  // KPIs por ano + jan-mar
-  const ano2024 = (lojaInfo.por_ano && lojaInfo.por_ano['2024']) || null;
-  const ano2025 = (lojaInfo.por_ano && lojaInfo.por_ano['2025']) || {};
-  const ano2026 = (lojaInfo.por_ano && lojaInfo.por_ano['2026']) || {};
+  // v4.87 fix4: anos dinâmicos — _anoAtual e _anoAnterior vêm do V.meta.
+  // Antes era '2024'/'2025'/'2026' fixo, causando label enganoso em 2027+.
+  const _anoNowL = new Date().getFullYear();
+  const _ultYmGlobal = (V && V.meta && V.meta.ultimo_mes && V.meta.ultimo_mes.ym) || (_anoNowL + '-01');
+  const _anoAtual = parseInt(_ultYmGlobal.substring(0,4), 10) || _anoNowL;
+  const _anoAnterior = _anoAtual - 1;
+  const _anoAntAnt   = _anoAtual - 2;
+  const ano2024 = (lojaInfo.por_ano && lojaInfo.por_ano[String(_anoAntAnt)]) || null;
+  const ano2025 = (lojaInfo.por_ano && lojaInfo.por_ano[String(_anoAnterior)]) || {};
+  const ano2026 = (lojaInfo.por_ano && lojaInfo.por_ano[String(_anoAtual)]) || {};
 
-  const jm2025 = mensal.filter(function(r){return r.ym >= '2025-01' && r.ym <= '2025-03';});
-  const jm2026 = mensal.filter(function(r){return r.ym >= '2026-01' && r.ym <= '2026-03';});
+  // Janelas jan-mar/jan-abr usam ano dinâmico
+  const _aA = String(_anoAtual); const _aP = String(_anoAnterior);
+  const jm2025 = mensal.filter(function(r){return r.ym >= (_aP+'-01') && r.ym <= (_aP+'-03');});
+  const jm2026 = mensal.filter(function(r){return r.ym >= (_aA+'-01') && r.ym <= (_aA+'-03');});
   const fjm25 = jm2025.reduce(function(s,r){return s+r.fat_liq;}, 0);
   const fjm26 = jm2026.reduce(function(s,r){return s+r.fat_liq;}, 0);
   const cresceJM = fjm25>0 ? (fjm26/fjm25 - 1)*100 : 0;
 
-  // Fat jan-abr de cada ano (já que cobrimos isso)
-  const ja2025 = mensal.filter(function(r){return r.ym >= '2025-01' && r.ym <= '2025-04';})
+  const ja2025 = mensal.filter(function(r){return r.ym >= (_aP+'-01') && r.ym <= (_aP+'-04');})
                          .reduce(function(s,r){return s+r.fat_liq;}, 0);
-  const ja2026 = mensal.filter(function(r){return r.ym >= '2026-01' && r.ym <= '2026-04';})
+  const ja2026 = mensal.filter(function(r){return r.ym >= (_aA+'-01') && r.ym <= (_aA+'-04');})
                          .reduce(function(s,r){return s+r.fat_liq;}, 0);
   const cresceJA = ja2025>0 ? (ja2026/ja2025 - 1)*100 : 0;
 
@@ -1099,13 +1121,15 @@ function _renderVLoja(loja, pageId){
   cont.innerHTML = html;
 
   // ─── Popular KPIs ───
+  // v4.87 fix4: labels dinâmicos por _anoAtual / _anoAnterior / _anoAntAnt
+  const _yyA = String(_anoAtual).slice(2), _yyP = String(_anoAnterior).slice(2);
   document.getElementById('kg-vl-'+pageId).innerHTML = kgHtml([
-    {l:'Fat. Líq. 2024', v: ano2024 ? fK(ano2024.fat_liq||0) : '—',
+    {l:'Fat. Líq. '+_anoAntAnt, v: ano2024 ? fK(ano2024.fat_liq||0) : '—',
        s: ano2024 ? 'Margem '+fP(ano2024.marg||0) : 'Sem dados'},
-    {l:'Fat. Líq. 2025', v: fK(ano2025.fat_liq||0),
+    {l:'Fat. Líq. '+_anoAnterior, v: fK(ano2025.fat_liq||0),
        s: 'Margem '+fP(ano2025.marg||0)+' · ano completo'},
-    {l:'Fat. Líq. jan-abr/26', v: fK(ja2026),
-       s: ja2025>0 ? (cresceJA>=0?'+':'')+fP(cresceJA)+' vs jan-abr/25' : '4 meses',
+    {l:'Fat. Líq. jan-abr/'+_yyA, v: fK(ja2026),
+       s: ja2025>0 ? (cresceJA>=0?'+':'')+fP(cresceJA)+' vs jan-abr/'+_yyP : '4 meses',
        cls: cresceJA>=0?'up':'dn'},
     {l:'Crescimento jan-mar', v: (cresceJM>=0?'+':'')+fP(cresceJM),
        s: '26 vs 25 · período comparável', cls: cresceJM>=0?'up':'dn'},
@@ -4471,32 +4495,33 @@ function _dcpAbrirCadastroUI(){
 // Reescrita conforme dash.solucoesr2.com.br/gpc.html (etapa 8)
 // ════════════════════════════════════════════════════════════════════════
 
-// Mapeamento de loja (cod do JSON → label visível)
+// Mapeamento de loja (cod do JSON → label visível).
+// v4.87: CP1 e CP40 adicionados — agora têm receita real (refresh CP de 17-05).
 const _METAS_LOJAS = [
-  {cod:'ATP-V', label:'ATP - Varejo',   curto:'ATP V'},
-  {cod:'ATP-A', label:'ATP - Atacado',  curto:'ATP A'},
-  {cod:'CP3',   label:'Cestão Loja 1',  curto:'CES L1'},
-  {cod:'CP5',   label:'Inhambupe',      curto:'INH'}
+  {cod:'ATP-V', label:'ATP - Varejo',          curto:'ATP V'},
+  {cod:'ATP-A', label:'ATP - Atacado',         curto:'ATP A'},
+  {cod:'CP1',   label:'CP1 - Comercial Pinto', curto:'CP1'},
+  {cod:'CP3',   label:'CP3 - Cestão Loja 1',   curto:'CP3'},
+  {cod:'CP5',   label:'CP5 - Inhambupe',       curto:'CP5'},
+  {cod:'CP40',  label:'CP40 - Barros 40',      curto:'CP40'}
 ];
 
 // Filtra _METAS_LOJAS pela base ativa (sigla do _filialAtual).
-// Retorna o subconjunto das 4 lojas com meta que pertence à base atual.
-//   grupo / consolidado  → todas as 4
-//   atp                  → ATP-V, ATP-A
-//   cp                   → CP3, CP5 (CP1 e CP40 não têm meta)
-//   cp3 | cp5            → só ela
-//   cp1 | cp40           → nenhuma (sem meta cadastrada para essa loja)
+// v4.87: CP agora cobre as 4 lojas. Metas em si vêm do Firestore — se
+// a loja não tem meta lançada, o card mostra "—" graciosamente.
 function _metasLojasNaBase(){
   const sig = (typeof _filialAtual !== 'undefined' && _filialAtual && _filialAtual.sigla)
     ? _filialAtual.sigla.toLowerCase() : 'grupo';
   if(sig === 'grupo') return _METAS_LOJAS.slice();
   if(sig === 'atp')   return _METAS_LOJAS.filter(function(l){return l.cod === 'ATP-V' || l.cod === 'ATP-A';});
-  if(sig === 'cp')    return _METAS_LOJAS.filter(function(l){return l.cod === 'CP3'   || l.cod === 'CP5';});
+  if(sig === 'cp')    return _METAS_LOJAS.filter(function(l){return l.cod === 'CP1' || l.cod === 'CP3' || l.cod === 'CP5' || l.cod === 'CP40';});
+  if(sig === 'cp1')   return _METAS_LOJAS.filter(function(l){return l.cod === 'CP1';});
   if(sig === 'cp3')   return _METAS_LOJAS.filter(function(l){return l.cod === 'CP3';});
   if(sig === 'cp5')   return _METAS_LOJAS.filter(function(l){return l.cod === 'CP5';});
+  if(sig === 'cp40')  return _METAS_LOJAS.filter(function(l){return l.cod === 'CP40';});
   if(sig === 'atp-v' || sig === 'atpv') return _METAS_LOJAS.filter(function(l){return l.cod === 'ATP-V';});
   if(sig === 'atp-a' || sig === 'atpa') return _METAS_LOJAS.filter(function(l){return l.cod === 'ATP-A';});
-  return []; // cp1, cp40 ou outras siglas não mapeadas
+  return [];
 }
 
 // Estado global das metas
