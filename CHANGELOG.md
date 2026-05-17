@@ -4,6 +4,37 @@ Lista das melhorias do sistema de BI da R2 Soluções para o Grupo Pinto Cerquei
 
 ---
 
+## Refresh de dados · 17/mai/2026 · ATP (jan/25 – mai/26)
+
+Reprocessamento completo da base ATP a partir do pacote `ATP 16-05-2026.zip`
+(1.24 GB de CSVs WinThor).
+
+### Volumes processados
+| Origem (CSV) | Saída JSON | Stats |
+|--------------|------------|-------|
+| 17× VENDAS 2025-01 a 2026-05 | `vendas_atp.json.gz` (1.1 MB) | 4.711.193 linhas → R$ 141.246.389 fat. líq. |
+| ENTRADAS.csv | `compras_atp.json` (115 KB) | 21.942 linhas, 3.113 NFs |
+| ESTOQUE.csv | `estoque_atp.json.gz` (768 KB) | 7.968 SKUs, snapshot 16-05-2026 |
+| DEVOLUÇÕES.csv | `devolucoes_atp.json` (34 KB) | 387 linhas, 242 NFs |
+| CONTAS_PAGAS + CONTAS_A_PAGAR | `financeiro_atp.json` (1.1 MB) | 103.905 pagamentos + 2.283 títulos abertos |
+| vendas + compras → cubo OLAP | `cubo_atp.json.gz` (11 MB) | 644k vendas + 1.1k compras + 3.1k financeiro |
+
+### Helpers de data-ops criados
+- **`atualizar_base.py`**: helper Python que faz backup + cópia + manifest regen em uma chamada (`python3 atualizar_base.py atp <pasta>`)
+- **`.gitignore`**: caches Python (`__pycache__/`), pastas de input ETL (`vendas_input/`, etc.) e backups (`backup/`) não vão mais pro repo
+- **`manifest.json`** regenerado com `gerado_em: 2026-05-17T10:15:45` → invalida automaticamente IDB cache + Service Worker
+
+### Pendências do refresh (esperadas)
+- JSONs `_grupo` (vendas/compras/estoque/financeiro/etc.) **não regenerados** — eles consolidam ATP + CP, vão ser refeitos quando o pacote CP chegar
+- `verbas_atp.json` e `recebimentos_atp.json` mantidos como antes (não vêm no zip do WinThor — pipeline separado)
+
+### Pendências do `validar.py` (não regressões)
+- `vl_custo_total: 0` em todas as bases de estoque → bug do validar.py que espera chave antiga (`vl_custo_total`); schema atual usa `vl_custo`
+- Clientes sem nome em `recebimentos_*` → pendência conhecida do PCCLIENT no ETL
+- `cubo_cp` em formato antigo (dim/fato_vendas) → front normaliza em runtime
+
+---
+
 ## v4.78–v4.84 · 14–16/mai/2026 · Pacote de performance e refinamentos
 
 **Objetivo:** preparar o sistema para o crescimento de dados ao longo do ano sem perda de fluidez. Cinco camadas de otimização aplicadas, sem mudança em lógica de negócio.
