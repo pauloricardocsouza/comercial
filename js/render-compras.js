@@ -907,8 +907,8 @@ function renderABCNovo(){
        +  '</div>';
   html += '<div>';
   html += '<div style="font-size:14px;font-weight:700;color:var(--text);">Ranking de SKUs</div>';
-  const totalExibir = Math.min(filtrados.length, 1000);
-  html += '<div style="font-size:11px;color:var(--text-muted);">Mostrando '+(filtrados.length>0?'1-'+fI(totalExibir):'0')+' de '+fI(filtrados.length)+' itens · ordenado por faturamento</div>';
+  // v4.83.4: lazy render — sem corte arbitrário em 1000
+  html += '<div style="font-size:11px;color:var(--text-muted);">'+fI(filtrados.length)+' itens · ordenado por faturamento</div>';
   html += '</div></div>';
 
   // Botões de filtro de classe (estilo segmented)
@@ -927,7 +927,7 @@ function renderABCNovo(){
   html += '</div>';
   html += '</div>';
 
-  // Tabela
+  // v4.83.4: tabela com tbody vazio — populado via _lazyTable após inject
   html += '<div class="tscroll" style="max-height:calc(100vh - 280px);overflow:auto;"><table class="t" style="margin:0;">'
        +    '<thead style="position:sticky;top:0;background:var(--surface-2);z-index:1;"><tr>'
        +      '<th style="width:64px;text-align:center;">CLASSE</th>'
@@ -939,35 +939,33 @@ function renderABCNovo(){
        +      '<th>% INDIV</th>'
        +      '<th>% ACUM</th>'
        +      '<th>QTD VENDIDA</th>'
-       +    '</tr></thead><tbody>';
+       +    '</tr></thead><tbody id="tb-abc-novo"></tbody></table></div>';
+  html += '</div>'; // fim card
 
-  filtrados.slice(0, 1000).forEach(function(x){
+  html += '</div>'; // fim page-body
+  cont.innerHTML = html;
+
+  // v4.83.4: lazy render — primeiras 80 linhas síncronas, demais ao scroll.
+  // Substitui o slice(0,1000) anterior — agora escala pra qualquer tamanho.
+  _lazyTable(document.getElementById('tb-abc-novo'), filtrados, function(x){
     const p = x.p;
     const dep = (p.depto && p.depto.nome) || '-';
     const sec = (p.secao && p.secao.nome) || (p.categoria && p.categoria.nome) || '-';
     let bgClasse = '#dcfce7', corClasse = '#166534';
     if(x._classe === 'B'){ bgClasse = '#fef3c7'; corClasse = '#92400e'; }
     else if(x._classe === 'C'){ bgClasse = '#fee2e2'; corClasse = '#991b1b'; }
-    html += '<tr>'
-         +    '<td style="text-align:center;"><span style="display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:5px;background:'+bgClasse+';color:'+corClasse+';font-size:11px;font-weight:800;">'+x._classe+'</span></td>'
-         +    '<td style="font-family:JetBrains Mono,monospace;color:var(--text-dim);font-size:11.5px;">'+esc(p.cod)+'</td>'
-         +    '<td class="L" data-prod-cod="'+esc(p.cod)+'" title="Clique para abrir o diagnóstico"><strong>'+esc(p.desc||'')+'</strong></td>'
-         +    '<td>'+esc(dep)+'</td>'
-         +    '<td>'+esc(sec)+'</td>'
-         +    '<td class="val-strong">'+fK(x._valEstimado)+'</td>'
-         +    '<td>'+fP(x._pctIndiv,1)+'</td>'
-         +    '<td>'+fP(x._pctAcum,1)+'</td>'
-         +    '<td>'+fI(x._qtPeriodo)+'</td>'
-         +  '</tr>';
+    return '<tr>'
+        +    '<td style="text-align:center;"><span style="display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:5px;background:'+bgClasse+';color:'+corClasse+';font-size:11px;font-weight:800;">'+x._classe+'</span></td>'
+        +    '<td style="font-family:JetBrains Mono,monospace;color:var(--text-dim);font-size:11.5px;">'+esc(p.cod)+'</td>'
+        +    '<td class="L" data-prod-cod="'+esc(p.cod)+'" title="Clique para abrir o diagnóstico"><strong>'+esc(p.desc||'')+'</strong></td>'
+        +    '<td>'+esc(dep)+'</td>'
+        +    '<td>'+esc(sec)+'</td>'
+        +    '<td class="val-strong">'+fK(x._valEstimado)+'</td>'
+        +    '<td>'+fP(x._pctIndiv,1)+'</td>'
+        +    '<td>'+fP(x._pctAcum,1)+'</td>'
+        +    '<td>'+fI(x._qtPeriodo)+'</td>'
+        +  '</tr>';
   });
-  if(filtrados.length > 1000){
-    html += '<tr><td colspan="9" style="text-align:center;color:var(--text-muted);font-size:11px;padding:10px;">... e mais '+fI(filtrados.length-1000)+' SKUs. Use a Análise Dinâmica para ver tudo.</td></tr>';
-  }
-  html += '</tbody></table></div>';
-  html += '</div>'; // fim card
-
-  html += '</div>'; // fim page-body
-  cont.innerHTML = html;
 
   // Bind toggle classe
   document.querySelectorAll('.abc-classe-btn').forEach(function(btn){
@@ -5446,34 +5444,38 @@ function _nfFechRender(){
          +        '<th class="L">Status</th>'
          +        '<th class="L">Motivo</th>'
          +        '<th class="L">Marcado por</th>'
-         +      '</tr></thead><tbody>';
-
-    listaExib.forEach(function(n){
-      const ign = (_nfsIgnCache && _nfsIgnCache.nfs && _nfsIgnCache.nfs[n.key]) || null;
-      const dataFmt = n.data ? fDt(n.data) : '—';
-      const stMap = {pago:{cls:'ok',txt:'Pago'},aberto:{cls:'wn',txt:'Em aberto'},parcial:{cls:'wn',txt:'Parcial'},desconhecido:{cls:'',txt:'—'}};
-      const stInfo = stMap[n.status] || stMap['desconhecido'];
-
-      html += '<tr class="nff-row'+(ign?' nff-row-ign':'')+'" data-key="'+esc(n.key)+'" style="'+(ign?'background:#fef3c7;':'')+'">'
-           +    '<td class="L"><input type="checkbox" class="nff-chk" data-key="'+esc(n.key)+'"'+(ign?' checked':'')+' style="cursor:pointer;width:18px;height:18px;"></td>'
-           +    '<td class="L">'+esc(dataFmt)+'</td>'
-           +    '<td class="L"><span style="font-family:JetBrains Mono,monospace;font-size:11px;">'+esc(n.num_nota||'-')+'</span></td>'
-           +    '<td class="L"><span style="font-size:11.5px;">'+esc((n.forn_nome||'#'+n.forn_cod).substring(0,40))+'</span><div style="font-size:10px;color:var(--text-muted);">#'+esc(n.forn_cod||'')+' · '+fI(n.produtos.length)+' SKUs</div></td>'
-           +    '<td>'+fI(n.qt)+' un</td>'
-           +    '<td style="font-weight:600;">'+fK(n.valor)+'</td>'
-           +    '<td class="L"><span class="kg-tag '+stInfo.cls+'" style="font-size:10px;">'+stInfo.txt+'</span></td>'
-           +    '<td class="L"><input type="text" class="nff-motivo" data-key="'+esc(n.key)+'" value="'+esc((ign && ign.motivo)||'')+'" placeholder="opcional" style="width:140px;padding:4px 6px;border:1px solid var(--border);border-radius:3px;font-size:11px;background:var(--surface);"></td>'
-           +    '<td class="L" style="font-size:10.5px;color:var(--text-muted);">'+(ign?esc(ign.marcado_por_email||ign.marcado_por_nome||'')+'<br><span style="font-size:9.5px;">'+esc(fDt((ign.marcado_em||'').substring(0,10)))+'</span>':'-')+'</td>'
-           +  '</tr>';
-    });
-
-    html += '</tbody></table>'
+         +      '</tr></thead>'
+         // v4.83.4: tbody vazio — populado via _lazyTable após inject
+         +      '<tbody id="tb-nff-novo"></tbody>'
+         +      '</table>'
          + '</div>'  // fecha tscroll
          + '</div>'  // fecha ds-body
          + '</div>'; // fecha ds
   }
 
   cont.innerHTML = html;
+
+  // v4.83.4: lazy render NFs (>500 linhas em períodos longos)
+  if(listaExib && listaExib.length){
+    _lazyTable(document.getElementById('tb-nff-novo'), listaExib, function(n){
+      const ign = (_nfsIgnCache && _nfsIgnCache.nfs && _nfsIgnCache.nfs[n.key]) || null;
+      const dataFmt = n.data ? fDt(n.data) : '—';
+      const stMap = {pago:{cls:'ok',txt:'Pago'},aberto:{cls:'wn',txt:'Em aberto'},parcial:{cls:'wn',txt:'Parcial'},desconhecido:{cls:'',txt:'—'}};
+      const stInfo = stMap[n.status] || stMap['desconhecido'];
+      return '<tr class="nff-row'+(ign?' nff-row-ign':'')+'" data-key="'+esc(n.key)+'" style="'+(ign?'background:#fef3c7;':'')+'">'
+          +    '<td class="L"><input type="checkbox" class="nff-chk" data-key="'+esc(n.key)+'"'+(ign?' checked':'')+' style="cursor:pointer;width:18px;height:18px;"></td>'
+          +    '<td class="L">'+esc(dataFmt)+'</td>'
+          +    '<td class="L"><span style="font-family:JetBrains Mono,monospace;font-size:11px;">'+esc(n.num_nota||'-')+'</span></td>'
+          +    '<td class="L"><span style="font-size:11.5px;">'+esc((n.forn_nome||'#'+n.forn_cod).substring(0,40))+'</span><div style="font-size:10px;color:var(--text-muted);">#'+esc(n.forn_cod||'')+' · '+fI(n.produtos.length)+' SKUs</div></td>'
+          +    '<td>'+fI(n.qt)+' un</td>'
+          +    '<td style="font-weight:600;">'+fK(n.valor)+'</td>'
+          +    '<td class="L"><span class="kg-tag '+stInfo.cls+'" style="font-size:10px;">'+stInfo.txt+'</span></td>'
+          +    '<td class="L"><input type="text" class="nff-motivo" data-key="'+esc(n.key)+'" value="'+esc((ign && ign.motivo)||'')+'" placeholder="opcional" style="width:140px;padding:4px 6px;border:1px solid var(--border);border-radius:3px;font-size:11px;background:var(--surface);"></td>'
+          +    '<td class="L" style="font-size:10.5px;color:var(--text-muted);">'+(ign?esc(ign.marcado_por_email||ign.marcado_por_nome||'')+'<br><span style="font-size:9.5px;">'+esc(fDt((ign.marcado_em||'').substring(0,10)))+'</span>':'-')+'</td>'
+          +  '</tr>';
+    });
+  }
+
   _nfFechBindHandlers();
 }
 
